@@ -1,0 +1,50 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "avatar-web.fullname" . }}
+  labels:
+    {{- include "avatar-web.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.ingress.tls }}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- end }}
+    {{- if .Values.waf.enabled }}
+    nginx.ingress.kubernetes.io/modsecurity-snippet: |
+      {{- .Values.waf.modsecuritySnippet | nindent 6 }}
+    nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    nginx.ingress.kubernetes.io/enable-owasp-core-rules: {{ .Values.waf.owaspCoreRules | default "true" | quote }}
+    {{- if .Values.waf.ipAllowlist }}
+    nginx.ingress.kubernetes.io/whitelist-source-range: {{ join "," .Values.waf.ipAllowlist }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.ingress.rateLimit.enabled }}
+    nginx.ingress.kubernetes.io/limit-rps: {{ .Values.ingress.rateLimit.rps | default "30" | quote }}
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: {{ .Values.ingress.rateLimit.burstMultiplier | default "5" | quote }}
+    nginx.ingress.kubernetes.io/limit-rate-after: {{ .Values.ingress.rateLimit.rateAfter | default "10" | quote }}
+    {{- end }}
+spec:
+  {{- if .Values.ingress.ingressClassName }}
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tlsSecretName | default (printf "%s-tls" (include "avatar-web.fullname" .)) }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "avatar-web.fullname" . }}
+                port:
+                  name: http
+{{- end }}

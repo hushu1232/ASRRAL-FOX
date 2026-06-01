@@ -1,0 +1,82 @@
+{
+  "title": "Avatar Web — HTTP Overview",
+  "uid": "avatar-web-http",
+  "tags": ["avatar-web", "http"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1, "title": "Request Rate (rps)", "type": "graph",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total[1m])) by (route)",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "yaxes": [{ "format": "reqps" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 2, "title": "P50 / P95 / P99 Latency", "type": "graph",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(avatar_http_request_duration_seconds_bucket[1m])) by (le, route))",
+          "legendFormat": "P50 {{route}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(avatar_http_request_duration_seconds_bucket[1m])) by (le, route))",
+          "legendFormat": "P95 {{route}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(avatar_http_request_duration_seconds_bucket[1m])) by (le, route))",
+          "legendFormat": "P99 {{route}}"
+        }
+      ],
+      "yaxes": [{ "format": "s" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 3, "title": "Status Code Distribution", "type": "bargauge",
+      "gridPos": { "x": 0, "y": 8, "w": 8, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total[5m])) by (status_code)",
+          "legendFormat": "{{status_code}}"
+        }
+      ]
+    },
+    {
+      "id": 4, "title": "Concurrent In-Flight Requests", "type": "stat",
+      "gridPos": { "x": 8, "y": 8, "w": 4, "h": 6 },
+      "targets": [
+        { "expr": "avatar_http_requests_in_flight", "legendFormat": "active" }
+      ],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "value": 0, "color": "green" }, { "value": 50, "color": "yellow" }, { "value": 100, "color": "red" }] } } }
+    },
+    {
+      "id": 5, "title": "5xx Error Rate", "type": "graph",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total{status_code=~\"5..\"}[5m])) by (route) / sum(rate(avatar_http_requests_total[5m])) by (route)",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "yaxes": [{ "format": "percentunit", "max": 0.1 }],
+      "thresholds": [{ "value": 0.05, "color": "red", "op": "gt" }]
+    },
+    {
+      "id": 6, "title": "Rate Limit Hits", "type": "graph",
+      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_rate_limit_hits_total[5m])) by (route)",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    }
+  ]
+}

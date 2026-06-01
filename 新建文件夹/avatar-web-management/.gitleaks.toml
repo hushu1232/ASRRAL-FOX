@@ -1,0 +1,63 @@
+# Gitleaks configuration — detect secrets committed to the repo
+# Docs: https://github.com/gitleaks/gitleaks#configuration
+
+title = "Avatar Web Management — Gitleaks Config"
+
+# Allowlist: test fixtures, mock data, demo credentials documented in README
+[allowlist]
+  description = "Safe patterns allowed in the repo"
+  paths = [
+    # README documents demo accounts intentionally
+    '''README\.md''',
+    # Test fixtures use fake keys
+    '''tests/.*\.test\.ts''',
+    '''tests/.*\.tsx''',
+    # Mock Prisma client is not a real DB connection
+    '''tests/__mocks__/.*''',
+    '''src/lib/__mocks__/.*''',
+    # Seed data uses demo credentials
+    '''prisma/seed\.ts''',
+    # Storybook stories use mock data
+    '''\.storybook/.*''',
+    # Helm values are template defaults, not secrets
+    '''helm/.*/values\.yaml''',
+    # Keycloak realm config for dev
+    '''keycloak/.*\.json''',
+    # .env.example documents required vars (no real values)
+    '''\.env\.example''',
+  ]
+  commits = [
+    # Allow commits that are clearly labeled as mock/demo
+    '''(?i)(demo|mock|test|seed|fixture)''',
+  ]
+
+# Custom rules for project-specific patterns
+[[rules]]
+  id = "pet-encryption-key"
+  description = "PET_ENCRYPTION_KEY used in source code"
+  regex = '''PET_ENCRYPTION_KEY\s*=\s*['"][A-Za-z0-9+/=]{32,}['"]'''
+  tags = ["key", "pet"]
+  [rules.allowlist]
+    paths = ['''.env\.example$''']
+
+[[rules]]
+  id = "jwt-secret-in-code"
+  description = "JWT_SECRET hardcoded in source"
+  regex = '''JWT_SECRET\s*=\s*['"][A-Za-z0-9+/=_-]{16,}['"]'''
+  tags = ["key", "jwt"]
+  [rules.allowlist]
+    paths = ['''.env\.example$''']
+
+[[rules]]
+  id = "database-url-with-credentials"
+  description = "DATABASE_URL with embedded credentials"
+  regex = '''(?i)(DATABASE_URL|PG_CONNECTION)\s*=\s*['"].*://[^:@]+:[^@]+@'''
+  tags = ["database", "credentials"]
+
+[[rules]]
+  id = "redis-password-hardcoded"
+  description = "REDIS_PASSWORD in source code"
+  regex = '''REDIS_PASSWORD\s*=\s*['"][^'"]+['"]'''
+  tags = ["redis", "credentials"]
+  [rules.allowlist]
+    paths = ['''.env\.example$''']

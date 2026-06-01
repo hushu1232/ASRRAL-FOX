@@ -1,0 +1,207 @@
+# Prometheus Blackbox Exporter — synthetic monitoring probes for avatar-web
+# Deployed as a sidecar or separate DaemonSet in the monitoring namespace
+# Configured via Prometheus Operator Probe CRDs or static Prometheus config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blackbox-exporter-config
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+data:
+  blackbox.yml: |
+    modules:
+      # HTTP GET probe with TLS + expected status code
+      http_200:
+        prober: http
+        timeout: 10s
+        http:
+          method: GET
+          valid_status_codes: [200]
+          fail_if_ssl: false
+          fail_if_not_ssl: false
+          preferred_ip_protocol: ip4
+
+      # API health endpoint probe (no auth required)
+      http_health:
+        prober: http
+        timeout: 5s
+        http:
+          method: GET
+          valid_status_codes: [200]
+          fail_if_not_matches_regexp:
+            - '"status":"ok"'
+          headers:
+            Accept: application/json
+
+      # HTTPS with certificate expiry check
+      https_certificate:
+        prober: http
+        timeout: 10s
+        http:
+          method: GET
+          valid_status_codes: [200, 401, 403]
+          fail_if_ssl: true
+          fail_if_not_ssl: true
+          tls_config:
+            insecure_skip_verify: false
+
+      # TCP port check
+      tcp_connect:
+        prober: tcp
+        timeout: 5s
+        tcp:
+          preferred_ip_protocol: ip4
+
+      # DNS resolution check
+      dns_resolve:
+        prober: dns
+        timeout: 5s
+        dns:
+          preferred_ip_protocol: ip4
+          query_name: avatar.example.com
+          query_type: A
+---
+# Prometheus Probe CR (for Prometheus Operator)
+# Tests the production ingress from an external perspective
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: avatar-web-health
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: avatar-web
+spec:
+  jobName: blackbox-synthetic
+  interval: 30s
+  module: http_health
+  prober:
+    url: blackbox-exporter.monitoring:9115
+    scheme: http
+  targets:
+    staticConfig:
+      static:
+        - https://avatar.example.com/api/health
+      labels:
+        service: avatar-web
+        probe_type: health
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: avatar-web-pet-export
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: avatar-web
+spec:
+  jobName: blackbox-synthetic
+  interval: 60s
+  module: http_200
+  prober:
+    url: blackbox-exporter.monitoring:9115
+    scheme: http
+  targets:
+    staticConfig:
+      static:
+        - https://avatar.example.com/api/pet/export
+      labels:
+        service: avatar-web
+        probe_type: api
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: avatar-web-login
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: avatar-web
+spec:
+  jobName: blackbox-synthetic
+  interval: 60s
+  module: http_200
+  prober:
+    url: blackbox-exporter.monitoring:9115
+    scheme: http
+  targets:
+    staticConfig:
+      static:
+        - https://avatar.example.com/api/auth/login
+      labels:
+        service: avatar-web
+        probe_type: endpoint
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: avatar-web-tls-cert
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: avatar-web
+spec:
+  jobName: blackbox-synthetic
+  interval: 5m   # TLS certs don't change frequently
+  module: https_certificate
+  prober:
+    url: blackbox-exporter.monitoring:9115
+    scheme: http
+  targets:
+    staticConfig:
+      static:
+        - https://avatar.example.com
+      labels:
+        service: avatar-web
+        probe_type: tls
+---
+# PrometheusRule: Alert when synthetic probes fail
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: avatar-web-synthetic-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: avatar-web
+spec:
+  groups:
+    - name: avatar-web-synthetic
+      interval: 30s
+      rules:
+        - alert: SyntheticHealthCheckFailed
+          expr: probe_success{service="avatar-web", probe_type="health"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            component: avatar-web
+          annotations:
+            summary: "Synthetic health check failed for avatar-web"
+            description: "{{ $labels.instance }} /api/health is down for >2m"
+
+        - alert: SyntheticPetExportFailed
+          expr: probe_success{service="avatar-web", probe_type="api"} == 0
+          for: 3m
+          labels:
+            severity: warning
+            component: avatar-web
+          annotations:
+            summary: "Pet export endpoint unreachable"
+            description: "{{ $labels.instance }} /api/pet/export is failing synthetic checks"
+
+        - alert: SyntheticTLSCertExpiring
+          expr: probe_ssl_earliest_cert_expiry{service="avatar-web"} - time() < 86400 * 14
+          for: 5m
+          labels:
+            severity: warning
+            component: avatar-web
+          annotations:
+            summary: "TLS certificate expiring within 14 days"
+            description: "Certificate for {{ $labels.instance }} expires in {{ $value | humanizeDuration }}"
+
+        - alert: SyntheticProbeLatencyHigh
+          expr: probe_duration_seconds{service="avatar-web"} > 2
+          for: 5m
+          labels:
+            severity: warning
+            component: avatar-web
+          annotations:
+            summary: "Synthetic probe latency > 2 seconds"
+            description: "{{ $labels.instance }} {{ $labels.probe_type }} probe taking {{ $value }}s"

@@ -1,0 +1,641 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Workspace {
+  id               String   @id @default(uuid())
+  name             String
+  plan             String   @default("free")
+  ssoConfig        String?  @map("sso_config")
+  storageQuotaBytes BigInt  @default(1073741824) @map("storage_quota_bytes")
+  memberCount      Int      @default(1) @map("member_count")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  users   User[]
+  avatars Avatar[]
+  assets  Asset[]
+  petConfigs PetConfig[]
+
+  @@map("workspaces")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  workspaceId  String    @map("workspace_id")
+  email        String    @unique
+  username     String    @unique
+  passwordHash String    @map("password_hash")
+  role         String    @default("user")
+  ssoProvider  String?   @map("sso_provider")
+  ssoSubject   String?   @map("sso_subject")
+  totpSecret   String?   @map("totp_secret")
+  status       String    @default("active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  // Level & Title system
+  level             Int      @default(1)
+  exp               Int      @default(0)
+  totalLoginDays    Int      @default(0)   @map("total_login_days")
+  lastLoginDate     DateTime?              @map("last_login_date")
+  activeTitle       String?                @map("active_title")
+  unlockedTitles    String[] @default([])  @map("unlocked_titles")
+  monthlyCloneUsed  Int      @default(0)   @map("monthly_clone_used")
+  cloneResetDate    DateTime?              @map("clone_reset_date")
+
+  workspace       Workspace          @relation(fields: [workspaceId], references: [id])
+  refreshTokens   RefreshToken[]
+  avatars         Avatar[]
+  assets          Asset[]
+  apiKeys         ApiKey[]
+  petConfig       PetConfig?
+  petSessionLogs  PetSessionLog[]
+  notifications   Notification[]
+  passwordResets  PasswordResetToken[]
+  auditLogs       AuditLog[]
+  marketItems     MarketItem[]
+  orders          Order[]
+  reviews         Review[]
+  sellerPayouts   SellerPayout[]
+  paymentMethods  SellerPaymentMethod[]
+  posts           Post[]
+  replies         Reply[]
+  votes           Vote[]
+  subscriptions   Subscription[]
+  conversationsAsP1 Conversation[] @relation("Participant1")
+  conversationsAsP2 Conversation[] @relation("Participant2")
+  sentMessages    Message[]
+
+  @@index([email])
+  @@index([workspaceId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Avatar {
+  id               String    @id @default(uuid())
+  workspaceId      String    @map("workspace_id")
+  creatorId        String    @map("creator_id")
+  name             String
+  style            String    @default("anime")
+  baseModel        String    @default("/models/base-female.glb") @map("base_model")
+  thumbnailUrl     String?   @map("thumbnail_url")
+  status           String    @default("draft")
+  currentVersionId String?   @map("current_version_id")
+  isTemplate       Boolean   @default(false) @map("is_template")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @map("updated_at")
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id])
+  creator   User            @relation(fields: [creatorId], references: [id])
+  versions  AvatarVersion[]
+  petConfigs PetConfig[]
+  marketItems MarketItem[]
+
+  @@index([creatorId])
+  @@index([workspaceId])
+  @@index([status])
+  @@map("avatars")
+}
+
+model AvatarVersion {
+  id                   String    @id @default(uuid())
+  avatarId             String    @map("avatar_id")
+  versionNumber        Int       @map("version_number")
+  blendshapeSnapshot   String    @default("{}") @map("blendshape_snapshot")
+  bodyParams           String    @default("{}") @map("body_params")
+  equippedParts        String    @default("[]") @map("equipped_parts")
+  materialOverrides    String    @default("{}") @map("material_overrides")
+  modelPath            String    @default("/models/cattail/cattail.model3.json") @map("model_path")
+  previewScreenshotUrl String?   @map("preview_screenshot_url")
+  status               String    @default("draft")
+  reviewComment        String?   @map("review_comment")
+  parentVersionId      String?   @map("parent_version_id")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  avatar Avatar @relation(fields: [avatarId], references: [id], onDelete: Cascade)
+
+  @@index([avatarId])
+  @@map("avatar_versions")
+}
+
+model Part {
+  id              String   @id
+  assetId         String?  @map("asset_id")
+  name            String
+  category        String
+  slot            String
+  gender          String   @default("unisex")
+  styleTags       String   @default("[]") @map("style_tags")
+  thumbnailUrl    String?  @map("thumbnail_url")
+  prefabUrl       String   @map("prefab_url")
+  defaultMaterial String   @default("{}") @map("default_material")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  rulesA PartRule[] @relation("PartA")
+  rulesB PartRule[] @relation("PartB")
+
+  @@index([category])
+  @@map("parts")
+}
+
+model PartRule {
+  id       String  @id
+  ruleType String  @map("rule_type")
+  partAId  String  @map("part_a_id")
+  partBId  String  @map("part_b_id")
+  message  String?
+
+  partA Part @relation("PartA", fields: [partAId], references: [id], onDelete: Cascade)
+  partB Part @relation("PartB", fields: [partBId], references: [id], onDelete: Cascade)
+
+  @@map("part_rules")
+}
+
+model Asset {
+  id           String   @id @default(uuid())
+  workspaceId  String   @map("workspace_id")
+  uploaderId   String   @map("uploader_id")
+  filename     String
+  fileSize     BigInt   @default(0) @map("file_size")
+  mimeType     String   @map("mime_type")
+  storagePath  String   @map("storage_path")
+  thumbnailUrl String?  @map("thumbnail_url")
+  assetType    String   @map("asset_type")
+  format       String
+  license      String   @default("cc_by")
+  metadata     String   @default("{}")
+  tags         String   @default("[]")
+  version      Int      @default(1)
+  status       String   @default("ready")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  uploader  User      @relation(fields: [uploaderId], references: [id])
+  petAssetMappings PetAssetMapping[]
+
+  @@index([workspaceId])
+  @@map("assets")
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String?  @map("user_id")
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  details      String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  name       String
+  keyHash    String    @unique @map("key_hash")
+  keyPrefix  String    @map("key_prefix")
+  lastUsedAt DateTime? @map("last_used_at")
+  expiresAt  DateTime? @map("expires_at")
+  revoked    Boolean   @default(false)
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_keys")
+}
+
+model Notification {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  type         String
+  title        String
+  body         String?
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  isRead       Boolean  @default(false) @map("is_read")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model OAuthClient {
+  id           String   @id @default(uuid())
+  name         String
+  clientId     String   @unique @map("client_id")
+  clientSecret String   @map("client_secret")
+  redirectUris String   @default("[]") @map("redirect_uris")
+  scopes       String   @default("[\"openid\",\"profile\",\"email\"]")
+  grantTypes   String   @default("[\"authorization_code\",\"refresh_token\"]") @map("grant_types")
+  isPublic     Boolean  @default(false) @map("is_public")
+  revoked      Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("oauth_clients")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("password_reset_tokens")
+}
+
+// ─── Desktop Pet Sub-Module ────────────────────────────────
+
+model PetConfig {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  workspaceId      String   @map("workspace_id")
+  petName          String   @default("星尘") @map("pet_name")
+  personality      String   @default("")
+  backstory        String   @default("")
+  azureSpeechKey   String?  @map("azure_speech_key")
+  azureSpeechRegion String? @map("azure_speech_region")
+  openaiApiKey     String?  @map("openai_api_key")
+  openaiBaseUrl    String?  @map("openai_base_url")
+  animationModel   String   @default("live2d") @map("animation_model")
+  avatarId         String?  @map("avatar_id")
+  ffmpegPath       String?  @map("ffmpeg_path")
+  idleTimeout      Int      @default(300) @map("idle_timeout")
+  wanderInterval   Float    @default(15.0) @map("wander_interval")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @map("updated_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  avatar    Avatar?   @relation(fields: [avatarId], references: [id], onDelete: SetNull)
+  assetMappings PetAssetMapping[]
+  sessionLogs   PetSessionLog[]
+
+  @@unique([userId])
+  @@index([workspaceId])
+  @@map("pet_configs")
+}
+
+model PetAssetMapping {
+  id         String   @id @default(uuid())
+  petConfigId String  @map("pet_config_id")
+  assetId    String   @map("asset_id")
+  assetType  String   @default("model") @map("asset_type")
+  slotName   String   @default("default") @map("slot_name")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  petConfig PetConfig @relation(fields: [petConfigId], references: [id], onDelete: Cascade)
+  asset     Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([petConfigId, slotName])
+  @@index([assetId])
+  @@map("pet_asset_mappings")
+}
+
+model PetSessionLog {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  petConfigId      String   @map("pet_config_id")
+  startTime        DateTime @map("start_time")
+  endTime          DateTime? @map("end_time")
+  interactionCount Int      @default(0) @map("interaction_count")
+  crashLog         String?  @map("crash_log")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  petConfig PetConfig @relation(fields: [petConfigId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([petConfigId])
+  @@map("pet_session_logs")
+}
+
+// ─── Marketplace ──────────────────────────────────────────
+
+model MarketItem {
+  id            String   @id @default(uuid())
+  sellerId      String   @map("seller_id")
+  title         String
+  description   String   @default("")
+  category      String   @default("model")
+  price         Int      @default(0)
+  currency      String   @default("CNY")
+  files         Json     @default("[]")
+  previewImages Json     @default("[]") @map("preview_images")
+  thumbnailUrl  String?  @map("thumbnail_url")
+  avatarId      String?  @map("avatar_id")
+  rating        Float    @default(0)
+  downloadCount Int      @default(0) @map("download_count")
+  appliedCount  Int      @default(0) @map("applied_count")
+  status        String   @default("pending")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  seller  User     @relation(fields: [sellerId], references: [id])
+  avatar  Avatar?  @relation(fields: [avatarId], references: [id], onDelete: SetNull)
+  orders  Order[]
+  reviews Review[]
+
+  @@index([sellerId])
+  @@index([category])
+  @@index([status])
+  @@index([createdAt])
+  @@map("market_items")
+}
+
+model Order {
+  id           String   @id @default(uuid())
+  buyerId      String   @map("buyer_id")
+  itemId       String   @map("item_id")
+  amount       Int      @default(0)
+  platformFee  Int      @default(0) @map("platform_fee")
+  sellerPayout Int      @default(0) @map("seller_payout")
+  status       String   @default("pending")     // pending | paid | completed | refunded | cancelled
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  buyer        User         @relation(fields: [buyerId], references: [id])
+  item         MarketItem   @relation(fields: [itemId], references: [id])
+  transactions Transaction[]
+
+  @@index([buyerId])
+  @@index([itemId])
+  @@index([status])
+  @@map("orders")
+}
+
+model Review {
+  id            String   @id @default(uuid())
+  itemId        String   @map("item_id")
+  userId        String   @map("user_id")
+  rating        Int      @default(5)
+  comment       String   @default("")
+  petScreenshot String?  @map("pet_screenshot")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  item MarketItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id])
+
+  @@index([itemId])
+  @@index([userId])
+  @@map("reviews")
+}
+
+// ─── Payment System ────────────────────────────────────────
+
+model Transaction {
+  id            String   @id @default(uuid())
+  orderId       String   @map("order_id")
+  provider      String   @default("stripe")  // stripe | mock | alipay | wechat
+  providerTxId  String?  @map("provider_tx_id")
+  amount        Int
+  currency      String   @default("cny")
+  status        String   @default("pending")  // pending | processing | completed | failed | refunded
+  paymentMethod String?  @map("payment_method") // card | alipay | wechat
+  metadata      Json?    // provider-specific response data
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([providerTxId])
+  @@index([status])
+  @@map("transactions")
+}
+
+model SellerPayout {
+  id          String   @id @default(uuid())
+  sellerId    String   @map("seller_id")
+  amount      Int
+  currency    String   @default("cny")
+  status      String   @default("pending")  // pending | processing | paid | failed
+  periodStart DateTime @map("period_start")
+  periodEnd   DateTime @map("period_end")
+  payoutRef   String?  @map("payout_ref")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  seller User @relation(fields: [sellerId], references: [id])
+
+  @@index([sellerId])
+  @@index([status])
+  @@map("seller_payouts")
+}
+
+// ─── Payment Gateway Configuration ─────────────────────────
+
+model PaymentGatewayConfig {
+  id         String   @id @default(uuid())
+  provider   String                     // stripe | wechat | alipay
+  mode       String   @default("sandbox") // sandbox | live
+  isActive   Boolean  @default(false)   @map("is_active")
+  displayName String? @map("display_name")
+
+  // Credentials (encrypted at rest in production)
+  appId      String?  @map("app_id")
+  mchId      String?  @map("mch_id")       // WeChat merchant ID
+  apiKey     String?  @map("api_key")      // APIv3 key / Alipay private key
+  apiSecret  String?  @map("api_secret")   // App secret
+  certPath   String?  @map("cert_path")    // Certificate path
+  publicKey  String?  @map("public_key")   // Alipay public key
+  notifyUrl  String?  @map("notify_url")   // Callback URL
+  returnUrl  String?  @map("return_url")   // Redirect URL
+
+  // Metadata
+  config     Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([provider, mode])
+  @@map("payment_gateway_configs")
+}
+
+// ─── Seller Payment Methods ───────────────────────────────
+
+model SellerPaymentMethod {
+  id          String   @id @default(uuid())
+  sellerId    String   @map("seller_id")
+  type        String                     // alipay | wechat | bank
+  account     String
+  accountName String   @map("account_name")
+  isDefault   Boolean  @default(false)  @map("is_default")
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())  @map("created_at")
+
+  seller User @relation(fields: [sellerId], references: [id])
+
+  @@index([sellerId])
+  @@map("seller_payment_methods")
+}
+
+// ─── Community Forum ──────────────────────────────────────
+
+model Board {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  type        String   @default("discussion")
+  sortOrder   Int      @default(0) @map("sort_order")
+  icon        String?
+  color       String?
+  postCount   Int      @default(0) @map("post_count")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  posts Post[]
+
+  @@map("community_boards")
+}
+
+model Post {
+  id          String   @id @default(uuid())
+  boardId     String   @map("board_id")
+  userId      String   @map("user_id")
+  title       String
+  content     String
+  type        String   @default("discussion")
+  isPinned    Boolean  @default(false) @map("is_pinned")
+  isLocked    Boolean  @default(false) @map("is_locked")
+  viewCount   Int      @default(0) @map("view_count")
+  replyCount  Int      @default(0) @map("reply_count")
+  voteScore   Int      @default(0) @map("vote_score")
+  tags        String   @default("[]")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  board         Board          @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replies       Reply[]
+
+  @@index([boardId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([voteScore])
+  @@map("community_posts")
+}
+
+model Reply {
+  id         String   @id @default(uuid())
+  postId     String   @map("post_id")
+  userId     String   @map("user_id")
+  parentId   String?  @map("parent_id")
+  content    String
+  voteScore  Int      @default(0) @map("vote_score")
+  isAccepted Boolean  @default(false) @map("is_accepted")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  post     Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent   Reply? @relation("ReplyChain", fields: [parentId], references: [id])
+  children Reply[] @relation("ReplyChain")
+
+  @@index([postId])
+  @@index([userId])
+  @@index([parentId])
+  @@map("community_replies")
+}
+
+model Vote {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  value      Int
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType, targetId])
+  @@index([targetType, targetId])
+  @@map("community_votes")
+}
+
+model Subscription {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  targetType  String   @map("target_type")
+  targetId    String   @map("target_id")
+  notifyEmail Boolean  @default(false) @map("notify_email")
+  notifySite  Boolean  @default(true) @map("notify_site")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType, targetId])
+  @@index([userId])
+  @@map("community_subscriptions")
+}
+
+// ─── Instant Messaging ────────────────────────────────────
+
+model Conversation {
+  id             String   @id @default(uuid())
+  participant1Id String   @map("participant_1_id")
+  participant2Id String   @map("participant_2_id")
+  lastMessageAt  DateTime @default(now()) @map("last_message_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  participant1 User      @relation("Participant1", fields: [participant1Id], references: [id], onDelete: Cascade)
+  participant2 User      @relation("Participant2", fields: [participant2Id], references: [id], onDelete: Cascade)
+  messages     Message[]
+
+  @@unique([participant1Id, participant2Id])
+  @@index([participant1Id])
+  @@index([participant2Id])
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+model Message {
+  id             String    @id @default(uuid())
+  conversationId String    @map("conversation_id")
+  senderId       String    @map("sender_id")
+  content        String
+  readAt         DateTime? @map("read_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@map("messages")
+}

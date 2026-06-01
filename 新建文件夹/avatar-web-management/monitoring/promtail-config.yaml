@@ -1,0 +1,61 @@
+# Promtail DaemonSet config snippet for avatar-web Pino JSON logs
+# Apply as ConfigMap: kubectl create configmap promtail-config --from-file=promtail-config.yaml
+# Or include in your Promtail Helm values under config.snippets.extraScrapeConfigs
+---
+scrape_configs:
+  - job_name: avatar-web-containers
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        action: keep
+        regex: avatar-web
+      - source_labels: [__meta_kubernetes_pod_container_name]
+        target_label: container
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - target_label: app
+        replacement: avatar-web
+      - target_label: service
+        replacement: avatar-web
+    pipeline_stages:
+      # Parse Pino JSON log lines: {"level":30,"time":...,"pid":...,"msg":"..."}
+      - json:
+          expressions:
+            level: level
+            time: time
+            msg: msg
+            name: name
+            requestId: requestId
+            err: err
+            statusCode: status_code
+            method: method
+            url: url
+            responseTime: response_time_ms
+            route: route
+            userAgent: user_agent
+      # Convert Pino level (10=trace..60=fatal) to Loki log level
+      - template:
+          source: level
+          template: '{{ if le .Value 20 }}debug{{ else if le .Value 30 }}info{{ else if le .Value 40 }}warn{{ else }}error{{ end }}'
+      # Override Loki level label
+      - labels:
+          level:
+      # Set the timestamp from Pino's time field (epoch millis)
+      - timestamp:
+          source: time
+          format: UnixMs
+      # Extract requestId into a label for log correlation
+      - labels:
+          requestId:
+          route:
+          name:
+          container:
+          namespace:
+      # Drop debug-level logs in production to reduce volume (comment out for dev)
+      - drop:
+          expression: '.*"level":10.*'
+      - drop:
+          expression: '.*"level":20.*'

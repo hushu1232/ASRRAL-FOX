@@ -1,0 +1,64 @@
+# API Fuzz Testing — schemathesis against OpenAPI spec
+# Runs on schedule (weekly) and manually via workflow_dispatch
+# Requires a running test instance at FUZZ_BASE_URL
+name: API Fuzz
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # weekly Monday 08:00 UTC
+  workflow_dispatch:
+    inputs:
+      baseUrl:
+        description: 'Target base URL'
+        required: false
+        default: 'https://staging.avatar.example.com'
+
+jobs:
+  schemathesis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install schemathesis
+        run: pip install schemathesis
+
+      - name: Run fuzz tests
+        env:
+          SCHEMATHESIS_BASE_URL: ${{ github.event.inputs.baseUrl || vars.FUZZ_BASE_URL || 'http://localhost:3000' }}
+        run: |
+          schemathesis run \
+            --base-url="$SCHEMATHESIS_BASE_URL" \
+            --checks=all \
+            --hypothesis-max-examples=200 \
+            --hypothesis-deadline=5000 \
+            --stateful=links \
+            --request-timeout=10 \
+            --auth-type=bearer \
+            --auth='${{ secrets.FUZZ_API_TOKEN }}' \
+            --cassette-path=fuzz-cassette.yaml \
+            --junit-xml=fuzz-results.xml \
+            src/lib/openapi.json
+
+      - name: Upload fuzz results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-results
+          path: fuzz-results.xml
+          retention-days: 30
+
+      - name: Upload test cassette
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-cassette
+          path: fuzz-cassette.yaml
+          retention-days: 7

@@ -1,0 +1,141 @@
+# 虚拟形象 Web 管理系统 — 开发/生产基础设施
+# 用法: docker compose up -d
+# 仅启动基础设施（不含应用本身）: docker compose up -d postgres redis minio
+
+services:
+  # ============================================================
+  # Next.js 应用
+  # ============================================================
+  app:
+    build: .
+    container_name: avatar-web-app
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/data.db
+    volumes:
+      - app-data:/app/data
+      - app-uploads:/app/public/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # ============================================================
+  # PostgreSQL — 生产数据库
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: avatar-pg
+    environment:
+      POSTGRES_DB: avatar_management
+      POSTGRES_USER: avatar
+      POSTGRES_PASSWORD: avatar_dev_2024
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/schema.pg.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avatar -d avatar_management"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================================
+  # Keycloak — 企业 SSO (OIDC)
+  # 管理控制台: http://localhost:8080 (admin/admin)
+  # ============================================================
+  keycloak-postgres:
+    image: postgres:16-alpine
+    container_name: avatar-kc-pg
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: kc_dev_2024
+    volumes:
+      - kcpgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    container_name: avatar-kc
+    command:
+      - start-dev
+      - --http-port=8080
+      - --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: kc_dev_2024
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ============================================================
+  # MinIO — S3 兼容对象存储
+  # API: http://localhost:9000 (S3)
+  # 管理控制台: http://localhost:9001 (minioadmin/minioadmin123)
+  # ============================================================
+  minio:
+    image: minio/minio:latest
+    container_name: avatar-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ============================================================
+  # Redis — 缓存 + 速率限制 + 会话存储
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: avatar-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  app-uploads:
+  pgdata:
+  kcpgdata:
+  miniodata:
+  redisdata:

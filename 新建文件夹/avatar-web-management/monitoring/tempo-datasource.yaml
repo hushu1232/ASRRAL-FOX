@@ -1,0 +1,35 @@
+# Grafana Tempo/Jaeger datasource — provision via Grafana's datasource provisioning
+# Embed as ConfigMap with label grafana_datasource=1 for auto-discovery
+#   kubectl apply -f monitoring/tempo-datasource.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-tempo
+  labels:
+    grafana_datasource: "1"
+data:
+  tempo.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Tempo (avatar-web)
+        type: tempo
+        uid: avatar-web-traces
+        access: proxy
+        url: http://tempo.monitoring.svc.cluster.local:3200
+        isDefault: false
+        jsonData:
+          tracesToLogsV2:
+            # Link from trace span to Loki logs via traceId
+            - datasourceUid: avatar-web-loki
+              matcher: "`traceId`"
+              tags: [{ key: "service_name", value: "avatar-web" }]
+              mappedTags: [{ key: "service_name" }]
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+          search:
+            defaultLimit: 100
+          spanQuery:
+            splitSpans: true

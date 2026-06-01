@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <rect width="120" height="120" fill="#1a1a2e" rx="8"/>
+  <circle cx="60" cy="50" r="25" fill="#202030" opacity="0.8"/>
+  <text x="60" y="95" text-anchor="middle" fill="#888" font-size="9" font-family="sans-serif">运动鞋</text>
+</svg>

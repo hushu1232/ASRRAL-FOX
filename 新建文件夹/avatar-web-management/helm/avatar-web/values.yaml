@@ -1,0 +1,192 @@
+# 默认 values — 开发/测试环境
+# 生产环境覆盖请使用 values-production.yaml
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/avatar-system/avatar-web
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+environment: "development"
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+serviceAccount:
+  create: true
+
+podAnnotations: {}
+podSecurityContext:
+  fsGroup: 1001
+
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1001
+
+service:
+  type: ClusterIP
+  port: 3000
+  targetPort: 3000
+  annotations: {}
+
+ingress:
+  enabled: false
+  ingressClassName: nginx
+  host: avatar.local
+  tls: false
+  annotations: {}
+  rateLimit:
+    enabled: false
+    rps: "30"
+    burstMultiplier: "5"
+    rateAfter: "10"
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+probes:
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+persistence:
+  enabled: true
+  accessMode: ReadWriteMany
+  size: 10Gi
+  # storageClass: nfs-client
+  # existingClaim: avatar-uploads-pvc
+
+postgresql:
+  host: postgresql.default.svc.cluster.local
+  port: 5432
+  database: avatar_management
+  user: avatar
+  password: ""
+
+jwt:
+  secret: ""
+  # rsaPrivateKey: ""
+  # rsaPublicKey: ""
+  # existingSecret: avatar-keys
+
+config:
+  publicUrl: "http://localhost:3000"
+  wsPort: "3001"
+  pgPoolMax: "20"
+  pgPoolIdleTimeout: "30000"
+  pgConnectionTimeout: "5000"
+  # corsOrigins: ""
+  # redisHost: ""
+  # redisPassword: ""
+  # otelEndpoint: ""        # OTLP collector endpoint (traces → Tempo/Jaeger)
+  # otelSampler: "parentbased_always_on"  # or "parentbased_traceidratio" with ratio arg
+  # tempoQueryEndpoint: ""  # Tempo/Jaeger query frontend (for Grafana datasource, not the app)
+  # sentryDsn: ""
+  # storageDriver: ""
+  # storageEndpoint: ""
+  # storageAccessKey: ""
+  # storageSecretKey: ""
+
+extraEnv: []
+
+# Automated database backup (pg_dump → S3/MinIO)
+backup:
+  enabled: false  # enable in production
+  schedule: "0 3 * * *"
+  retentionDays: 30
+  # s3Endpoint: "https://minio.storage.svc.cluster.local"
+  # s3Bucket: "avatar-backups"
+  # s3Region: "us-east-1"
+  # s3SecretName: "avatar-backup-s3"
+
+retention:
+  enabled: false  # enable in production
+  schedule: "0 4 * * 0"  # weekly Sunday 04:00 UTC
+  sessionLogDays: 90
+  auditLogDays: 365
+
+# Log aggregation — Loki + Promtail (deployed separately or via cluster config)
+logging:
+  loki:
+    # Loki push endpoint for Promtail
+    host: loki.monitoring.svc.cluster.local
+    port: "3100"
+  # Promtail runs as DaemonSet in the cluster, configured via monitoring/promtail-config.yaml
+  # Pipeline stages parse Pino JSON: level, msg, requestId, responseTime, route, statusCode
+  structuredLogging: true
+
+# WAF — nginx ModSecurity with OWASP CRS + custom rules
+waf:
+  enabled: false  # enable in production (requires nginx ingress with ModSecurity module)
+  owaspCoreRules: "true"
+  modsecuritySnippet: |
+    # See security/waf-rules.conf for full ruleset
+    SecRuleEngine On
+  # ipAllowlist: ["10.0.0.0/8", "172.16.0.0/12"]  # internal CIDRs only
+
+# External Secrets Operator — maps cloud secrets to K8s secrets
+# Requires ESO installed in cluster: https://external-secrets.io/
+externalSecrets:
+  enabled: false  # enable in production
+  refreshInterval: "1h"
+  storeName: "aws-secretsmanager"
+  secretPrefix: "/avatar-web/production"
+
+# Canary deployment — traffic splitting via nginx ingress
+canary:
+  enabled: false
+  replicas: 1
+  weight: 5  # % of traffic to canary
+  tag: ""     # override image tag for canary (defaults to image.tag)
+  # byHeader: "X-Canary"       # optional: route by header
+  # byHeaderValue: "always"    # optional: header value match
+
+priorityClass:
+  enabled: false  # enable in production to protect pods from eviction
+  value: 1000
+  description: "avatar-web application pods"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Multi-AZ topology spread — ensures pods are distributed across AZs for HA
+# Only effective with replicaCount >= 2 and multi-AZ cluster
+topologySpreadConstraints: []
+# Example for production:
+# - maxSkew: 1
+#   topologyKey: topology.kubernetes.io/zone
+#   whenUnsatisfiable: ScheduleAnyway
+#   labelSelector:
+#     matchLabels:
+#       app.kubernetes.io/name: avatar-web

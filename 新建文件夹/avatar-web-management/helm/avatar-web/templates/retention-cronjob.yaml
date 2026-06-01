@@ -1,0 +1,94 @@
+{{- if .Values.retention.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "avatar-web.fullname" . }}-data-retention
+  labels:
+    {{- include "avatar-web.labels" . | nindent 4 }}
+    app.kubernetes.io/component: retention
+spec:
+  schedule: {{ .Values.retention.schedule | default "0 4 * * 0" | quote }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: retention
+              image: postgres:16-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "[$(date)] Starting data retention cleanup..."
+
+                  # ── Pet session logs: retain 90 days ──
+                  SESSION_DELETED=$(psql "$DATABASE_URL" -t -c \
+                    "WITH deleted AS (
+                       DELETE FROM pet_session_logs
+                       WHERE start_time < NOW() - INTERVAL '{{ .Values.retention.sessionLogDays | default 90 }} days'
+                       RETURNING id
+                     ) SELECT count(*) FROM deleted;")
+                  echo "[$(date)] Purged $SESSION_DELETED pet session logs (>{{ .Values.retention.sessionLogDays | default 90 }}d)"
+
+                  # ── Audit logs: retain 365 days ──
+                  AUDIT_DELETED=$(psql "$DATABASE_URL" -t -c \
+                    "WITH deleted AS (
+                       DELETE FROM audit_logs
+                       WHERE created_at < NOW() - INTERVAL '{{ .Values.retention.auditLogDays | default 365 }} days'
+                       RETURNING id
+                     ) SELECT count(*) FROM deleted;")
+                  echo "[$(date)] Purged $AUDIT_DELETED audit logs (>{{ .Values.retention.auditLogDays | default 365 }}d)"
+
+                  # ── Refresh tokens: revoke expired (>30d past expiry) ──
+                  TOKEN_DELETED=$(psql "$DATABASE_URL" -t -c \
+                    "WITH deleted AS (
+                       DELETE FROM refresh_tokens
+                       WHERE expires_at < NOW() - INTERVAL '30 days'
+                       RETURNING id
+                     ) SELECT count(*) FROM deleted;")
+                  echo "[$(date)] Purged $TOKEN_DELETED expired refresh tokens"
+
+                  # ── Password reset tokens: remove used/expired (>7d) ──
+                  RESET_DELETED=$(psql "$DATABASE_URL" -t -c \
+                    "WITH deleted AS (
+                       DELETE FROM password_reset_tokens
+                       WHERE used = true OR expires_at < NOW() - INTERVAL '7 days'
+                       RETURNING id
+                     ) SELECT count(*) FROM deleted;")
+                  echo "[$(date)] Purged $RESET_DELETED stale password reset tokens"
+
+                  # ── Orphaned pet sessions: close sessions >24h without end_time ──
+                  ORPHANED=$(psql "$DATABASE_URL" -t -c \
+                    "WITH updated AS (
+                       UPDATE pet_session_logs
+                       SET end_time = start_time + INTERVAL '1 hour'
+                       WHERE end_time IS NULL AND start_time < NOW() - INTERVAL '24 hours'
+                       RETURNING id
+                     ) SELECT count(*) FROM updated;")
+                  echo "[$(date)] Closed $ORPHANED orphaned pet sessions (>24h no end)"
+
+                  echo "[$(date)] Retention cleanup complete."
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "avatar-web.fullname" . }}-db
+                      key: url
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              securityContext:
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 70
+{{- end }}

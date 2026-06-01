@@ -1,0 +1,89 @@
+{
+  "$id": "https://avatar-web.internal/schemas/pet-export.schema.json",
+  "title": "PetConfigExport",
+  "description": "Contract for GET /api/pet/export — consumed by Unity AstralFox client",
+  "type": "object",
+  "required": [
+    "version",
+    "petName",
+    "personality",
+    "backstory",
+    "animationModel",
+    "idleTimeout",
+    "wanderInterval",
+    "params",
+    "bodyParams",
+    "equippedParts",
+    "mappedAssets"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Export format version — increment on breaking changes"
+    },
+    "petName": { "type": "string", "minLength": 1 },
+    "personality": { "type": "string" },
+    "backstory": { "type": "string" },
+    "animationModel": {
+      "type": "string",
+      "enum": ["live2d", "dragonbones", "vrm"]
+    },
+    "ffmpegPath": { "type": "string" },
+    "idleTimeout": { "type": "number", "minimum": 0 },
+    "wanderInterval": { "type": "number", "minimum": 0 },
+    "avatarId": { "type": "string" },
+    "modelPath": { "type": "string" },
+    "params": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "value"],
+        "properties": {
+          "key": { "type": "string" },
+          "value": { "type": "number" }
+        }
+      }
+    },
+    "bodyParams": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "value"],
+        "properties": {
+          "key": { "type": "string" },
+          "value": { "type": "number" }
+        }
+      }
+    },
+    "equippedParts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slot", "part_id"],
+        "properties": {
+          "slot": { "type": "string" },
+          "part_id": { "type": "string" }
+        }
+      }
+    },
+    "materialOverrides": {
+      "type": "object"
+    },
+    "mappedAssets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slotName", "assetId", "assetType"],
+        "properties": {
+          "slotName": { "type": "string" },
+          "assetId": { "type": "string" },
+          "assetType": {
+            "type": "string",
+            "enum": ["model", "texture", "animation", "sound"]
+          }
+        }
+      }
+    }
+  }
+}

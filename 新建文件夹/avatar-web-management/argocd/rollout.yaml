@@ -1,0 +1,123 @@
+# Argo Rollouts — canary release with automated analysis
+# Requires Argo Rollouts installed in the cluster
+# Replaces the standard Deployment when canary.enabled=true
+# Apply: kubectl apply -f argocd/rollout.yaml
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: avatar-web
+  namespace: production
+  labels:
+    app.kubernetes.io/name: avatar-web
+spec:
+  replicas: 3
+  strategy:
+    canary:
+      # Canary steps: 5% → pause 2m → 20% → pause 5m → 50% → 100%
+      steps:
+        - setWeight: 5
+        - pause: { duration: 2m }
+        - setWeight: 20
+        - pause: { duration: 5m }
+        - setWeight: 50
+        - pause: { duration: 10m }
+      # Automated analysis during canary
+      analysis:
+        templates:
+          - templateName: avatar-web-canary-analysis
+        startingStep: 1  # begin analysis at 5% step
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: avatar-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: avatar-web
+    spec:
+      serviceAccountName: avatar-web
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: avatar-web
+      containers:
+        - name: avatar-web
+          image: ghcr.io/avatar-system/avatar-web:latest
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: avatar-web
+            - secretRef:
+                name: avatar-web
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 45
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi
+---
+# AnalysisTemplate — validates canary health before promotion
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: avatar-web-canary-analysis
+  namespace: production
+spec:
+  metrics:
+    # Canary error rate must be < 0.1%
+    - name: canary-error-rate
+      interval: 30s
+      count: 10  # 5 minutes of data
+      successCondition: result < 0.001
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring:9090
+          query: |
+            sum(rate(avatar_http_requests_total{status_code=~"5.."}[1m])) /
+            sum(rate(avatar_http_requests_total[1m]))
+
+    # Canary p95 latency must be < 500ms
+    - name: canary-p95-latency
+      interval: 30s
+      count: 10
+      successCondition: result < 0.5
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring:9090
+          query: |
+            histogram_quantile(0.95,
+              sum(rate(avatar_http_request_duration_seconds_bucket[1m])) by (le))
+
+    # Health endpoint must respond
+    - name: canary-health
+      interval: 15s
+      count: 4
+      successCondition: result == 1
+      provider:
+        web:
+          url: http://avatar-web-canary.production:3000/api/health
+          timeoutSeconds: 5
+          jsonPath: "{$.status}"
+
+  # Auto-rollback on failure: revert to stable, scale canary to 0
+  failureLimit: 2
+  # Minimum inconclusive runs before aborting
+  inconclusiveLimit: 3

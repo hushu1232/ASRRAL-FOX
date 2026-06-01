@@ -1,0 +1,158 @@
+# 生产环境 values 覆盖
+# helm install avatar-web ./helm/avatar-web -f ./helm/avatar-web/values.yaml -f ./helm/avatar-web/values-production.yaml
+
+replicaCount: 3
+
+image:
+  pullPolicy: Always
+  tag: ""
+
+environment: "production"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+
+probes:
+  liveness:
+    initialDelaySeconds: 45
+    periodSeconds: 20
+    failureThreshold: 5
+  readiness:
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    failureThreshold: 3
+
+persistence:
+  size: 50Gi
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  tls: true
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+  rateLimit:
+    enabled: true
+    rps: "30"
+    burstMultiplier: "5"
+    rateAfter: "10"
+
+config:
+  pgPoolMax: "30"
+  # 生产环境中通过 ExternalSecret 或 sealed-secrets 注入敏感信息
+  # redisHost: redis.prod.svc.cluster.local
+  # otelEndpoint: http://otel-collector.observability:4318
+  # sentryDsn: https://xxx@sentry.example.com/123
+
+securityContext:
+  readOnlyRootFilesystem: true
+
+podSecurityContext:
+  fsGroup: 1001
+  runAsNonRoot: true
+  runAsUser: 1001
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/api/metrics"
+  prometheus.io/port: "3000"
+
+# Multi-AZ topology — spread pods across zones and nodes for HA
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: avatar-web
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: avatar-web
+
+priorityClass:
+  enabled: true
+  value: 1000
+  description: "avatar-web production pods — high priority to resist eviction"
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - avatar-web
+          topologyKey: kubernetes.io/hostname
+
+# Automated database backup (pg_dump → S3/MinIO)
+backup:
+  enabled: true
+  schedule: "0 3 * * *"
+  retentionDays: 30
+  s3Endpoint: "https://minio.storage.svc.cluster.local"
+  s3Bucket: "avatar-backups"
+  s3SecretName: "avatar-backup-s3"
+
+retention:
+  enabled: true
+  schedule: "0 4 * * 0"  # weekly Sunday 04:00 UTC
+  sessionLogDays: 90
+  auditLogDays: 365
+
+logging:
+  loki:
+    host: loki.monitoring.svc.cluster.local
+    port: "3100"
+  structuredLogging: true
+
+externalSecrets:
+  enabled: true
+  refreshInterval: "1h"
+  storeName: "aws-secretsmanager"
+  secretPrefix: "/avatar-web/production"
+
+waf:
+  enabled: true
+  owaspCoreRules: "true"
+  modsecuritySnippet: |
+    SecRuleEngine On
+    SecRule REQUEST_URI "^/api/health$" "id:10001,phase:1,pass,nolog,ctl:ruleEngine=Off"
+    SecRule REQUEST_URI "^/api/metrics$" "id:10002,phase:1,pass,nolog,ctl:ruleEngine=Off"
+    SecRule REQUEST_URI "@contains .env" "id:10100,phase:1,deny,status:403"
+    SecRule REQUEST_URI "@contains /.git/" "id:10105,phase:1,deny,status:403"
+    SecRule REQUEST_URI "@contains /node_modules/" "id:10108,phase:1,deny,status:403"
+    SecRule REQUEST_URI "@contains /actuator" "id:10109,phase:1,deny,status:403"
+    SecRule REQUEST_URI "^/api/admin/" "id:10200,phase:1,pass,setvar:ip.admin_hit=+1,expirevar:ip.admin_hit=60"
+    SecRule IP:ADMIN_HIT "@gt 30" "id:10201,phase:1,deny,status:429"
+    SecRule REQUEST_BODY_LENGTH "@gt 104857600" "id:10400,phase:1,deny,status:413"
+    SecRule REQUEST_METHOD "!@rx ^(GET|HEAD|POST|PUT|DELETE|PATCH|OPTIONS)$" "id:10500,phase:1,deny,status:405"
+    SecRule REQUEST_HEADERS:User-Agent "@rx (?i)(sqlmap|nikto|nmap|masscan|burpsuite)" "id:10701,phase:2,deny,status:403"
+  ipAllowlist:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+
+canary:
+  enabled: true
+  replicas: 1
+  weight: 5
+  tag: ""

@@ -1,0 +1,23 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "cattail.moc3",
+		"Textures": [
+			"cattail.1024/texture_00.png"
+		],
+		"Physics": "cattail.physics3.json",
+		"DisplayInfo": "cattail.cdi3.json"
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": []
+		}
+	]
+}

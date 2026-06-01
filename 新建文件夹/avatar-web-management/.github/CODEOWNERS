@@ -1,0 +1,18 @@
+# Code Owners — automatically requested for review on PRs
+# Last match wins, so put more specific rules last
+
+# Global owners
+* @hushu
+
+# Auth & Security
+src/lib/auth/         @hushu
+src/app/api/auth/     @hushu
+
+# Database schema
+database/             @hushu
+src/lib/db/           @hushu
+
+# CI / Infrastructure
+.github/              @hushu
+Dockerfile            @hushu
+docker-compose.yml    @hushu

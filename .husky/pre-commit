@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+
+# Pre-commit hook: lint + format + type-check staged files in avatar-web-management
+# Only runs when there are staged changes in the project directory.
+
+PROJECT_DIR="新建文件夹/avatar-web-management"
+
+# Check if any staged files are in the project directory
+if ! git diff --cached --name-only | grep -q "^$PROJECT_DIR/"; then
+  exit 0
+fi
+
+cd "$PROJECT_DIR" || exit 1
+
+# Run lint-staged (prettier + eslint on staged files)
+npx lint-staged
+
+# Full type check (must pass before commit)
+npx tsc --noEmit

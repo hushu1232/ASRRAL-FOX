@@ -1,0 +1,161 @@
+[
+  {
+    "id": "hair-1",
+    "name": "长发飘逸",
+    "category": "hair",
+    "slot": "Head",
+    "gender": "female",
+    "style_tags": [
+      "anime",
+      "korean"
+    ],
+    "prefab_url": "/models/parts/hair-长发飘逸.glb"
+  },
+  {
+    "id": "hair-2",
+    "name": "短发干练",
+    "category": "hair",
+    "slot": "Head",
+    "gender": "unisex",
+    "style_tags": [
+      "realistic",
+      "western"
+    ],
+    "prefab_url": "/models/parts/hair-短发干练.glb"
+  },
+  {
+    "id": "hair-3",
+    "name": "双马尾",
+    "category": "hair",
+    "slot": "Head",
+    "gender": "female",
+    "style_tags": [
+      "anime",
+      "chibi"
+    ],
+    "prefab_url": "/models/parts/hair-双马尾.glb"
+  },
+  {
+    "id": "top-1",
+    "name": "T恤",
+    "category": "top",
+    "slot": "Spine2",
+    "gender": "unisex",
+    "style_tags": [
+      "anime",
+      "realistic"
+    ],
+    "prefab_url": "/models/parts/top-t恤.glb"
+  },
+  {
+    "id": "top-2",
+    "name": "西装外套",
+    "category": "top",
+    "slot": "Spine2",
+    "gender": "unisex",
+    "style_tags": [
+      "realistic",
+      "western"
+    ],
+    "prefab_url": "/models/parts/top-西装外套.glb"
+  },
+  {
+    "id": "bottom-1",
+    "name": "短裙",
+    "category": "bottom",
+    "slot": "Hips",
+    "gender": "female",
+    "style_tags": [
+      "anime",
+      "korean"
+    ],
+    "prefab_url": "/models/parts/bottom-短裙.glb"
+  },
+  {
+    "id": "bottom-2",
+    "name": "长裤",
+    "category": "bottom",
+    "slot": "Hips",
+    "gender": "unisex",
+    "style_tags": [
+      "realistic",
+      "western"
+    ],
+    "prefab_url": "/models/parts/bottom-长裤.glb"
+  },
+  {
+    "id": "shoe-1",
+    "name": "运动鞋",
+    "category": "shoes",
+    "slot": "RightFoot",
+    "gender": "unisex",
+    "style_tags": [
+      "realistic",
+      "western"
+    ],
+    "prefab_url": "/models/parts/shoes-运动鞋.glb"
+  },
+  {
+    "id": "shoe-2",
+    "name": "高跟鞋",
+    "category": "shoes",
+    "slot": "RightFoot",
+    "gender": "female",
+    "style_tags": [
+      "anime",
+      "korean",
+      "western"
+    ],
+    "prefab_url": "/models/parts/shoes-高跟鞋.glb"
+  },
+  {
+    "id": "acc-1",
+    "name": "圆框眼镜",
+    "category": "accessory",
+    "slot": "Head",
+    "gender": "unisex",
+    "style_tags": [
+      "anime",
+      "realistic",
+      "korean"
+    ],
+    "prefab_url": "/models/parts/accessory-圆框眼镜.glb"
+  },
+  {
+    "id": "acc-2",
+    "name": "星星发饰",
+    "category": "accessory",
+    "slot": "Head",
+    "gender": "female",
+    "style_tags": [
+      "anime",
+      "chibi"
+    ],
+    "prefab_url": "/models/parts/accessory-星星发饰.glb"
+  },
+  {
+    "id": "acc-3",
+    "name": "鸭舌帽",
+    "category": "accessory",
+    "slot": "Head",
+    "gender": "unisex",
+    "style_tags": [
+      "realistic",
+      "western"
+    ],
+    "prefab_url": "/models/parts/accessory-鸭舌帽.glb"
+  },
+  {
+    "id": "acc-4",
+    "name": "项链",
+    "category": "accessory",
+    "slot": "Neck",
+    "gender": "unisex",
+    "style_tags": [
+      "realistic",
+      "korean",
+      "western"
+    ],
+    "prefab_url": "/models/parts/accessory-项链.glb"
+  }
+]

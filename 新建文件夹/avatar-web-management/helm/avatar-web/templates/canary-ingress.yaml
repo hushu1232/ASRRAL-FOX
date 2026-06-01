@@ -1,0 +1,33 @@
+{{- if and .Values.ingress.enabled .Values.canary.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "avatar-web.fullname" . }}-canary
+  labels:
+    {{- include "avatar-web.labels" . | nindent 4 }}
+    app.kubernetes.io/component: canary
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: {{ .Values.canary.weight | default 5 | quote }}
+    {{- if .Values.canary.byHeader }}
+    nginx.ingress.kubernetes.io/canary-by-header: {{ .Values.canary.byHeader }}
+    {{- end }}
+    {{- if .Values.canary.byHeaderValue }}
+    nginx.ingress.kubernetes.io/canary-by-header-value: {{ .Values.canary.byHeaderValue }}
+    {{- end }}
+spec:
+  {{- if .Values.ingress.ingressClassName }}
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "avatar-web.fullname" . }}-canary
+                port:
+                  name: http
+{{- end }}

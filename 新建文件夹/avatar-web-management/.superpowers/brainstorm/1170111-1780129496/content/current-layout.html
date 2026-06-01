@@ -1,0 +1,110 @@
+<h2>当前前端布局总览 &mdash; AstralFox Market</h2>
+<p class="subtitle">基于 architecture-blueprint.md + 组件树分析。参考 react-admin 优化方向。</p>
+
+<div class="section">
+  <h3>当前页面结构</h3>
+  <div class="mockup">
+    <div class="mockup-header">AppLayout = Sidebar + Header + Content（所有认证页面）</div>
+    <div class="mockup-body" style="display:flex; gap:0; min-height:420px; background:#09090F; border-radius:8px; overflow:hidden;">
+      <div style="width:210px; background:linear-gradient(180deg,#0d0d24,#12122a); border-right:1px solid rgba(139,92,246,0.12); padding:16px 12px; flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(139,92,246,0.1);">
+          <div style="width:24px;height:24px;background:#6d5df0;border-radius:6px;"></div>
+          <span style="color:white;font-size:12px;font-weight:700;">AstralFox</span>
+        </div>
+        <div style="background:linear-gradient(90deg,#7c3aed,#2563eb);border-radius:6px;padding:6px 10px;margin-bottom:12px;text-align:center;color:white;font-size:11px;">+ 新建头像</div>
+        <div class="mock-nav" style="flex-direction:column;gap:2px;font-size:10px;color:#78716c;background:none;border:none;margin-bottom:0;">
+          <div style="padding:6px 8px;border-radius:4px;background:rgba(109,93,240,0.1);color:#a78bfa;">仪表盘</div>
+          <div style="padding:6px 8px;">🦊 桌面宠</div>
+          <div style="padding:6px 8px;">🖼 头像管理</div>
+          <div style="padding:6px 8px;">📁 资产管理</div>
+          <div style="padding:6px 8px;">🛒 市场</div>
+          <div style="padding:6px 8px;">👥 社区</div>
+          <div style="padding:6px 8px;">🔔 通知</div>
+          <div style="padding:6px 8px;">💬 消息</div>
+          <div style="margin-top:8px;border-top:1px solid rgba(139,92,246,0.12);padding-top:8px;"></div>
+          <div style="padding:6px 8px;">⚙ 设置</div>
+          <div style="padding:6px 8px;">🛡 管理</div>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;">
+        <div style="height:56px;background:rgba(9,9,15,0.8);backdrop-filter:blur(12px);border-bottom:1px solid rgba(139,92,246,0.1);display:flex;align-items:center;justify-content:space-between;padding:0 20px;">
+          <div style="width:280px;height:32px;background:#12122A;border:1px solid rgba(139,92,246,0.1);border-radius:6px;display:flex;align-items:center;padding:0 12px;color:#5e5e7a;font-size:11px;">🔍 搜索 (Ctrl+K)</div>
+          <div style="display:flex;align-items:center;gap:16px;">
+            <span style="color:#aaa;font-size:14px;">🔔</span>
+            <div style="width:28px;height:28px;background:#6d5df0;border-radius:50%;"></div>
+          </div>
+        </div>
+        <div style="flex:1;padding:24px 32px;display:flex;flex-direction:column;gap:20px;">
+          <div style="color:white;font-weight:700;font-size:18px;">仪表盘</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+            <div class="placeholder" style="height:80px;">总头像</div>
+            <div class="placeholder" style="height:80px;">本月创建</div>
+            <div class="placeholder" style="height:80px;">审核中</div>
+            <div class="placeholder" style="height:80px;">存储</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div class="placeholder" style="height:200px;">创建趋势图</div>
+            <div class="placeholder" style="height:200px;">部件使用图</div>
+          </div>
+          <div class="placeholder" style="height:180px;">最近头像表格</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>React-Admin 启发的优化方向</h3>
+  <div class="split">
+    <div class="mockup" style="flex:1;">
+      <div class="mockup-header">🟢 已有优势（保持）</div>
+      <div class="mockup-body">
+        <ul style="list-style:none;padding:0;color:#a8a29e;font-size:13px;">
+          <li style="padding:4px 0;">✅ Ant Design 组件体系成熟</li>
+          <li style="padding:4px 0;">✅ 可折叠侧边栏 + 键盘快捷键</li>
+          <li style="padding:4px 0;">✅ 全局搜索 (⌘K)</li>
+          <li style="padding:4px 0;">✅ 通知中心下拉面板</li>
+          <li style="padding:4px 0;">✅ Error Boundary 降级</li>
+          <li style="padding:4px 0;">✅ 路由预取 (prefetch)</li>
+          <li style="padding:4px 0;">✅ Storybook + Playwright</li>
+        </ul>
+      </div>
+    </div>
+    <div class="mockup" style="flex:1;">
+      <div class="mockup-header">🟡 React-Admin 可借鉴</div>
+      <div class="mockup-body">
+        <ul style="list-style:none;padding:0;color:#a8a29e;font-size:13px;">
+          <li style="padding:4px 0;">📋 <strong>数据驱动CRUD视图</strong> — List/Edit/Create/Show 统一模式</li>
+          <li style="padding:4px 0;">🏗 <strong>AppBar + Menu 分离</strong> — 更清晰的布局层级</li>
+          <li style="padding:4px 0;">🔍 <strong>筛选器 + 排序器系统</strong> — 市场/头像列表增强</li>
+          <li style="padding:4px 0;">🎨 <strong>主题引擎</strong> — 浅色/深色无缝切换</li>
+          <li style="padding:4px 0;">♿ <strong>WAI-ARIA 完整覆盖</strong> — 键盘导航 & 焦点管理</li>
+          <li style="padding:4px 0;">⚡ <strong>乐观更新 & 变更追踪</strong> — 提升感知速度</li>
+          <li style="padding:4px 0;">🧩 <strong>Dashboard 小部件系统</strong> — 可配置仪表盘</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>优化优先级矩阵</h3>
+  <table style="width:100%;border-collapse:collapse;color:var(--ds-colors-text-primary);font-size:13px;">
+    <thead><tr style="background:var(--ds-colors-bg-cardHover);">
+      <th style="padding:8px 12px;text-align:left;">优先级</th>
+      <th style="padding:8px 12px;text-align:left;">方向</th>
+      <th style="padding:8px 12px;text-align:left;">具体改进</th>
+      <th style="padding:8px 12px;text-align:left;">影响面</th>
+    </tr></thead>
+    <tbody>
+      <tr><td style="padding:8px 12px;color:#dc2626;">P0</td><td style="padding:8px 12px;">🔒 安全</td><td style="padding:8px 12px;">XSS预防增强、输入消毒、Content-Security-Policy 审计</td><td style="padding:8px 12px;color:var(--ds-colors-text-muted);">全局</td></tr>
+      <tr><td style="padding:8px 12px;color:#dc2626;">P0</td><td style="padding:8px 12px;">♿ 可访问</td><td style="padding:8px 12px;">Skip link、焦点陷阱、aria-live区域、语义HTML增强</td><td style="padding:8px 12px;color:var(--ds-colors-text-muted);">所有页面</td></tr>
+      <tr><td style="padding:8px 12px;color:#d97706;">P1</td><td style="padding:8px 12px;">📱 响应式</td><td style="padding:8px 12px;">断点系统统一、侧栏Drawer化、表格横向滚动</td><td style="padding:8px 12px;color:var(--ds-colors-text-muted);">布局组件</td></tr>
+      <tr><td style="padding:8px 12px;color:#d97706;">P1</td><td style="padding:8px 12px;">⚡ 性能</td><td style="padding:8px 12px;">代码分割、图片懒加载、SSR优先、缓存策略</td><td style="padding:8px 12px;color:var(--ds-colors-text-muted);">全局</td></tr>
+      <tr><td style="padding:8px 12px;color:#2563eb;">P2</td><td style="padding:8px 12px;">🧩 布局</td><td style="padding:8px 12px;">数据驱动CRUD模式、筛选器系统、空状态规范</td><td style="padding:8px 12px;color:var(--ds-colors-text-muted);">列表页</td></tr>
+      <tr><td style="padding:8px 12px;color:#2563eb;">P2</td><td style="padding:8px 12px;">🧪 可测试</td><td style="padding:8px 12px;">组件契约测试、视觉回归、E2E覆盖扩展</td><td style="padding:8px 12px;color:var(--ds-colors-text-muted);">测试套件</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<p class="subtitle" style="margin-top:24px;">👆 在浏览器中查看当前布局结构和优化方向，然后回到终端讨论优先级。</p>

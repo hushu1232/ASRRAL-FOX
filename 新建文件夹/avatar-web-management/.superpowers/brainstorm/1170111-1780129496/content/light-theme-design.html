@@ -1,0 +1,168 @@
+<h2>方案 C 更新 — 简洁白底设计风格</h2>
+<p class="subtitle">从硬编码深色 → CSS 变量驱动 → 简洁白底暖调主视觉</p>
+
+<div class="section">
+  <h3>配色对比：现状 vs 目标</h3>
+  <div class="split">
+    <div class="mockup" style="flex:1;">
+      <div class="mockup-header">❌ 现状：硬编码深色</div>
+      <div class="mockup-body" style="font-size:11px;font-family:monospace;line-height:1.6;">
+<pre style="color:#e2e8f0;margin:0;background:#1a1a2e;padding:12px;border-radius:6px;">
+// AppLayout.tsx
+background: '#09090F'
+
+// Header.tsx
+background: 'rgba(9, 9, 15, 0.8)'
+backdropFilter: 'blur(12px)'
+
+// Sidebar.tsx
+background: 'linear-gradient(
+  180deg, #0d0d24 0%,
+  #12122a 100%)'
+
+// SearchModal.tsx
+background: '#12122A'
+border: '... rgba(109,93,240,0.1)'
+
+// 所有文本: text-white / text-gray-400
+// 17处硬编码深色值
+</pre>
+      </div>
+    </div>
+    <div class="mockup" style="flex:1;">
+      <div class="mockup-header">✅ 目标：CSS 变量 + 白底</div>
+      <div class="mockup-body" style="font-size:11px;font-family:monospace;line-height:1.6;">
+<pre style="color:#1c1917;margin:0;background:#faf7f2;padding:12px;border-radius:6px;border:1px solid rgba(0,0,0,0.06);">
+// 统一使用 CSS 变量
+// 这些变量已在 globals.css 定义
+
+background: var(--bg-deep)
+// → #faf7f2 (温暖米白)
+
+background: var(--bg-card)
+// → #ffffff (纯白卡片)
+
+color: var(--text-primary)
+// → #1c1917 (暖黑)
+
+color: var(--text-secondary)
+// → #78716c (暖灰)
+
+border: var(--border-subtle)
+// → rgba(0,0,0,0.06)
+
+accent: var(--accent)
+// → #d97706 (温暖琥珀)
+</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>白底布局效果预览</h3>
+  <div class="mockup">
+    <div class="mockup-header">AppLayout — 白底暖调风格</div>
+    <div class="mockup-body" style="display:flex;gap:0;min-height:420px;background:#faf7f2;border-radius:8px;overflow:hidden;">
+      <!-- Sidebar - light -->
+      <div style="width:210px;background:#ffffff;border-right:1px solid rgba(0,0,0,0.06);padding:16px 12px;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(0,0,0,0.06);">
+          <div style="width:24px;height:24px;background:linear-gradient(135deg,#d97706,#f59e0b);border-radius:6px;"></div>
+          <span style="color:#1c1917;font-size:12px;font-weight:700;">AstralFox</span>
+        </div>
+        <div style="background:linear-gradient(90deg,#d97706,#f59e0b);border-radius:6px;padding:6px 10px;margin-bottom:12px;text-align:center;color:white;font-size:11px;">+ 新建头像</div>
+        <div style="display:flex;flex-direction:column;gap:2px;font-size:10px;color:#78716c;">
+          <div style="padding:6px 8px;border-radius:4px;background:rgba(217,119,6,0.08);color:#d97706;">📊 仪表盘</div>
+          <div style="padding:6px 8px;">🦊 桌面宠</div>
+          <div style="padding:6px 8px;">🖼 头像管理</div>
+          <div style="padding:6px 8px;">📁 资产管理</div>
+          <div style="padding:6px 8px;">🛒 市场</div>
+          <div style="padding:6px 8px;">👥 社区</div>
+          <div style="margin-top:8px;border-top:1px solid rgba(0,0,0,0.06);padding-top:8px;"></div>
+          <div style="padding:6px 8px;">⚙ 设置</div>
+        </div>
+      </div>
+      <!-- Main content -->
+      <div style="flex:1;display:flex;flex-direction:column;">
+        <!-- Header -->
+        <div style="height:56px;background:#ffffff;border-bottom:1px solid rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:space-between;padding:0 20px;">
+          <div style="width:280px;height:32px;background:#f5f0e8;border:1px solid rgba(0,0,0,0.06);border-radius:6px;display:flex;align-items:center;padding:0 12px;color:#a8a29e;font-size:11px;">🔍 搜索 (Ctrl+K)</div>
+          <div style="display:flex;align-items:center;gap:16px;">
+            <span style="color:#78716c;font-size:14px;">🔔</span>
+            <div style="width:28px;height:28px;background:linear-gradient(135deg,#d97706,#f59e0b);border-radius:50%;"></div>
+          </div>
+        </div>
+        <!-- Content -->
+        <div style="flex:1;padding:24px 32px;display:flex;flex-direction:column;gap:20px;">
+          <div style="color:#1c1917;font-weight:700;font-size:18px;">仪表盘</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+            <div style="background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:8px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+              <div style="font-size:11px;color:#78716c;">总头像</div>
+              <div style="font-size:24px;font-weight:700;color:#1c1917;margin-top:4px;">42</div>
+            </div>
+            <div style="background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:8px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+              <div style="font-size:11px;color:#78716c;">本月创建</div>
+              <div style="font-size:24px;font-weight:700;color:#1c1917;margin-top:4px;">12</div>
+            </div>
+            <div style="background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:8px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+              <div style="font-size:11px;color:#78716c;">审核中</div>
+              <div style="font-size:24px;font-weight:700;color:#d97706;margin-top:4px;">3</div>
+            </div>
+            <div style="background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:8px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+              <div style="font-size:11px;color:#78716c;">存储</div>
+              <div style="font-size:24px;font-weight:700;color:#1c1917;margin-top:4px;">2.4GB</div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div style="background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:8px;padding:16px;height:200px;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:12px;">📈 创建趋势图</div>
+            <div style="background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:8px;padding:16px;height:200px;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:12px;">📊 部件使用图</div>
+          </div>
+          <div style="background:#ffffff;border:1px solid rgba(0,0,0,0.06);border-radius:8px;padding:16px;height:160px;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:12px;">📋 最近头像表格</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>设计令牌对照表</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:var(--ds-colors-bg-cardHover);text-align:left;">
+      <th style="padding:8px 12px;">用途</th>
+      <th style="padding:8px 12px;">旧（硬编码）</th>
+      <th style="padding:8px 12px;">新（CSS 变量）</th>
+      <th style="padding:8px 12px;">实际色值</th>
+    </tr></thead>
+    <tbody>
+      <tr><td style="padding:8px 12px;">页面背景</td><td style="padding:8px 12px;font-family:monospace;">#09090F</td><td style="padding:8px 12px;font-family:monospace;">var(--bg-deep)</td><td style="padding:8px 12px;"><span style="display:inline-block;width:16px;height:16px;background:#faf7f2;border:1px solid #ddd;border-radius:3px;vertical-align:middle;"></span> #faf7f2</td></tr>
+      <tr><td style="padding:8px 12px;">卡片/侧栏/表头</td><td style="padding:8px 12px;font-family:monospace;">#12122A</td><td style="padding:8px 12px;font-family:monospace;">var(--bg-card)</td><td style="padding:8px 12px;"><span style="display:inline-block;width:16px;height:16px;background:#ffffff;border:1px solid #ddd;border-radius:3px;vertical-align:middle;"></span> #ffffff</td></tr>
+      <tr><td style="padding:8px 12px;">卡片悬停</td><td style="padding:8px 12px;font-family:monospace;">rgba(109,93,240,0.05)</td><td style="padding:8px 12px;font-family:monospace;">var(--bg-card-hover)</td><td style="padding:8px 12px;"><span style="display:inline-block;width:16px;height:16px;background:#f5f0e8;border:1px solid #ddd;border-radius:3px;vertical-align:middle;"></span> #f5f0e8</td></tr>
+      <tr><td style="padding:8px 12px;">主文字</td><td style="padding:8px 12px;font-family:monospace;">white / #e2e8f0</td><td style="padding:8px 12px;font-family:monospace;">var(--text-primary)</td><td style="padding:8px 12px;"><span style="display:inline-block;width:16px;height:16px;background:#1c1917;border-radius:3px;vertical-align:middle;"></span> #1c1917</td></tr>
+      <tr><td style="padding:8px 12px;">次要文字</td><td style="padding:8px 12px;font-family:monospace;">#a8a29e</td><td style="padding:8px 12px;font-family:monospace;">var(--text-secondary)</td><td style="padding:8px 12px;"><span style="display:inline-block;width:16px;height:16px;background:#78716c;border-radius:3px;vertical-align:middle;"></span> #78716c</td></tr>
+      <tr><td style="padding:8px 12px;">主色调</td><td style="padding:8px 12px;font-family:monospace;">#6d5df0 (紫)</td><td style="padding:8px 12px;font-family:monospace;">var(--accent)</td><td style="padding:8px 12px;"><span style="display:inline-block;width:16px;height:16px;background:#d97706;border-radius:3px;vertical-align:middle;"></span> #d97706 (暖琥珀)</td></tr>
+      <tr><td style="padding:8px 12px;">边框</td><td style="padding:8px 12px;font-family:monospace;">rgba(139,92,246,0.1)</td><td style="padding:8px 12px;font-family:monospace;">var(--border-subtle)</td><td style="padding:8px 12px;">rgba(0,0,0,0.06)</td></tr>
+      <tr><td style="padding:8px 12px;">阴影</td><td style="padding:8px 12px;font-family:monospace;">none / 无</td><td style="padding:8px 12px;font-family:monospace;">var(--shadow-card)</td><td style="padding:8px 12px;">0 1px 2px + 0 4px 16px rgba(0,0,0,0.04)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h3>改造策略</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-size:12px;color:var(--ds-colors-text-secondary);line-height:1.7;">
+      <strong>核心原则：</strong>把 17 处硬编码深色值替换为已有的 CSS 变量，激活 globals.css 中已定义的浅色令牌体系。<br/><br/>
+      <strong>具体动作：</strong>
+      <ol>
+        <li><code>globals.css</code> — 已完备，无需改动（antd 覆盖规则已使用 var()）</li>
+        <li><code>AppLayout.tsx</code> — 移除 <code>style={{ background: '#09090F' }}</code>，改用 CSS class</li>
+        <li><code>Header.tsx</code> — 移除 <code>background: 'rgba(9,9,15,0.8)'</code>，使用 <code>bg-card</code> class</li>
+        <li><code>Sidebar.tsx</code> — 移除渐变硬编码，使用 <code>bg-card</code> + <code>border-subtle</code></li>
+        <li><code>SearchModal.tsx</code> — 移除 <code>#12122A</code> 背景，使用 <code>bg-card</code></li>
+        <li><code>NotificationDropdown.tsx</code> — 同上，移除硬编码深色</li>
+        <li>通用：所有 <code>text-white</code> → <code>text-primary</code>，所有 <code>text-gray-*</code> → <code>text-secondary</code></li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px;">👆 白底暖调设计方案。配色从紫黑 → 白底暖琥珀，变量化驱动。是否符合你想要的简洁风格？</p>

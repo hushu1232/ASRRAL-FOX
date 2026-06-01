@@ -1,0 +1,78 @@
+# Loki Ruler — log-based alerting rules for avatar-web
+# Applied via Loki ruler config or Grafana Loki alerting
+# Reference: https://grafana.com/docs/loki/latest/alert/
+
+groups:
+  - name: avatar-web-logs-errors
+    rules:
+      # ── High error log rate ────────────────────────────────
+      - alert: HighErrorLogRate
+        expr: |
+          sum(rate({service="avatar-web", level="error"} |= "" [5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "Elevated error log rate: {{ $value }} errors/s"
+          description: >
+            Error log rate exceeded 0.5/s over 5 minutes.
+            Check Grafana Loki dashboard for {{ .labels.route }} error details.
+
+      # ── Rate limit surge ───────────────────────────────────
+      - alert: RateLimitSurge
+        expr: |
+          sum(rate({service="avatar-web"} |= "rate_limit" [5m])) > 5
+        for: 3m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "Rate limit hits surging: {{ $value }}/s"
+          description: >
+            Rate-limited requests spiking — possible abuse or misconfigured client.
+            Review affected IPs in access logs.
+
+      # ── Authentication failures ────────────────────────────
+      - alert: AuthFailureSpike
+        expr: |
+          sum(rate({service="avatar-web"} |= "auth_failed" [10m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "Auth failure spike: {{ $value }}/s"
+          description: >
+            Elevated authentication failures. Check for credential stuffing
+            or expired API keys.
+
+      # ── Critical error in last 5m ──────────────────────────
+      - alert: CriticalErrorDetected
+        expr: |
+          count_over_time({service="avatar-web", level="error"} |= "critical"[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "Critical error logged: {{ .Labels.msg }}"
+          description: >
+            A critical-level error was logged: {{ .Labels.msg }}
+            Trace ID: {{ .Labels.traceId }}
+            Request ID: {{ .Labels.requestId }}
+
+      # ── No application logs (service may be down) ──────────
+      - alert: NoAppLogs
+        expr: |
+          sum(rate({service="avatar-web"} [5m])) == 0
+        for: 10m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "No application logs for 10 minutes"
+          description: >
+            Zero log lines from avatar-web in the last 10 minutes.
+            The service may be down or log shipping may be broken.
+            Check pod status and Promtail DaemonSet health.
