@@ -43,5 +43,8 @@ venv/
 # --- Node ---
 node_modules/
 
+# --- Generated Audio (TTS/SFX, keep local only) ---
+**/Sounds/Elysia/*.wav
+
 # --- Editor extensions (generated) ---
 .codely-cli/
