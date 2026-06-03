@@ -7,10 +7,11 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
-import NotificationDropdown from './NotificationDropdown';
-import SearchModal from './SearchModal';
-import BreadcrumbNav from './BreadcrumbNav';
+import NotificationDropdown from '@/components/layout/NotificationDropdown';
+import SearchModal from '@/components/layout/SearchModal';
+import BreadcrumbNav from '@/components/layout/BreadcrumbNav';
 import ThemeToggle from '@/components/ui/ThemeToggle';
+import './style.scss';
 
 export default function Header() {
   const th = useTranslations('layout.header');
@@ -43,29 +44,24 @@ export default function Header() {
   ];
 
   return (
-    <div className="flex items-center justify-between h-16 px-6" style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border-subtle)' }}>
-      <div className="flex items-center gap-4 flex-1 max-w-md">
+    <header className="header">
+      <div className="header__left">
         {isMobile && (
           <Button
             type="text"
             icon={<MenuOutlined />}
             onClick={() => setMobileMenuOpen(true)}
             aria-label={th('menu')}
-            style={{ color: 'var(--text-primary)' }}
+            className="header__mobile-toggle"
           />
         )}
-        <div className="hidden md:block">
+        <div className="header__breadcrumb">
           <BreadcrumbNav />
         </div>
         <Input
           prefix={<SearchOutlined style={{ color: 'var(--text-muted)' }} />}
           placeholder={`${th('search')} (Ctrl+K)`}
-          style={{
-            background: 'var(--bg-card-hover)',
-            borderColor: 'var(--border-subtle)',
-            color: 'var(--text-primary)',
-          }}
-          className="hover:border-[var(--border-subtle)]"
+          className="header__search"
           onClick={() => setSearchOpen(true)}
           onKeyDown={(e) => { if (e.key === 'Enter') setSearchOpen(true); }}
           readOnly
@@ -75,32 +71,32 @@ export default function Header() {
         <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
       </div>
 
-      <Space size="middle">
+      <div className="header__right">
         {isAuthenticated ? (
           <>
             <NotificationDropdown />
             <ThemeToggle />
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-              <div className="flex items-center gap-2 cursor-pointer" role="button" tabIndex={0} aria-label={th('profile')}>
+              <div className="header__user-trigger" role="button" tabIndex={0} aria-label={th('profile')}>
                 <Avatar size="small" src={user?.avatar_url} icon={<UserOutlined />} style={{ backgroundColor: '#d97706' }}>
                   {!user?.avatar_url && (user?.username || user?.email || '?')[0]?.toUpperCase()}
                 </Avatar>
-                <span className="text-sm hidden sm:inline" style={{ color: 'var(--text-primary)' }}>{user?.username || user?.email}</span>
+                <span className="header__username">{user?.username || user?.email}</span>
               </div>
             </Dropdown>
           </>
         ) : (
-          <Space size="small">
+          <div className="header__guest-actions">
             <ThemeToggle />
-            <Button type="primary" size="small" onClick={() => router.push('/login')}>
+            <Button type="primary" size="small" className="header__login-btn" onClick={() => router.push('/login')}>
               {th('login') || 'Login'}
             </Button>
-            <Button size="small" onClick={() => router.push('/register')} style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}>
+            <Button size="small" className="header__register-btn" onClick={() => router.push('/register')}>
               {th('register') || 'Register'}
             </Button>
-          </Space>
+          </div>
         )}
-      </Space>
-    </div>
+      </div>
+    </header>
   );
 }

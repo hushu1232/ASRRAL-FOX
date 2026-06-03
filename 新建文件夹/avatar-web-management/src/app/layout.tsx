@@ -6,7 +6,8 @@ import Script from 'next/script';
 import ThemeProvider from '@/components/providers/ThemeProvider';
 import PerformanceMonitor from '@/components/monitoring/PerformanceMonitor';
 import CookieConsent from '@/components/common/CookieConsent';
-import './globals.css';
+import '@/styles/global.scss';
+import './globals.css'; // keep existing CSS variables + Tailwind utility fallback during transition
 
 const geist = Geist({
   subsets: ['latin'],

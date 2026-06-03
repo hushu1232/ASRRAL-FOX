@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Layout, Menu, Button, Drawer } from 'antd';
+import { Menu, Button, Drawer } from 'antd';
 import {
-  DashboardOutlined, UserOutlined, PictureOutlined, FolderOutlined,
+  DashboardOutlined, PictureOutlined, FolderOutlined,
   ShopOutlined, SettingOutlined, SafetyOutlined, ApiOutlined, DollarOutlined,
   QuestionCircleOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
   PlusOutlined, RobotOutlined, ShoppingCartOutlined, BellOutlined,
@@ -15,8 +15,7 @@ import { useTranslations } from 'next-intl';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { sidebarEnter } from '@/lib/motion';
-
-const { Sider } = Layout;
+import './style.scss';
 
 export default function Sidebar() {
   const t = useTranslations('layout.sidebar');
@@ -47,11 +46,10 @@ export default function Sidebar() {
     { key: '/help', icon: <QuestionCircleOutlined />, label: t('help') },
   ];
 
-  // Guest mode: only show public-browsing items
   const GUEST_ALLOWED = ['/marketplace', '/community', '/avatars', '/help'];
 
   const filteredItems = menuItems.filter((item) => {
-    if ('type' in item) return !!user; // show divider only for logged-in users
+    if ('type' in item) return !!user;
     if ('role' in item && item.role) {
       if (!user) return false;
       if (item.role === 'admin' && user.role !== 'super_admin') return false;
@@ -71,62 +69,79 @@ export default function Sidebar() {
     return { key: item.key, icon: item.icon, label: item.label };
   });
 
-  // GSAP staggered entrance
   const sidebarRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (sidebarRef.current) sidebarEnter(sidebarRef.current); }, [collapsed]);
 
+  const sizeMod = collapsed ? 'collapsed' : 'expanded';
+
   const sidebarContent = (
     <>
-      <div className={`flex items-center gap-3 ${collapsed ? 'justify-center px-2' : 'px-5'} h-16`} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-        {!collapsed && (
+      {/* Brand */}
+      <div className={`sidebar__brand sidebar__brand--${sizeMod}`}>
+        {!collapsed ? (
           <>
-            <Image src="/images/logo.svg" alt={t('logoAlt')} width={28} height={28} className="shrink-0" priority unoptimized />
-            <span className="text-sm font-bold whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{t('brand')}</span>
+            <Image
+              src="/images/logo.svg"
+              alt={t('logoAlt')}
+              width={28}
+              height={28}
+              className="sidebar__logo"
+              priority
+              unoptimized
+            />
+            <span className="sidebar__brand-text">{t('brand')}</span>
           </>
+        ) : (
+          <Image
+            src="/images/logo.svg"
+            alt={t('logoAlt')}
+            width={24}
+            height={24}
+            className="sidebar__logo sidebar__logo--collapsed"
+            priority
+            unoptimized
+          />
         )}
-        {collapsed && <Image src="/images/logo.svg" alt={t('logoAlt')} width={24} height={24} priority unoptimized />}
       </div>
 
-      <div className="py-3 px-3" style={collapsed ? { display: 'flex', justifyContent: 'center' } : {}}>
+      {/* New Avatar Button */}
+      <div className={`sidebar__action sidebar__action--${sizeMod}`}>
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          block={!collapsed}
+          className={`sidebar__new-btn sidebar__new-btn--${sizeMod}`}
           onClick={() => router.push('/avatars')}
-          style={{ background: 'linear-gradient(90deg, var(--accent), var(--info))', border: 'none', height: 36, fontWeight: 500 }}
+          {...(!collapsed ? { block: true } : {})}
         >
           {!collapsed && t('newAvatar')}
         </Button>
       </div>
 
+      {/* Navigation Menu */}
       <Menu
         mode="inline"
         selectedKeys={[selectedKey]}
         items={sidebarItems}
         onClick={({ key }) => router.push(key)}
         onMouseEnter={({ key }) => { if (key) router.prefetch(key); }}
-        style={{
-          background: 'transparent',
-          borderInlineEnd: 'none',
-          marginTop: 4,
-        }}
+        className="sidebar__menu"
         theme="dark"
       />
 
-      <div className="absolute bottom-4 left-0 right-0 px-3">
-        <Button
-          type="text"
-          icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+      {/* Collapse Toggle */}
+      <div className="sidebar__toggle">
+        <button
+          type="button"
+          className="sidebar__toggle-btn"
           onClick={toggleSidebar}
-          block
-          style={{ color: 'var(--text-muted)' }}
           aria-label={collapsed ? t('expand') : t('collapse')}
-        />
+        >
+          {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+        </button>
       </div>
     </>
   );
 
-  // Mobile: show Drawer
   if (isMobile) {
     return (
       <Drawer
@@ -134,6 +149,7 @@ export default function Sidebar() {
         onClose={() => setMobileMenuOpen(false)}
         placement="left"
         width={280}
+        className="sidebar--mobile"
         styles={{ body: { padding: 0, background: 'var(--bg-card)' }, header: { display: 'none' } }}
       >
         {sidebarContent}
@@ -141,28 +157,12 @@ export default function Sidebar() {
     );
   }
 
-  // Desktop: show fixed Sider
+  const sidebarCls = ['sidebar', `sidebar--${sizeMod}`].join(' ');
+
   return (
-    <nav aria-label={t('mainNav')}>
-      <div ref={sidebarRef}>
-        <Sider
-          trigger={null}
-          collapsible
-          collapsed={collapsed}
-          width={220}
-          collapsedWidth={64}
-          style={{
-            background: 'var(--bg-card)',
-            borderRight: '1px solid var(--border-subtle)',
-            height: '100vh',
-            position: 'fixed',
-            left: 0,
-            top: 0,
-            zIndex: 100,
-          }}
-        >
-          {sidebarContent}
-        </Sider>
+    <nav aria-label={t('mainNav')} ref={sidebarRef}>
+      <div className={sidebarCls}>
+        {sidebarContent}
       </div>
     </nav>
   );

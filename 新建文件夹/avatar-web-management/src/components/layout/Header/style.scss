@@ -1,0 +1,93 @@
+@use '@/styles/variables' as *;
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: $header-height;
+  padding: 0 $spacing-6;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-subtle);
+
+  &__left {
+    display: flex;
+    align-items: center;
+    gap: $spacing-4;
+    flex: 1;
+    max-width: 28rem;
+  }
+
+  &__mobile-toggle {
+    color: var(--text-primary);
+
+    @media (min-width: $breakpoint-md) {
+      display: none;
+    }
+  }
+
+  &__breadcrumb {
+    display: none;
+
+    @media (min-width: $breakpoint-md) {
+      display: block;
+    }
+  }
+
+  &__search {
+    flex: 1;
+    background: var(--bg-card-hover);
+    border-color: var(--border-subtle);
+    color: var(--text-primary);
+    cursor: pointer;
+
+    &:hover {
+      border-color: var(--border-default);
+    }
+  }
+
+  &__right {
+    display: flex;
+    align-items: center;
+    gap: $spacing-4;
+  }
+
+  // ── User dropdown trigger ──
+  &__user-trigger {
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
+    cursor: pointer;
+    user-select: none;
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+  }
+
+  &__username {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+
+    @media (max-width: $breakpoint-sm) {
+      display: none;
+    }
+  }
+
+  // ── Guest actions ──
+  &__guest-actions {
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
+  }
+
+  &__login-btn {
+    font-size: 0.875rem;
+  }
+
+  &__register-btn {
+    font-size: 0.875rem;
+    border-color: var(--border-subtle);
+    color: var(--text-primary);
+  }
+}

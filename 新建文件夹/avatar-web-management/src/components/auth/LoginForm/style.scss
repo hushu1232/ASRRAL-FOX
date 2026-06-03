@@ -1,0 +1,80 @@
+@use '@/styles/variables' as *;
+
+.login-form {
+  width: 100%;
+  max-width: 24rem;
+  margin: 0 auto;
+
+  &__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-align: center;
+    margin-bottom: $spacing-8;
+  }
+
+  &__field {
+    margin-bottom: $spacing-4;
+  }
+
+  &__input {
+    height: 44px;
+    background: var(--bg-input);
+    border-color: var(--border-subtle);
+    color: var(--text-primary);
+    border-radius: $radius-md;
+  }
+
+  &__submit {
+    width: 100%;
+    height: 44px;
+    font-weight: 600;
+    font-size: 1rem;
+    border-radius: $radius-md;
+    margin-top: $spacing-2;
+    background: var(--accent);
+    border: none;
+
+    &:hover {
+      background: var(--accent-hover);
+    }
+  }
+
+  &__divider {
+    margin: $spacing-6 0;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  &__footer {
+    text-align: center;
+    margin-top: $spacing-4;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  &__link {
+    color: var(--accent);
+    font-weight: 500;
+
+    &:hover {
+      color: var(--accent-hover);
+    }
+  }
+
+  &__error {
+    color: var(--error);
+    font-size: 0.875rem;
+    margin-bottom: $spacing-4;
+    text-align: center;
+  }
+
+  &__sso-btn {
+    width: 100%;
+    height: 44px;
+    margin-top: $spacing-3;
+    border-color: var(--border-default);
+    color: var(--text-primary);
+    border-radius: $radius-md;
+  }
+}

@@ -1,0 +1,163 @@
+@use '@/styles/variables' as *;
+
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: $z-sidebar;
+  height: 100vh;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border-subtle);
+  overflow: hidden;
+  transition: width $transition-normal;
+
+  &--expanded {
+    width: $sidebar-width;
+  }
+
+  &--collapsed {
+    width: $sidebar-collapsed-width;
+  }
+
+  // ── Header: logo + brand name ──
+  &__brand {
+    display: flex;
+    align-items: center;
+    height: $header-height;
+    border-bottom: 1px solid var(--border-subtle);
+
+    &--expanded {
+      gap: $spacing-3;
+      padding: 0 $spacing-5;
+    }
+
+    &--collapsed {
+      justify-content: center;
+      padding: 0 $spacing-2;
+    }
+  }
+
+  &__logo {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+
+    &--collapsed {
+      width: 24px;
+      height: 24px;
+    }
+  }
+
+  &__brand-text {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+
+  // ── Action button area ──
+  &__action {
+    padding: $spacing-3;
+
+    &--collapsed {
+      display: flex;
+      justify-content: center;
+    }
+  }
+
+  &__new-btn {
+    width: 100%;
+    height: 36px;
+    font-weight: 500;
+    background: linear-gradient(90deg, var(--accent), var(--info));
+    border: none;
+    color: #fff;
+    border-radius: $radius-md;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: $spacing-2;
+    transition: opacity $transition-fast;
+
+    &:hover {
+      opacity: 0.9;
+    }
+
+    &--collapsed {
+      width: auto;
+      min-width: 40px;
+    }
+  }
+
+  // ── Menu ──
+  &__menu {
+    background: transparent;
+    border-inline-end: none;
+    margin-top: $spacing-1;
+    padding: 0 $spacing-3;
+  }
+
+  // Ant Design menu override (wrapped in BEM context)
+  &__menu :global(.ant-menu-item) {
+    border-radius: $radius-md;
+    margin: 2px 0;
+    color: var(--text-secondary);
+    transition: all $transition-fast;
+
+    &:hover {
+      color: var(--text-primary);
+      background: var(--bg-surface);
+    }
+  }
+
+  &__menu :global(.ant-menu-item-selected) {
+    color: var(--text-primary);
+    background: var(--accent-light);
+  }
+
+  &__menu :global(.ant-menu-item-divider) {
+    margin: $spacing-2 0;
+    border-color: var(--border-subtle);
+  }
+
+  // ── Toggle at bottom ──
+  &__toggle {
+    position: absolute;
+    bottom: $spacing-4;
+    left: 0;
+    right: 0;
+    padding: 0 $spacing-3;
+  }
+
+  &__toggle-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: $radius-md;
+    transition: all $transition-fast;
+
+    &:hover {
+      color: var(--text-primary);
+      background: var(--bg-surface);
+    }
+  }
+
+  // ── Mobile Drawer ──
+  &--mobile {
+    :global(.ant-drawer-body) {
+      padding: 0;
+      background: var(--bg-card);
+    }
+
+    :global(.ant-drawer-header) {
+      display: none;
+    }
+  }
+}

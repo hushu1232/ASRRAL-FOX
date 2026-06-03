@@ -1,25 +1,20 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Layout } from 'antd';
-import Sidebar from './Sidebar';
-import Header from './Header';
+import { Spin } from 'antd';
+import Sidebar from '@/components/layout/Sidebar';
+import Header from '@/components/layout/Header';
 import SkipToMain from '@/components/ui/SkipToMain';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
-import { Spin } from 'antd';
-
-const { Content } = Layout;
+import './style.scss';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, hydrateFromStorage } = useAuthStore();
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const setIsMobile = useUIStore((s) => s.setIsMobile);
 
-  // Hydrate auth from localStorage on client mount — avoids SSR mismatch
-  useEffect(() => {
-    hydrateFromStorage();
-  }, [hydrateFromStorage]);
+  useEffect(() => { hydrateFromStorage(); }, [hydrateFromStorage]);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 640);
@@ -29,23 +24,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [setIsMobile]);
 
   if (isLoading) {
+    const cls = ['app-layout', 'app-layout--loading'].join(' ');
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-deep)' }}>
+      <div className={cls}>
         <Spin size="large" />
       </div>
     );
   }
 
+  const mainCls = [
+    'app-layout__main',
+    sidebarCollapsed ? 'app-layout__main--sidebar-collapsed' : 'app-layout__main--sidebar-expanded',
+  ].join(' ');
+
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <div className="app-layout">
       <SkipToMain />
-      <Sidebar />
-      <Layout style={{ marginLeft: sidebarCollapsed ? 64 : 220, background: 'var(--bg-deep)', transition: 'margin-left 0.2s' }}>
+      <div className="app-layout__sidebar-area">
+        <Sidebar />
+      </div>
+      <div className={mainCls}>
         <Header />
-        <Content id="main-content" role="main" className="p-3 md:p-6 lg:px-8" style={{ minHeight: 'calc(100vh - 64px)' }}>
+        <main id="main-content" className="app-layout__content" role="main">
           {children}
-        </Content>
-      </Layout>
-    </Layout>
+        </main>
+      </div>
+    </div>
   );
 }

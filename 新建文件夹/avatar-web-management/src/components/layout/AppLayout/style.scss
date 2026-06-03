@@ -1,0 +1,46 @@
+@use '@/styles/variables' as *;
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+
+  &--loading {
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-deep);
+  }
+
+  &__sidebar-area {
+    flex-shrink: 0;
+  }
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    background: var(--bg-deep);
+    transition: margin-left $transition-normal;
+
+    &--sidebar-expanded {
+      margin-left: $sidebar-width;
+    }
+
+    &--sidebar-collapsed {
+      margin-left: $sidebar-collapsed-width;
+    }
+  }
+
+  &__content {
+    flex: 1;
+    padding: $spacing-3;
+    min-height: calc(100vh - #{$header-height});
+
+    @media (min-width: $breakpoint-md) {
+      padding: $spacing-6;
+    }
+
+    @media (min-width: $breakpoint-lg) {
+      padding: $spacing-6 $spacing-8;
+    }
+  }
+}
