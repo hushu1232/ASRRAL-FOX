@@ -166,18 +166,18 @@
 
 | 编号 | 任务 | 工时 | 状态 |
 |------|------|------|------|
-| R1-1 | CryptoHelper salt 持久化 | 1h | ⬜ |
-| R1-2 | WebSocket 重连通知 | 0.5h | ⬜ |
-| R1-3 | SetState 重入保护 | 0.5h | ⬜ |
-| R2-1 | 气泡 UI 联动通知 | 1.5h | ⬜ |
-| R2-2 | PAD 衰减曲线修正 | 1h | ⬜ |
-| R2-3 | DataStore 写入节流 | 0.5h | ⬜ |
-| R3-1 | IVoicePipeline 接口 | 3h | ⬜ |
-| R3-2 | Python BFF streaming | 2h | ⬜ |
-| R4-1 | VoiceManager 状态机测试 | 1h | ⬜ |
-| R4-2 | DataStore 加密往返测试 | 1h | ⬜ |
-| R4-3 | Python WS 协议测试 | 1h | ⬜ |
-| R5-1 | 长期记忆摘要 | 2h | ⬜ |
-| R5-2 | 数据导出/导入 | 1h | ⬜ |
+| R1-1 | CryptoHelper salt 持久化 | 1h | ✅ |
+| R1-2 | WebSocket 重连通知 | 0.5h | ✅ |
+| R1-3 | SetState 重入保护 | 0.5h | ✅ |
+| R2-1 | 气泡 UI 联动通知 | 1.5h | ✅ |
+| R2-2 | PAD 衰减曲线修正 | 1h | ✅ |
+| R2-3 | DataStore 写入节流 | 0.5h | ✅ |
+| R3-1 | IVoicePipeline 接口 | 3h | ✅ |
+| R3-2 | Python BFF streaming | 2h | ✅ |
+| R4-1 | VoiceManager 状态机测试 | 1h | ✅ |
+| R4-2 | DataStore 加密往返测试 | 1h | ✅ |
+| R4-3 | Python WS 协议测试 | 1h | ✅ |
+| R5-1 | 长期记忆摘要 | 2h | ✅ |
+| R5-2 | 数据导出/导入 | 1h | ✅ |
 
 **总计**: ~16h，预计 2-3 个工作日。

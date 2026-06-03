@@ -1,26 +1,29 @@
 """
-OpenAI GPT-4o LLM Service
-==========================
+OpenAI GPT-4o LLM Service — with streaming support
+====================================================
 Chat completion with function calling for the AstralFox AI pet.
 
-The LLM is configured with a personality system prompt and responds
-with emotion/action tags that the Unity client parses:
+Supports two modes:
+  - chat()       : full response (backward compatible)
+  - chat_stream(): async generator yielding typed streaming events
 
-  [happy]     — switch to happy emotion
-  [sad]       — switch to sad emotion
-  [shy]       — switch to shy emotion
-  [angry]     — switch to angry emotion
-  [neutral]   — switch to neutral emotion
-  [action:wave] — trigger wave animation
-  [action:bow]  — trigger bow animation
-  ...
+The LLM responds with emotion/action tags that the Unity client parses:
+  [happy] / [sad] / [shy] / [angry] / [neutral]
+  [action:wave] / [action:bow] / [action:nod] / [action:think]
+
+Streaming events (yielded by chat_stream):
+  {"type": "llm_token",  "token": "你"}           — single character/token
+  {"type": "emotion",    "emotion": "happy"}       — emotion tag detected
+  {"type": "action",     "action": "wave"}         — action tag detected
+  {"type": "llm_response", "text": "完整回复"}      — final complete text (for client side parsing)
 
 Fallback: If OPENAI_API_KEY is not set, returns mock responses.
 """
 import asyncio
 import logging
 import json
-from typing import Optional
+import re
+from typing import Optional, AsyncIterator
 
 from openai import AsyncOpenAI
 
@@ -30,6 +33,11 @@ from tools import TOOL_DEFINITIONS, execute_tool
 logger = logging.getLogger("llm")
 
 HAS_LLM = bool(OPENAI_API_KEY)
+
+# Regex patterns for inline tag detection during streaming
+EMOTION_RE = re.compile(r'\[(happy|sad|shy|angry|neutral)\]')
+ACTION_RE = re.compile(r'\[action:(\w+)\]')
+SENTENCE_END_RE = re.compile(r'[。！？!?\n]')
 
 # ── System Prompt ───────────────────────────────────────────────
 
@@ -217,6 +225,135 @@ class LLMService:
             logger.error(f"LLM error: {e}")
             return "[neutral]唔…连接好像出了问题，等会儿再试试吧～"
 
+    async def chat_stream(self, user_message: str, emotion_context: str = "",
+                           chat_history: str = "", personality: str = "", memory_summary: str = "",
+                           character_name: str = "", character_backstory: str = "",
+                           character_extra: str = "") -> AsyncIterator[dict]:
+        """
+        Streaming version of chat(). Yields typed events as tokens arrive:
+          {"type": "llm_token", "token": "..."}
+          {"type": "emotion", "emotion": "happy"}
+          {"type": "action", "action": "wave"}
+          {"type": "llm_response", "text": "完整回复"}
+
+        Emotion/action tags are detected inline from the streaming token text.
+        Enables the BFF to do per-sentence TTS (lower perceived latency).
+        """
+        if self._client is None:
+            # Mock streaming: simulate token-by-token output
+            full = await _mock_chat(user_message, emotion_context, personality, memory_summary)
+            for event in _simulate_streaming(full):
+                yield event
+            return
+
+        system_content = self._build_system_content(
+            emotion_context, chat_history, personality, memory_summary,
+            character_name, character_backstory, character_extra
+        )
+
+        # Seed history from Unity if we have context and no local history
+        if chat_history and not self._history:
+            self._seed_history_from_text(chat_history)
+
+        messages = [{"role": "system", "content": system_content}]
+        recent = self._history[-20:] if len(self._history) > 20 else self._history
+        messages.extend(recent)
+        messages.append({"role": "user", "content": user_message})
+
+        try:
+            # Streaming call — no function calling in stream mode (simplification)
+            stream = await self._client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=messages,
+                temperature=0.8,
+                max_tokens=300,
+                stream=True,
+            )
+
+            accumulated = ""
+            emitted_emotion = False
+
+            async for chunk in stream:
+                delta = chunk.choices[0].delta if chunk.choices else None
+                if delta is None:
+                    continue
+
+                token = delta.content or ""
+
+                if token:
+                    accumulated += token
+
+                    # Detect emotion tag in the first few tokens
+                    if not emitted_emotion:
+                        em = EMOTION_RE.search(accumulated)
+                        if em:
+                            yield {"type": "emotion", "emotion": em.group(1)}
+                            emitted_emotion = True
+
+                        # Also check for action tag
+                        am = ACTION_RE.search(accumulated)
+                        if am:
+                            yield {"type": "action", "action": am.group(1)}
+
+                    # Yield individual token
+                    yield {"type": "llm_token", "token": token}
+
+            # Strip tags from full response for history storage
+            clean_text = EMOTION_RE.sub('', accumulated)
+            clean_text = ACTION_RE.sub('', clean_text)
+            clean_text = clean_text.strip()
+
+            # Yield final response
+            yield {"type": "llm_response", "text": accumulated}
+
+            # Update history with clean text
+            self._history.append({"role": "user", "content": user_message})
+            self._history.append({"role": "assistant", "content": clean_text or accumulated})
+
+            if len(self._history) > 40:
+                self._history = self._history[-40:]
+
+        except Exception as e:
+            logger.error(f"LLM streaming error: {e}")
+            # Fallback: yield mock token + response
+            fallback = "[neutral]唔…连接好像出了问题，等会儿再试试吧～"
+            for char in fallback:
+                yield {"type": "llm_token", "token": char}
+                await asyncio.sleep(0.02)  # simulate streaming pace
+            yield {"type": "emotion", "emotion": "neutral"}
+            yield {"type": "llm_response", "text": fallback}
+
+    def _build_system_content(self, emotion_context, chat_history, personality,
+                               memory_summary, character_name, character_backstory,
+                               character_extra):
+        """Build the system prompt with character context. Extracted for reuse."""
+        char_name = character_name or "赤城"
+        system_content = SYSTEM_PROMPT.replace("赤城", char_name)
+
+        if character_backstory:
+            system_content += f"\n\n## 角色背景故事\n{character_backstory}"
+        if character_extra:
+            system_content += f"\n\n## 补充设定\n{character_extra}"
+        if personality:
+            system_content += (
+                f"\n\n## 性格设定\n{personality}\n\n"
+                f"（以上是用户为「{char_name}」设定的性格，优先级高于默认设定。）"
+            )
+        if memory_summary:
+            system_content += (
+                f"\n\n## 长期记忆\n{memory_summary}\n\n"
+                f"（以上是你对用户的长期记忆。当学到关于用户的新信息时，用 [memory:内容] 标签记录下来。）"
+            )
+        else:
+            system_content += (
+                "\n\n## 长期记忆\n你还没有关于用户的长期记忆。"
+                "当学到关于用户的重要信息时，用 [memory:内容] 标签记录下来。"
+            )
+        if emotion_context:
+            system_content += f"\n\n## 当前状态\n{emotion_context}"
+
+        return system_content
+
     def clear_history(self):
         """Reset conversation history."""
         self._history.clear()
@@ -292,3 +429,27 @@ async def _mock_chat(user_message: str, emotion_context: str = "",
         raw += f" [memory:用户提到了喜好]"
 
     return raw
+
+
+async def _simulate_streaming(full_response: str) -> AsyncIterator[dict]:
+    """
+    Simulate streaming output for mock mode.
+    Splits a full response into character-by-character tokens with
+    emotion/action tag detection.
+    """
+    # Detect and emit emotion tag first
+    em = EMOTION_RE.search(full_response)
+    if em:
+        yield {"type": "emotion", "emotion": em.group(1)}
+
+    am = ACTION_RE.search(full_response)
+    if am:
+        yield {"type": "action", "action": am.group(1)}
+
+    # Emit tokens character by character (simulating streaming)
+    for char in full_response:
+        yield {"type": "llm_token", "token": char}
+        await asyncio.sleep(0.015)  # ~15ms per char = ~67 chars/sec, feels natural
+
+    # Final response
+    yield {"type": "llm_response", "text": full_response}

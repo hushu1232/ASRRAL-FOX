@@ -274,8 +274,18 @@ async def websocket_chat(websocket: WebSocket):
                         final_transcript = await asr_service.finalize()
                         asr_service.close()
                     else:
-                        # Mock ASR
-                        final_transcript = await mock_recognize(accumulated_audio)
+                        # Mock ASR — may raise ASRUnavailableError
+                        try:
+                            final_transcript = await mock_recognize(accumulated_audio)
+                        except Exception as e:
+                            logger.warning(f"ASR unavailable: {e}")
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "message": str(e),
+                            }, ensure_ascii=False))
+                            total_audio_duration = 0.0
+                            accumulated_audio.clear()
+                            continue
 
                     final_transcript = final_transcript or "（没听清…）"
                     logger.info(f"[WS] Final transcript: {final_transcript}")
@@ -320,9 +330,40 @@ async def websocket_chat(websocket: WebSocket):
                         accumulated_audio.clear()
                         continue
 
-                    # ── Step 2: LLM ───────────────────────────
-                    logger.info(f"[WS] Sending to LLM: {final_transcript}")
-                    raw_response = await llm_service.chat(
+                    # ── Step 2+3: LLM Streaming + Per-Sentence TTS ──
+                    logger.info(f"[WS] Streaming LLM: {final_transcript}")
+
+                    from llm import SENTENCE_END_RE
+
+                    sentence_buffer = ""
+                    tts_tasks: list[asyncio.Task] = []
+                    chunk_index = 0
+                    # Lock-protected chunk index for concurrent TTS tasks
+                    idx_lock = asyncio.Lock()
+                    # Ordered queue: (sentence_index, list_of_chunks)
+                    tts_result_queue: asyncio.Queue = asyncio.Queue()
+                    total_sentences = 0
+
+                    async def synthesize_sentence(text: str, sent_idx: int):
+                        """Synthesize one sentence and put indexed chunks in the queue."""
+                        nonlocal chunk_index
+                        if not text or not text.strip():
+                            return
+
+                        chunks = []
+                        if HAS_TTS_REAL:
+                            async for pcm_chunk in tts_service.synthesize_stream(text):
+                                chunks.append(pcm_chunk)
+                        else:
+                            # Mock TTS: estimate duration based on text length
+                            duration = max(0.5, len(text) * 0.08)
+                            async for pcm_chunk in mock_tts_stream(duration):
+                                chunks.append(pcm_chunk)
+
+                        await tts_result_queue.put((sent_idx, chunks))
+
+                    # Stream LLM tokens to client, detect sentences, launch TTS
+                    async for event in llm_service.chat_stream(
                         final_transcript,
                         emotion_context=emotion_context,
                         chat_history=chat_history,
@@ -331,41 +372,97 @@ async def websocket_chat(websocket: WebSocket):
                         character_name=character_name,
                         character_backstory=character_backstory,
                         character_extra=character_extra,
-                    )
-                    logger.info(f"[WS] LLM response: {raw_response}")
+                    ):
+                        etype = event.get("type", "")
 
-                    await websocket.send_text(json.dumps({
-                        "type": "llm_response",
-                        "text": raw_response
-                    }, ensure_ascii=False))
+                        if etype == "llm_token":
+                            token = event["token"]
+                            sentence_buffer += token
 
-                    # ── Step 3: TTS ───────────────────────────
-                    clean_text = strip_tags(raw_response)
-                    logger.info(f"[WS] TTS text: {clean_text}")
-
-                    if HAS_TTS_REAL:
-                        chunk_index = 0
-                        async for pcm_chunk in tts_service.synthesize_stream(clean_text):
+                            # Send streaming token to client immediately
                             await websocket.send_text(json.dumps({
-                                "type": "tts_audio",
-                                "index": chunk_index,
-                                "data": base64.b64encode(pcm_chunk).decode("ascii")
-                            }))
-                            chunk_index += 1
-                            await asyncio.sleep(0.05)  # pacing
-                    else:
-                        # Mock TTS: silence
-                        chunk_index = 0
-                        async for pcm_chunk in mock_tts_stream(2.0):
+                                "type": "llm_token",
+                                "token": token,
+                            }, ensure_ascii=False))
+
+                            # Check for sentence boundary
+                            if SENTENCE_END_RE.search(token) or (
+                                sentence_buffer.strip() and len(sentence_buffer) > 40
+                                and (token in ("，", ",", "、", " ", "\n"))
+                            ):
+                                # Heuristic: sentence ended OR long enough with comma
+                                # (edge-tts works best with complete sentences)
+                                sentence = sentence_buffer.strip()
+                                if sentence and len(sentence) >= 2:
+                                    sent_idx = total_sentences
+                                    total_sentences += 1
+                                    tts_tasks.append(
+                                        asyncio.create_task(
+                                            synthesize_sentence(sentence, sent_idx)
+                                        )
+                                    )
+                                    logger.debug(f"[WS] Sentence #{sent_idx}: {sentence[:40]}...")
+                                sentence_buffer = ""
+
+                        elif etype == "llm_response":
+                            # Final full response — send for client-side tag parsing
                             await websocket.send_text(json.dumps({
-                                "type": "tts_audio",
-                                "index": chunk_index,
-                                "data": base64.b64encode(pcm_chunk).decode("ascii")
-                            }))
-                            chunk_index += 1
+                                "type": "llm_response",
+                                "text": event["text"],
+                            }, ensure_ascii=False))
+
+                        elif etype == "emotion":
+                            await websocket.send_text(json.dumps({
+                                "type": "emotion",
+                                "emotion": event["emotion"],
+                            }, ensure_ascii=False))
+
+                        elif etype == "action":
+                            await websocket.send_text(json.dumps({
+                                "type": "action",
+                                "action": event["action"],
+                            }, ensure_ascii=False))
+
+                    # Synthesize any remaining text
+                    if sentence_buffer.strip():
+                        sent_idx = total_sentences
+                        total_sentences += 1
+                        tts_tasks.append(
+                            asyncio.create_task(
+                                synthesize_sentence(sentence_buffer.strip(), sent_idx)
+                            )
+                        )
+                        logger.debug(f"[WS] Final sentence #{sent_idx}: {sentence_buffer.strip()[:40]}...")
+
+                    # Drain TTS results in sentence order and send to client
+                    if total_sentences > 0:
+                        pending = dict(enumerate([None] * total_sentences))
+                        received = 0
+
+                        while received < total_sentences:
+                            try:
+                                sent_idx, chunks = await asyncio.wait_for(
+                                    tts_result_queue.get(), timeout=10.0
+                                )
+                            except asyncio.TimeoutError:
+                                logger.warning("[WS] TTS sentence timeout — continuing with partial audio")
+                                break
+
+                            pending[sent_idx] = chunks
+
+                            # Send all contiguous completed sentences in order
+                            while received in pending and pending[received] is not None:
+                                for pcm_chunk in pending[received]:
+                                    await websocket.send_text(json.dumps({
+                                        "type": "tts_audio",
+                                        "index": chunk_index,
+                                        "data": base64.b64encode(pcm_chunk).decode("ascii"),
+                                    }, ensure_ascii=False))
+                                    chunk_index += 1
+                                received += 1
 
                     await websocket.send_text(json.dumps({"type": "tts_done"}))
-                    logger.info("[WS] TTS done. Ready for next utterance.")
+                    logger.info(f"[WS] Streaming complete. Sentences: {total_sentences}, Audio chunks: {chunk_index}")
 
                     # Reset
                     total_audio_duration = 0.0
