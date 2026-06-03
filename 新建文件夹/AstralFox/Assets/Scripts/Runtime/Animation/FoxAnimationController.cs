@@ -249,23 +249,25 @@ namespace AstralFox.Animation
             if (newState != FoxState.Idle)
                 _idleTimer = 0f;
 
+            // Universal: exit Sleep — always recover eyes and body posture
+            if (previous == FoxState.Sleep)
+            {
+                _driver.SetParameterImmediate(FoxParamId.EyeLOpen, 1f);
+                _driver.SetParameterImmediate(FoxParamId.EyeROpen, 1f);
+                _driver.SetParameter(FoxParamId.BodyAngleX, 0f);
+                _driver.SetParameter(FoxParamId.BodyAngleY, 0f);
+            }
+
             // State entry behaviors
             switch (newState)
             {
                 case FoxState.Listening:
-                    // Auto-transition to Idle after a timeout (handled by external caller in later phases)
+                    _driver.SetParameter(FoxParamId.EarL, _listeningEarPerk);
+                    _driver.SetParameter(FoxParamId.EarR, _listeningEarPerk);
                     break;
                 case FoxState.Sleep:
                     _driver.SetParameter(FoxParamId.EyeLOpen, _sleepEyeClose);
                     _driver.SetParameter(FoxParamId.EyeROpen, _sleepEyeClose);
-                    break;
-                case FoxState.Idle:
-                    if (previous == FoxState.Sleep)
-                    {
-                        // Wake up: open eyes immediately
-                        _driver.SetParameterImmediate(FoxParamId.EyeLOpen, 1f);
-                        _driver.SetParameterImmediate(FoxParamId.EyeROpen, 1f);
-                    }
                     break;
                 case FoxState.Greeting:
                     _greetingTimer = 0f;

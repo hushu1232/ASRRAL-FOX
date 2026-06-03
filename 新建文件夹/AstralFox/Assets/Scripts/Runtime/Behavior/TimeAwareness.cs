@@ -191,7 +191,11 @@ namespace AstralFox.Behavior
 
             if (!GetLastInputInfo(ref lii)) return;
 
-            var idleMs = Environment.TickCount - (int)lii.dwTime;
+            // Use unsigned subtraction to correctly handle TickCount wrapping
+            // (Environment.TickCount wraps every ~24.9 days on 32-bit; uint math wraps cleanly)
+            uint tickNow = (uint)Environment.TickCount;
+            uint lastInput = lii.dwTime;
+            uint idleMs = tickNow - lastInput; // unsigned: wraps correctly on overflow
             var wasIdle = _idleStartTime != DateTime.MinValue;
 
             if (idleMs < 5000) // Active in last 5s

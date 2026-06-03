@@ -26,9 +26,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://astralfox:${DB_PASSWORD:-astralfox_dev}@postgres:5432/astralfox
-      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
-      PET_ENCRYPTION_KEY: ${PET_ENCRYPTION_KEY:-dev-encryption-key-change-me}
+      DATABASE_URL: postgresql://astralfox:${DB_PASSWORD:?error: DB_PASSWORD must be set}@postgres:5432/astralfox
+      JWT_SECRET: ${JWT_SECRET:?error: JWT_SECRET must be set}
+      PET_ENCRYPTION_KEY: ${PET_ENCRYPTION_KEY:?error: PET_ENCRYPTION_KEY must be set}
     ports:
       - "3000:3000"
     depends_on:

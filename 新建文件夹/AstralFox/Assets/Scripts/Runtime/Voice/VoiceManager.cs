@@ -99,6 +99,7 @@ namespace AstralFox.Voice
         public event Action<string> OnCleanResponseText;   // cleaned text without tags
         public event Action<string> OnStreamToken;         // real-time streaming token
         public event Action<string> OnStreamEmotion;       // real-time emotion change
+        public event Action<string> OnUserNotification;    // user-visible status messages
 
         #endregion
 
@@ -178,7 +179,8 @@ namespace AstralFox.Voice
                 case VoiceState.Listening:
                     if (_stateTimer >= _listenTimeout)
                     {
-                        if (_verboseLogging) Debug.Log("[VoiceManager] Listen timeout — returning to Idle.");
+                        if (_verboseLogging) Debug.Log("[VoiceManager] Listen timeout.");
+                        OnUserNotification?.Invoke("等太久了～再叫我一次吧！");
                         SetState(VoiceState.Idle);
                     }
                     break;
@@ -187,6 +189,7 @@ namespace AstralFox.Voice
                     if (_stateTimer >= _recordMaxDuration)
                     {
                         if (_verboseLogging) Debug.Log("[VoiceManager] Record max duration reached.");
+                        OnUserNotification?.Invoke("说了好多呢，让我想想...");
                         EndRecording();
                     }
                     break;
@@ -194,7 +197,8 @@ namespace AstralFox.Voice
                 case VoiceState.Processing:
                     if (_stateTimer >= _processingTimeout)
                     {
-                        Debug.LogWarning("[VoiceManager] Processing timeout — backend did not respond.");
+                        Debug.LogWarning("[VoiceManager] Processing timeout.");
+                        OnUserNotification?.Invoke("唔…刚才走神了，再说一次好吗？");
                         SetState(VoiceState.Idle);
                     }
                     break;
@@ -202,7 +206,8 @@ namespace AstralFox.Voice
                 case VoiceState.Speaking:
                     if (_stateTimer >= _speakingTimeout)
                     {
-                        Debug.LogWarning("[VoiceManager] Speaking timeout — TTS did not finish.");
+                        Debug.LogWarning("[VoiceManager] Speaking timeout.");
+                        OnUserNotification?.Invoke("声音卡住了…重新来一次？");
                         Animation.PetAnimationManager.Instance?.CurrentAnimator?.OnSpeakingEnd();
                         SetState(VoiceState.Idle);
                     }
@@ -354,10 +359,17 @@ namespace AstralFox.Voice
         private string _streamAccumulatedText = "";
         private string _streamEmotion = "";
         private string _streamAction = "";
+        private bool _responseFinalized;
+        private readonly object _streamLock = new object();
 
         private void OnBackendLLMToken(string token)
         {
-            _streamAccumulatedText += token;
+            // If llm_response already arrived, ignore late tokens
+            lock (_streamLock)
+            {
+                if (_responseFinalized) return;
+                _streamAccumulatedText += token;
+            }
             OnStreamToken?.Invoke(token);
 
             // Transition to Processing if still in Recording (early response)
@@ -408,8 +420,15 @@ namespace AstralFox.Voice
 
         private void OnBackendLLMResponse(string rawText)
         {
-            // Use accumulated streaming text if available, otherwise use the provided text
-            string fullRaw = !string.IsNullOrEmpty(_streamAccumulatedText) ? _streamAccumulatedText : rawText;
+            // Atomically grab accumulated streaming text and prevent further token accumulation
+            string fullRaw;
+            lock (_streamLock)
+            {
+                _responseFinalized = true;
+                fullRaw = !string.IsNullOrEmpty(_streamAccumulatedText)
+                    ? _streamAccumulatedText : rawText;
+                _streamAccumulatedText = "";
+            }
 
             if (_verboseLogging) Debug.Log($"[VoiceManager] LLM Response: \"{fullRaw}\"");
             OnLLMResponseReceived?.Invoke(fullRaw);
@@ -605,11 +624,27 @@ namespace AstralFox.Voice
                     _mic.Muted = false;
                     _recordedAudio.Clear();
                     _pendingResponse = "";
+                    // Reset streaming state for next conversation
+                    lock (_streamLock)
+                    {
+                        _responseFinalized = false;
+                        _streamAccumulatedText = "";
+                        _streamEmotion = "";
+                        _streamAction = "";
+                    }
                     break;
 
                 case VoiceState.Listening:
                     _wakeWord.SetListening(false); // don't re-trigger while listening
                     _vad.Reset();
+                    // Reset streaming state for new utterance
+                    lock (_streamLock)
+                    {
+                        _responseFinalized = false;
+                        _streamAccumulatedText = "";
+                        _streamEmotion = "";
+                        _streamAction = "";
+                    }
                     break;
 
                 case VoiceState.Recording:

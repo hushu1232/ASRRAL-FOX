@@ -30,6 +30,36 @@ namespace AstralFox.Voice
     /// </summary>
     public sealed class BackendClient : MonoBehaviour
     {
+        #region Connection State Machine
+
+        private enum ConnectionState
+        {
+            Disconnected,
+            Connecting,
+            Connected,
+            Disconnecting,
+        }
+
+        private readonly object _stateLock = new object();
+        private ConnectionState _connectionState = ConnectionState.Disconnected;
+
+        private bool TryTransition(ConnectionState from, ConnectionState to)
+        {
+            lock (_stateLock)
+            {
+                if (_connectionState != from) return false;
+                _connectionState = to;
+                return true;
+            }
+        }
+
+        private void SetState(ConnectionState state)
+        {
+            lock (_stateLock) { _connectionState = state; }
+        }
+
+        #endregion
+
         #region Inspector
 
         [Header("Connection")]
@@ -79,7 +109,10 @@ namespace AstralFox.Voice
 
         #region Properties
 
-        public bool IsConnected { get; private set; }
+        public bool IsConnected
+        {
+            get { lock (_stateLock) return _connectionState == ConnectionState.Connected; }
+        }
 
         #endregion
 
@@ -87,13 +120,14 @@ namespace AstralFox.Voice
 
         private ClientWebSocket _ws;
         private CancellationTokenSource _cts;
+        private CancellationTokenSource _connectCts;
         private float _reconnectTimer;
         private float _sendTimer;
         private float _pingTimer;
 
-        // Audio buffer — accumulates samples for batched send
-        private ConcurrentQueue<byte[]> _audioOutQueue = new ConcurrentQueue<byte[]>();
-        private int _audioOutQueueCount;
+        // Audio buffer — SemaphoreSlim for precise backpressure
+        private readonly System.Collections.Concurrent.ConcurrentQueue<byte[]> _audioOutQueue = new();
+        private System.Threading.SemaphoreSlim _audioSendSemaphore;
 
         // Receive buffer + main-thread dispatch queue
         private byte[] _recvBuffer = new byte[65536];
@@ -148,12 +182,32 @@ namespace AstralFox.Voice
 
         #region Connection
 
+        private const int ProtocolVersion = 4;
+
+        private async Task SendHelloAsync()
+        {
+            var hello = new
+            {
+                type = "hello",
+                version = ProtocolVersion,
+                features = new[] { "streaming_tokens", "wav_audio", "emotion_stream", "action_stream" },
+                client = "astralfox-unity",
+                client_version = Application.version,
+            };
+            await SendTextAsync(JsonUtility.ToJson(hello));
+        }
+
         public async Task ConnectAsync()
         {
-            if (IsConnected) return;
+            // Prevent duplicate connection attempts
+            if (!TryTransition(ConnectionState.Disconnected, ConnectionState.Connecting))
+                return;
 
             try
             {
+                _connectCts?.Cancel();
+                _connectCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
                 _cts?.Cancel();
                 _cts = new CancellationTokenSource();
 
@@ -161,33 +215,35 @@ namespace AstralFox.Voice
                 _ws = new ClientWebSocket();
                 _ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
 
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await _ws.ConnectAsync(new Uri(_serverUrl), cts.Token);
+                await _ws.ConnectAsync(new Uri(_serverUrl), _connectCts.Token);
 
-                IsConnected = true;
+                SetState(ConnectionState.Connected);
                 _reconnectTimer = 0f;
                 _pingTimer = 0f;
                 _sendTimer = 0f;
 
+                // Dispatch event on main thread
                 OnConnectionChanged?.Invoke(true);
 
                 if (_logMessages)
                     Debug.Log($"[BackendClient] Connected to {_serverUrl}");
 
-                // Start receive loop
+                // Protocol handshake
+                await SendHelloAsync();
+
                 _ = ReceiveLoopAsync(_cts.Token);
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[BackendClient] Connection failed: {ex.Message}");
-                IsConnected = false;
+                SetState(ConnectionState.Disconnected);
                 OnConnectionChanged?.Invoke(false);
             }
         }
 
         public async Task DisconnectAsync()
         {
-            IsConnected = false;
+            SetState(ConnectionState.Disconnecting);
             _cts?.Cancel();
 
             if (_ws != null && _ws.State == WebSocketState.Open)
@@ -203,13 +259,14 @@ namespace AstralFox.Voice
             _ws?.Dispose();
             _ws = null;
             ClearAudioQueue();
+            SetState(ConnectionState.Disconnected);
             OnConnectionChanged?.Invoke(false);
         }
 
         private void ClearAudioQueue()
         {
             while (_audioOutQueue.TryDequeue(out _))
-                Interlocked.Decrement(ref _audioOutQueueCount);
+                _audioSendSemaphore?.Release();
         }
 
         #endregion
@@ -221,11 +278,15 @@ namespace AstralFox.Voice
         public void SendAudio(float[] samples, int sampleRate, int channels)
         {
             if (!IsConnected) return;
-            if (_audioOutQueueCount >= _maxQueueSize) return; // backpressure
+
+            if (_audioSendSemaphore == null)
+                _audioSendSemaphore = new System.Threading.SemaphoreSlim(_maxQueueSize, _maxQueueSize);
+
+            // Non-blocking backpressure: drop if queue full
+            if (!_audioSendSemaphore.Wait(0)) return;
 
             byte[] pcm = ConvertToPCM16(samples);
             _audioOutQueue.Enqueue(pcm);
-            Interlocked.Increment(ref _audioOutQueueCount);
         }
 
         /// <summary>Send a text command/message to the backend.</summary>
@@ -240,7 +301,7 @@ namespace AstralFox.Voice
             catch (Exception ex)
             {
                 Debug.LogError($"[BackendClient] Send error: {ex.Message}");
-                IsConnected = false;
+                SetState(ConnectionState.Disconnected);
                 OnConnectionChanged?.Invoke(false);
             }
         }
@@ -252,12 +313,11 @@ namespace AstralFox.Voice
 
             try
             {
-                // Combine all queued audio buffers
                 var batch = new System.Collections.Generic.List<byte>();
                 while (_audioOutQueue.TryDequeue(out byte[] chunk))
                 {
                     batch.AddRange(chunk);
-                    Interlocked.Decrement(ref _audioOutQueueCount);
+                    _audioSendSemaphore?.Release();
                 }
 
                 if (batch.Count > 0)
@@ -269,7 +329,10 @@ namespace AstralFox.Voice
             catch (Exception ex)
             {
                 Debug.LogError($"[BackendClient] Flush error: {ex.Message}");
-                IsConnected = false;
+                // Drain the semaphore to prevent deadlock
+                while (_audioOutQueue.TryDequeue(out _))
+                    _audioSendSemaphore?.Release();
+                SetState(ConnectionState.Disconnected);
                 OnConnectionChanged?.Invoke(false);
             }
         }
@@ -325,7 +388,7 @@ namespace AstralFox.Voice
             }
             finally
             {
-                IsConnected = false;
+                SetState(ConnectionState.Disconnected);
                 ClearAudioQueue();
                 OnConnectionChanged?.Invoke(false);
             }
@@ -343,6 +406,19 @@ namespace AstralFox.Voice
 
                 switch (msg.type)
                 {
+                    case "welcome":
+                        if (msg.protocol_version != ProtocolVersion)
+                        {
+                            Debug.LogError($"[BackendClient] Protocol mismatch! Server={msg.protocol_version}, Client={ProtocolVersion}");
+                            OnError?.Invoke($"服务器协议版本不匹配 (服务器:{msg.protocol_version} 客户端:{ProtocolVersion})，请更新应用。");
+                            _ = DisconnectAsync();
+                        }
+                        else if (_logMessages)
+                        {
+                            Debug.Log($"[BackendClient] Handshake OK. Server: {msg.server_version}");
+                        }
+                        break;
+
                     case "partial_transcript":
                         OnPartialTranscript?.Invoke(msg.text);
                         break;
@@ -429,6 +505,9 @@ namespace AstralFox.Voice
             public string data;
             public string reminder_id;
             public string reminder_title;
+            public int protocol_version;
+            public string server_version;
+            public string error_code;
         }
 
         private static byte[] ConvertToPCM16(float[] samples)

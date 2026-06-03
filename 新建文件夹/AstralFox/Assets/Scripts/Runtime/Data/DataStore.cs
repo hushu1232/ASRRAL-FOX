@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using UnityEngine;
 
 namespace AstralFox.Data
@@ -327,17 +328,41 @@ namespace AstralFox.Data
 
         #endregion
 
-        #region Auth Tokens
+        #region Auth Tokens (DPAPI encrypted at rest)
 
+        /// <summary>Save auth tokens — encrypted via DPAPI (Windows) or AES fallback.</summary>
         public void SaveAuthTokens(string accessToken, string refreshToken)
         {
-            _data.authToken = accessToken ?? "";
-            _data.authRefreshToken = refreshToken ?? "";
+            _data.authToken = Convert.ToBase64String(
+                CryptoHelper.Protect(Encoding.UTF8.GetBytes(accessToken ?? "")));
+            _data.authRefreshToken = Convert.ToBase64String(
+                CryptoHelper.Protect(Encoding.UTF8.GetBytes(refreshToken ?? "")));
             _dirty = true;
         }
 
-        public string LoadAccessToken() => _data.authToken ?? "";
-        public string LoadRefreshToken() => _data.authRefreshToken ?? "";
+        /// <summary>Load access token — transparently decrypts from DPAPI.</summary>
+        public string LoadAccessToken()
+        {
+            if (string.IsNullOrEmpty(_data.authToken)) return "";
+            try
+            {
+                return Encoding.UTF8.GetString(
+                    CryptoHelper.Unprotect(Convert.FromBase64String(_data.authToken)));
+            }
+            catch { return ""; }
+        }
+
+        /// <summary>Load refresh token — transparently decrypts from DPAPI.</summary>
+        public string LoadRefreshToken()
+        {
+            if (string.IsNullOrEmpty(_data.authRefreshToken)) return "";
+            try
+            {
+                return Encoding.UTF8.GetString(
+                    CryptoHelper.Unprotect(Convert.FromBase64String(_data.authRefreshToken)));
+            }
+            catch { return ""; }
+        }
 
         #endregion
 

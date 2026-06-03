@@ -6,14 +6,13 @@ using UnityEngine;
 namespace AstralFox.Voice
 {
     /// <summary>
-    /// Streaming TTS audio player — plays PCM16 chunks immediately as they arrive.
+    /// Streaming TTS audio player — plays PCM16 chunks as they arrive.
     ///
     /// Audio format: 16000 Hz (configurable), mono, PCM 16-bit.
-    /// Pre-allocates a large AudioClip and writes chunks with SetData offset,
-    /// enabling sub-100ms playback start latency.
+    /// Uses a single streaming AudioClip with incremental SetData writes,
+    /// avoiding per-chunk clip recreation (~4MB each) that caused GC pressure.
     ///
-    /// Also supports raw WAV byte chunks (44-byte RIFF header + PCM data)
-    /// from the SSE streaming endpoint.
+    /// Also supports raw WAV byte chunks (44-byte RIFF header + PCM data).
     /// </summary>
     [RequireComponent(typeof(AudioSource))]
     public sealed class TTSPlayer : MonoBehaviour
@@ -70,6 +69,7 @@ namespace AstralFox.Voice
         #region Private Fields
 
         private AudioSource _source;
+        private AudioClip _streamingClip;
         private float[] _sampleBuffer;
         private int _totalSamplesWritten;
         private int _maxSamples;
@@ -95,6 +95,11 @@ namespace AstralFox.Voice
 
             _maxSamples = Mathf.CeilToInt(_sampleRate * _maxClipDuration);
             _sampleBuffer = new float[_maxSamples];
+
+            // Pre-create a single streaming AudioClip — reused for lifetime
+            _streamingClip = AudioClip.Create("tts_stream", _maxSamples, 1, _sampleRate, stream: true,
+                pcmreadercallback: null, pcmsetpositioncallback: null);
+            _source.clip = _streamingClip;
         }
 
         private void Update()
@@ -167,6 +172,11 @@ namespace AstralFox.Voice
                 if (dataStart < 0) return;
 
                 int dataSize = BitConverter.ToInt32(wavBytes, dataStart + 4);
+                if (dataSize <= 0 || dataStart + 8 + dataSize > wavBytes.Length)
+                {
+                    Debug.LogWarning($"[TTSPlayer] Invalid WAV data chunk size: {dataSize}");
+                    return;
+                }
                 int sampleCount = dataSize / 2; // 16-bit mono
 
                 float[] samples = new float[sampleCount];
@@ -213,7 +223,6 @@ namespace AstralFox.Voice
         public void StopImmediate()
         {
             _source.Stop();
-            _source.clip = null;
             _totalSamplesWritten = 0;
             _playbackStarted = false;
             _playbackFrameDelay = 0;
@@ -256,7 +265,6 @@ namespace AstralFox.Voice
         {
             if (samples == null || samples.Length == 0) return;
 
-            // Check if we'd overflow the buffer
             int spaceLeft = _maxSamples - _totalSamplesWritten;
             if (samples.Length > spaceLeft)
             {
@@ -266,61 +274,37 @@ namespace AstralFox.Voice
 
             if (samples.Length == 0) return;
 
-            // Write into pre-allocated buffer
-            Array.Copy(samples, 0, _sampleBuffer, _totalSamplesWritten, samples.Length);
+            // Incremental write into the streaming clip — no full-clip recreation
+            _streamingClip.SetData(samples, _totalSamplesWritten);
             _totalSamplesWritten += samples.Length;
             HasPendingAudio = true;
 
             if (_logChunks)
                 Debug.Log($"[TTSPlayer] +{samples.Length} samples (total: {_totalSamplesWritten})");
 
-            // Start or restart playback
+            // Start or resume playback on the same clip
             if (!_playbackStarted && AutoPlay)
             {
-                StartPlayback();
+                _source.Play();
+                IsPlaying = true;
+                _playbackStarted = true;
+                _playbackFrameDelay = 3;
+                if (_logChunks)
+                    Debug.Log($"[TTSPlayer] Playback started ({_totalSamplesWritten} samples)");
+                OnPlaybackStarted?.Invoke();
             }
             else if (_playbackStarted && !_source.isPlaying && !_dataComplete)
             {
-                // Buffer underrun recovery — recreate clip with current data and resume
-                ResumePlayback();
+                // Buffer underrun recovery — resume same clip
+                _source.Play();
+                _playbackFrameDelay = 2;
+                if (_logChunks)
+                    Debug.Log($"[TTSPlayer] Playback resumed after buffer underrun");
             }
-        }
-
-        private void StartPlayback()
-        {
-            // Create clip with current buffer content
-            var clip = AudioClip.Create("tts_stream", _maxSamples, 1, _sampleRate, false);
-            clip.SetData(_sampleBuffer, 0);
-            _source.clip = clip;
-            _source.Play();
-            IsPlaying = true;
-            _playbackStarted = true;
-            _playbackFrameDelay = 3;
-
-            if (_logChunks)
-                Debug.Log($"[TTSPlayer] Playback started ({_totalSamplesWritten} samples)");
-
-            OnPlaybackStarted?.Invoke();
-        }
-
-        private void ResumePlayback()
-        {
-            // Recreate clip with updated buffer (more data arrived after buffer underrun)
-            // Only recreate if significant new data arrived
-            var clip = AudioClip.Create("tts_stream", _maxSamples, 1, _sampleRate, false);
-            clip.SetData(_sampleBuffer, 0);
-            _source.clip = clip;
-            _source.time = Mathf.Max(0, _source.time); // preserve position
-            _source.Play();
-            _playbackFrameDelay = 2;
-
-            if (_logChunks)
-                Debug.Log($"[TTSPlayer] Playback resumed after buffer underrun");
         }
 
         private void FinishPlayback()
         {
-            _source.clip = null;
             IsPlaying = false;
             HasPendingAudio = false;
             CurrentAmplitude = 0f;
@@ -329,7 +313,6 @@ namespace AstralFox.Voice
             if (_logChunks)
                 Debug.Log($"[TTSPlayer] Playback complete. Total: {_totalSamplesWritten} samples ({_totalSamplesWritten / (float)_sampleRate:F1}s)");
 
-            // Reset for next use
             _totalSamplesWritten = 0;
             _dataComplete = false;
 

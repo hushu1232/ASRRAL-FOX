@@ -57,6 +57,12 @@ logger = logging.getLogger("main")
 
 app = FastAPI(title="AstralFox BFF", version="0.2.0")
 
+# ── Protocol ──────────────────────────────────────────────────────
+
+PROTOCOL_VERSION = 4
+SUPPORTED_VERSIONS = {3, 4}
+SERVER_VERSION = "0.2.0"
+
 # ── Global Services ─────────────────────────────────────────────
 
 llm_service = LLMService()
@@ -215,6 +221,26 @@ async def websocket_chat(websocket: WebSocket):
 
                 if msg_type == "ping":
                     await websocket.send_text(json.dumps({"type": "pong"}))
+
+                elif msg_type == "hello":
+                    client_version = msg.get("version", 0)
+                    if client_version not in SUPPORTED_VERSIONS:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "error_code": "PROTOCOL_MISMATCH",
+                            "message": (
+                                f"Unsupported protocol version {client_version}. "
+                                f"Server supports: {sorted(SUPPORTED_VERSIONS)}"
+                            ),
+                        }, ensure_ascii=False))
+                        await websocket.close(code=4000, reason="Protocol mismatch")
+                        break
+                    await websocket.send_text(json.dumps({
+                        "type": "welcome",
+                        "protocol_version": PROTOCOL_VERSION,
+                        "server_version": SERVER_VERSION,
+                    }))
+                    logger.info(f"[WS] Handshake OK. Client v{client_version} ({msg.get('client', 'unknown')} {msg.get('client_version', '')})")
 
                 elif msg_type == "end_of_speech":
                     emotion_context = msg.get("emotion_context", "")

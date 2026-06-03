@@ -184,21 +184,18 @@ class ASRService:
 
 # ── Mock ASR (fallback when no Azure key) ──────────────────
 
-MOCK_TRANSCRIPTS = [
-    "你好",
-    "今天天气怎么样",
-    "讲个笑话吧",
-    "你叫什么名字",
-    "我饿了",
-    "陪我玩游戏",
-    "今天心情不太好",
-    "谢谢你帮我",
-]
 
-import random as _random
+class ASRUnavailableError(Exception):
+    """ASR service not configured — caller should inform user."""
+    pass
 
 
 async def mock_recognize(pcm_bytes_list: list) -> str:
-    """Mock ASR: return a random transcript after a short delay."""
-    await asyncio.sleep(0.3)
-    return _random.choice(MOCK_TRANSCRIPTS)
+    """
+    ASR unavailable: raise an explicit error instead of returning fake
+    transcripts that would cause confusing LLM responses.
+    """
+    raise ASRUnavailableError(
+        "语音识别服务未配置。请在设置中填入 Azure Speech Key，"
+        "或切换到本地 FunASR 模式。"
+    )

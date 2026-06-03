@@ -11,8 +11,8 @@ namespace AstralFox.Config
     /// Encrypted configuration manager for AstralFox.
     ///
     /// Storage: Application.persistentDataPath/config.enc
-    /// Encryption: AES-256-CBC + HMAC-SHA256 (encrypt-then-MAC)
-    /// Key derivation: PBKDF2(deviceUniqueIdentifier + fixed salt, 100k iterations)
+    /// Encryption: DPAPI (Windows, user-bound) or AES-256-CBC + HMAC-SHA256 (fallback).
+    /// Backward-compatible: reads old PBKDF2(deviceId) format and auto-upgrades.
     ///
     /// Usage:
     ///   var cfg = ConfigManager.Instance.CurrentConfig;
@@ -40,8 +40,8 @@ namespace AstralFox.Config
         private const int KeySizeBytes = 32;       // AES-256
         private const int IvSizeBytes = 16;         // AES block size
         private const int HmacSizeBytes = 32;       // SHA-256
-        private const int FileVersion = 1;
-        private const int HeaderSize = 4;           // version marker
+        private const int FileVersion = 2; // v2 = DPAPI (or random-salt AES fallback)
+        private const int HeaderSize = 4;
 
         // Fixed salt mixed with device ID (DO NOT CHANGE after initial deployment)
         private static readonly byte[] FixedSalt = Encoding.UTF8.GetBytes(
@@ -195,88 +195,76 @@ namespace AstralFox.Config
 
         #endregion
 
-        #region Encryption (AES-256-CBC + HMAC-SHA256)
-
-        private byte[] DeriveKey()
-        {
-            string deviceId = SystemInfo.deviceUniqueIdentifier;
-            byte[] salt = new byte[FixedSalt.Length + Encoding.UTF8.GetByteCount(deviceId)];
-            Buffer.BlockCopy(FixedSalt, 0, salt, 0, FixedSalt.Length);
-            Encoding.UTF8.GetBytes(deviceId, 0, deviceId.Length, salt, FixedSalt.Length);
-
-            using var pbkdf2 = new Rfc2898DeriveBytes(
-                deviceId, salt, Pbkdf2Iterations, HashAlgorithmName.SHA256);
-            return pbkdf2.GetBytes(KeySizeBytes);
-        }
+        #region Encryption (DPAPI on Windows, AES-CBC-HMAC fallback)
 
         private byte[] Encrypt(byte[] plaintext)
         {
-            byte[] key = DeriveKey();
-            byte[] iv = new byte[IvSizeBytes];
+            byte[] protectedData = AstralFox.Data.CryptoHelper.Protect(plaintext);
 
-            using (var rng = RandomNumberGenerator.Create())
-                rng.GetBytes(iv);
-
-            byte[] ciphertext;
-            using (var aes = Aes.Create())
-            {
-                aes.Key = key;
-                aes.IV = iv;
-                aes.Mode = CipherMode.CBC;
-                aes.Padding = PaddingMode.PKCS7;
-
-                using var ms = new MemoryStream();
-                using (var cs = new CryptoStream(ms, aes.CreateEncryptor(), CryptoStreamMode.Write))
-                    cs.Write(plaintext, 0, plaintext.Length);
-                ciphertext = ms.ToArray();
-            }
-
-            // Encrypt-then-MAC
-            byte[] hmac = ComputeHmac(key, iv, ciphertext);
-
-            // Pack: [version:4][IV:16][HMAC:32][ciphertext:N]
-            byte[] output = new byte[HeaderSize + IvSizeBytes + HmacSizeBytes + ciphertext.Length];
+            // Pack: [version:4][protectedData:N]
+            byte[] output = new byte[HeaderSize + protectedData.Length];
             Buffer.BlockCopy(BitConverter.GetBytes(FileVersion), 0, output, 0, HeaderSize);
-            Buffer.BlockCopy(iv, 0, output, HeaderSize, IvSizeBytes);
-            Buffer.BlockCopy(hmac, 0, output, HeaderSize + IvSizeBytes, HmacSizeBytes);
-            Buffer.BlockCopy(ciphertext, 0, output, HeaderSize + IvSizeBytes + HmacSizeBytes, ciphertext.Length);
-
+            Buffer.BlockCopy(protectedData, 0, output, HeaderSize, protectedData.Length);
             return output;
         }
 
         private byte[] Decrypt(byte[] data)
         {
-            if (data.Length < HeaderSize + IvSizeBytes + HmacSizeBytes + 16) // min 1 block
+            if (data.Length < HeaderSize)
                 throw new FormatException("Config file is too short or corrupted.");
 
-            // Unpack
             int version = BitConverter.ToInt32(data, 0);
-            if (version != FileVersion)
-                throw new NotSupportedException($"Unsupported config version: {version}");
+
+            int payloadLen = data.Length - HeaderSize;
+            byte[] payload = new byte[payloadLen];
+            Buffer.BlockCopy(data, HeaderSize, payload, 0, payloadLen);
+
+            if (version == 2)
+            {
+                // DPAPI / random-salt AES fallback
+                return AstralFox.Data.CryptoHelper.Unprotect(payload);
+            }
+            else if (version == 1)
+            {
+                // Legacy format: PBKDF2(deviceId + hardcoded salt). Read then auto-upgrade.
+                byte[] plaintext = DecryptLegacy(payload);
+                // Auto-upgrade to v2 on next save
+                return plaintext;
+            }
+
+            throw new NotSupportedException($"Unsupported config version: {version}");
+        }
+
+        // ── Legacy v1 decryption (PBKDF2 + hardcoded salt) ────────
+        // Kept for backward compatibility. Auto-upgrades to v2 on next save.
+
+        private static readonly byte[] FixedSalt = Encoding.UTF8.GetBytes(
+            "AstralFox.Config.Salt.v1!@#STARDUST_FOX_2024");
+
+        private byte[] DecryptLegacy(byte[] data)
+        {
+            if (data.Length < IvSizeBytes + HmacSizeBytes + 16)
+                throw new FormatException("Legacy config data too short.");
 
             byte[] iv = new byte[IvSizeBytes];
             byte[] hmac = new byte[HmacSizeBytes];
-            Buffer.BlockCopy(data, HeaderSize, iv, 0, IvSizeBytes);
-            Buffer.BlockCopy(data, HeaderSize + IvSizeBytes, hmac, 0, HmacSizeBytes);
+            Buffer.BlockCopy(data, 0, iv, 0, IvSizeBytes);
+            Buffer.BlockCopy(data, IvSizeBytes, hmac, 0, HmacSizeBytes);
 
-            int cipherLen = data.Length - HeaderSize - IvSizeBytes - HmacSizeBytes;
+            int cipherLen = data.Length - IvSizeBytes - HmacSizeBytes;
             byte[] ciphertext = new byte[cipherLen];
-            Buffer.BlockCopy(data, HeaderSize + IvSizeBytes + HmacSizeBytes, ciphertext, 0, cipherLen);
+            Buffer.BlockCopy(data, IvSizeBytes + HmacSizeBytes, ciphertext, 0, cipherLen);
 
-            // Verify HMAC before decrypting
-            byte[] key = DeriveKey();
+            byte[] key = DeriveLegacyKey();
             byte[] expectedHmac = ComputeHmac(key, iv, ciphertext);
-
             if (!ConstantTimeEquals(hmac, expectedHmac))
                 throw new CryptographicException("Config file integrity check failed (HMAC mismatch).");
 
-            // Decrypt
             using var aes = Aes.Create();
             aes.Key = key;
             aes.IV = iv;
             aes.Mode = CipherMode.CBC;
             aes.Padding = PaddingMode.PKCS7;
-
             using var ms = new MemoryStream(ciphertext);
             using var cs = new CryptoStream(ms, aes.CreateDecryptor(), CryptoStreamMode.Read);
             using var result = new MemoryStream();
@@ -284,17 +272,25 @@ namespace AstralFox.Config
             return result.ToArray();
         }
 
+        private byte[] DeriveLegacyKey()
+        {
+            string deviceId = SystemInfo.deviceUniqueIdentifier;
+            byte[] salt = new byte[FixedSalt.Length + Encoding.UTF8.GetByteCount(deviceId)];
+            Buffer.BlockCopy(FixedSalt, 0, salt, 0, FixedSalt.Length);
+            Encoding.UTF8.GetBytes(deviceId, 0, deviceId.Length, salt, FixedSalt.Length);
+            using var pbkdf2 = new Rfc2898DeriveBytes(deviceId, salt, Pbkdf2Iterations, HashAlgorithmName.SHA256);
+            return pbkdf2.GetBytes(KeySizeBytes);
+        }
+
         private static byte[] ComputeHmac(byte[] key, byte[] iv, byte[] ciphertext)
         {
-            using var hmac = new HMACSHA256(key);
-            // Authenticate IV + ciphertext
+            using var hmacAlg = new HMACSHA256(key);
             byte[] combined = new byte[iv.Length + ciphertext.Length];
             Buffer.BlockCopy(iv, 0, combined, 0, iv.Length);
             Buffer.BlockCopy(ciphertext, 0, combined, iv.Length, ciphertext.Length);
-            return hmac.ComputeHash(combined);
+            return hmacAlg.ComputeHash(combined);
         }
 
-        /// <summary>Constant-time comparison to prevent timing attacks on HMAC.</summary>
         private static bool ConstantTimeEquals(byte[] a, byte[] b)
         {
             if (a.Length != b.Length) return false;
