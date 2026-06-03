@@ -138,6 +138,169 @@ namespace AstralFox.Config
         /// <summary>Check if an encrypted config file exists.</summary>
         public bool ConfigFileExists => File.Exists(_filePath);
 
+        /// <summary>
+        /// Export all data as a portable, password-encrypted backup file.
+        /// Uses PBKDF2(userPassword, randomSalt, 200k iterations) → AES-256-CBC + HMAC.
+        /// </summary>
+        public static byte[] ExportEncryptedBackup(string password)
+        {
+            // Gather all data
+            var config = Instance.CurrentConfig;
+            var dataFile = Path.Combine(Application.persistentDataPath, "astralfox_data.json");
+
+            var backup = new System.Collections.Generic.Dictionary<string, string>
+            {
+                ["config"] = JsonUtility.ToJson(config, true),
+                ["data"] = File.Exists(dataFile) ? File.ReadAllText(dataFile) : "{}",
+                ["version"] = "1",
+                ["exported_at"] = DateTimeOffset.UtcNow.ToString("o"),
+            };
+
+            string json = JsonUtility.ToJson(new ExportPayload
+            {
+                config_json = backup["config"],
+                data_json = backup["data"],
+                version = backup["version"],
+                exported_at = backup["exported_at"],
+            });
+
+            byte[] plaintext = Encoding.UTF8.GetBytes(json);
+
+            // Derive key from password
+            byte[] salt = new byte[32];
+            using (var rng = RandomNumberGenerator.Create())
+                rng.GetBytes(salt);
+
+            byte[] keyMaterial;
+            using (var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 200_000, HashAlgorithmName.SHA256))
+                keyMaterial = pbkdf2.GetBytes(64); // 32 AES + 32 HMAC
+
+            byte[] aesKey = new byte[32];
+            byte[] hmacKey = new byte[32];
+            Buffer.BlockCopy(keyMaterial, 0, aesKey, 0, 32);
+            Buffer.BlockCopy(keyMaterial, 32, hmacKey, 0, 32);
+
+            byte[] iv = new byte[16];
+            using (var rng = RandomNumberGenerator.Create())
+                rng.GetBytes(iv);
+
+            byte[] ciphertext;
+            using (var aes = Aes.Create())
+            {
+                aes.Key = aesKey;
+                aes.IV = iv;
+                aes.Mode = CipherMode.CBC;
+                aes.Padding = PaddingMode.PKCS7;
+                using var ms = new MemoryStream();
+                using (var cs = new CryptoStream(ms, aes.CreateEncryptor(), CryptoStreamMode.Write))
+                    cs.Write(plaintext, 0, plaintext.Length);
+                ciphertext = ms.ToArray();
+            }
+
+            byte[] hmac;
+            using (var hmacAlg = new HMACSHA256(hmacKey))
+            {
+                byte[] combined = new byte[iv.Length + ciphertext.Length];
+                Buffer.BlockCopy(iv, 0, combined, 0, iv.Length);
+                Buffer.BlockCopy(ciphertext, 0, combined, iv.Length, ciphertext.Length);
+                hmac = hmacAlg.ComputeHash(combined);
+            }
+
+            // Pack: [salt:32][IV:16][HMAC:32][ciphertext:N]
+            byte[] output = new byte[32 + 16 + 32 + ciphertext.Length];
+            Buffer.BlockCopy(salt, 0, output, 0, 32);
+            Buffer.BlockCopy(iv, 0, output, 32, 16);
+            Buffer.BlockCopy(hmac, 0, output, 48, 32);
+            Buffer.BlockCopy(ciphertext, 0, output, 80, ciphertext.Length);
+            return output;
+        }
+
+        /// <summary>Import data from a password-encrypted backup file.</summary>
+        public static bool ImportEncryptedBackup(string password, byte[] backupData)
+        {
+            if (backupData.Length < 96) return false; // min: salt+IV+HMAC+1 block
+
+            try
+            {
+                byte[] salt = new byte[32];
+                byte[] iv = new byte[16];
+                byte[] hmac = new byte[32];
+                byte[] ciphertext = new byte[backupData.Length - 80];
+                Buffer.BlockCopy(backupData, 0, salt, 0, 32);
+                Buffer.BlockCopy(backupData, 32, iv, 0, 16);
+                Buffer.BlockCopy(backupData, 48, hmac, 0, 32);
+                Buffer.BlockCopy(backupData, 80, ciphertext, 0, ciphertext.Length);
+
+                byte[] keyMaterial;
+                using (var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 200_000, HashAlgorithmName.SHA256))
+                    keyMaterial = pbkdf2.GetBytes(64);
+
+                byte[] hmacKey = new byte[32];
+                Buffer.BlockCopy(keyMaterial, 32, hmacKey, 0, 32);
+
+                // Verify HMAC
+                using (var hmacAlg = new HMACSHA256(hmacKey))
+                {
+                    byte[] combined = new byte[16 + ciphertext.Length];
+                    Buffer.BlockCopy(iv, 0, combined, 0, 16);
+                    Buffer.BlockCopy(ciphertext, 0, combined, 16, ciphertext.Length);
+                    if (!ConstantTimeEquals(hmac, hmacAlg.ComputeHash(combined)))
+                        return false;
+                }
+
+                byte[] aesKey = new byte[32];
+                Buffer.BlockCopy(keyMaterial, 0, aesKey, 0, 32);
+
+                byte[] plaintext;
+                using (var aes = Aes.Create())
+                {
+                    aes.Key = aesKey;
+                    aes.IV = iv;
+                    aes.Mode = CipherMode.CBC;
+                    aes.Padding = PaddingMode.PKCS7;
+                    using var ms = new MemoryStream(ciphertext);
+                    using var cs = new CryptoStream(ms, aes.CreateDecryptor(), CryptoStreamMode.Read);
+                    using var result = new MemoryStream();
+                    cs.CopyTo(result);
+                    plaintext = result.ToArray();
+                }
+
+                string json = Encoding.UTF8.GetString(plaintext);
+                var payload = JsonUtility.FromJson<ExportPayload>(json);
+                if (payload == null) return false;
+
+                // Restore config
+                var config = JsonUtility.FromJson<AppConfig>(payload.config_json);
+                if (config != null)
+                    Instance.SaveConfig(config);
+
+                // Restore data
+                string dataPath = Path.Combine(Application.persistentDataPath, "astralfox_data.json");
+                File.WriteAllText(dataPath, payload.data_json ?? "{}");
+
+                // Reload
+                Instance.ReloadConfig();
+                Data.DataStore.Instance.OnApplicationQuit(); // force re-read
+
+                Debug.Log("[ConfigManager] Backup imported successfully.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[ConfigManager] Import failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        [Serializable]
+        private class ExportPayload
+        {
+            public string config_json;
+            public string data_json;
+            public string version;
+            public string exported_at;
+        }
+
         #endregion
 
         #region Load (with error recovery)

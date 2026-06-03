@@ -114,7 +114,7 @@ namespace AstralFox.Voice
         private MicrophoneCapture _mic;
         private VoiceActivityDetector _vad;
         private WakeWordDetector _wakeWord;
-        private BackendClient _backend;
+        private IVoicePipeline _pipeline; // unified AI backend abstraction
         private TTSPlayer _ttsPlayer;
 
         // State timers
@@ -133,6 +133,7 @@ namespace AstralFox.Voice
         // Interrupt tracking
         private float _interruptTimer;
         private float _interruptCooldownTimer;
+        private bool _isTransitioning; // guards against re-entrant SetState calls
 
         #endregion
 
@@ -143,8 +144,15 @@ namespace AstralFox.Voice
             _mic = GetComponent<MicrophoneCapture>();
             _vad = GetComponent<VoiceActivityDetector>();
             _wakeWord = GetComponent<WakeWordDetector>();
-            _backend = GetComponent<BackendClient>();
+            _pipeline = GetComponent<IVoicePipeline>(); // resolve first IVoicePipeline on GameObject
             _ttsPlayer = GetComponent<TTSPlayer>();
+
+            if (_pipeline == null)
+            {
+                Debug.LogError("[VoiceManager] No IVoicePipeline component found on this GameObject!");
+                enabled = false;
+                return;
+            }
         }
 
         private void Start()
@@ -155,15 +163,16 @@ namespace AstralFox.Voice
             _vad.OnSpeechEnd += OnVadSpeechEnd;
             _wakeWord.OnWakeWordDetected += OnWakeWord;
             _wakeWord.OnPartialResult += OnWakePartial;
-            _backend.OnFinalTranscript += OnBackendTranscript;
-            _backend.OnLLMToken += OnBackendLLMToken;
-            _backend.OnEmotionTag += OnBackendEmotionTag;
-            _backend.OnActionTag += OnBackendActionTag;
-            _backend.OnLLMResponse += OnBackendLLMResponse;
-            _backend.OnTTSAudio += OnTTSAudioChunk;
-            _backend.OnTTSWavAudio += OnTTSWavAudioChunk;
-            _backend.OnTTSDone += OnBackendTTSDone;
-            _backend.OnError += OnBackendError;
+            _pipeline.OnFinalTranscript += OnBackendTranscript;
+            _pipeline.OnLLMToken += OnBackendLLMToken;
+            _pipeline.OnEmotionTag += OnBackendEmotionTag;
+            _pipeline.OnActionTag += OnBackendActionTag;
+            _pipeline.OnLLMResponse += OnBackendLLMResponse;
+            _pipeline.OnTTSAudio += OnTTSAudioChunk;
+            _pipeline.OnTTSWavAudio += OnTTSWavAudioChunk;
+            _pipeline.OnTTSDone += OnBackendTTSDone;
+            _pipeline.OnError += OnBackendError;
+            _pipeline.OnReconnected += OnBackendReconnected;
             _ttsPlayer.OnPlaybackComplete += OnTTSPlaybackComplete;
 
             SetState(VoiceState.Idle);
@@ -222,15 +231,16 @@ namespace AstralFox.Voice
             _vad.OnSpeechEnd -= OnVadSpeechEnd;
             _wakeWord.OnWakeWordDetected -= OnWakeWord;
             _wakeWord.OnPartialResult -= OnWakePartial;
-            _backend.OnFinalTranscript -= OnBackendTranscript;
-            _backend.OnLLMToken -= OnBackendLLMToken;
-            _backend.OnEmotionTag -= OnBackendEmotionTag;
-            _backend.OnActionTag -= OnBackendActionTag;
-            _backend.OnLLMResponse -= OnBackendLLMResponse;
-            _backend.OnTTSAudio -= OnTTSAudioChunk;
-            _backend.OnTTSWavAudio -= OnTTSWavAudioChunk;
-            _backend.OnTTSDone -= OnBackendTTSDone;
-            _backend.OnError -= OnBackendError;
+            _pipeline.OnFinalTranscript -= OnBackendTranscript;
+            _pipeline.OnLLMToken -= OnBackendLLMToken;
+            _pipeline.OnEmotionTag -= OnBackendEmotionTag;
+            _pipeline.OnActionTag -= OnBackendActionTag;
+            _pipeline.OnLLMResponse -= OnBackendLLMResponse;
+            _pipeline.OnTTSAudio -= OnTTSAudioChunk;
+            _pipeline.OnTTSWavAudio -= OnTTSWavAudioChunk;
+            _pipeline.OnTTSDone -= OnBackendTTSDone;
+            _pipeline.OnError -= OnBackendError;
+            _pipeline.OnReconnected -= OnBackendReconnected;
             if (_ttsPlayer != null)
                 _ttsPlayer.OnPlaybackComplete -= OnTTSPlaybackComplete;
         }
@@ -262,7 +272,7 @@ namespace AstralFox.Voice
                     _recordDuration += (float)samples.Length / sampleRate;
 
                     // Stream to backend
-                    _backend.SendAudio(samples, sampleRate, channels);
+                    _pipeline.SendAudio(samples, sampleRate, channels);
                     break;
 
                 case VoiceState.Speaking:
@@ -316,11 +326,11 @@ namespace AstralFox.Voice
         private void EndRecording()
         {
             // Flush remaining audio to backend
-            _ = _backend.FlushAudioAsync();
+            _ = _pipeline.FlushAudioAsync();
 
             // Send emotion context + end-of-speech marker
             string contextJson = BuildContextMessage();
-            _ = _backend.SendTextAsync(contextJson);
+            _ = _pipeline.SendTextAsync(contextJson);
 
             SetState(VoiceState.Processing);
 
@@ -342,7 +352,8 @@ namespace AstralFox.Voice
                 personality = string.IsNullOrEmpty(cfg.character_personality)
                     ? Data.DataStore.Instance.GetCharacterPersonality()
                     : cfg.character_personality,
-                memory_summary = Data.DataStore.Instance.GetMemorySummary(),
+                memory_summary = Data.DataStore.Instance.GetMemorySummary()
+                    + "\n" + Data.DataStore.Instance.GetUserFactsSummary(),
                 character_name = cfg.character_name,
                 character_backstory = cfg.character_backstory,
                 character_extra = cfg.character_extra,
@@ -416,6 +427,46 @@ namespace AstralFox.Voice
             _pendingTranscript = text;
             if (_verboseLogging) Debug.Log($"[VoiceManager] Transcript: \"{text}\"");
             OnTranscriptReceived?.Invoke(text);
+
+            // Auto-extract user facts from what they said
+            ExtractAndStoreUserFact(text);
+        }
+
+        /// <summary>Simple pattern extraction: user tells us something about themselves.</summary>
+        private static void ExtractAndStoreUserFact(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+
+            // Match patterns like: 我叫X, 我是X, 我喜欢X, 我的X是Y, 我在学X
+            var patterns = new (string regex, string prefix)[]
+            {
+                (@"我叫(.+?)(?:[，。！？\s]|$)", "用户的名字是"),
+                (@"我是(.+?)(?:[，。！？\s]|$)", "用户是"),
+                (@"我喜欢(.+?)(?:[，。！？\s]|$)", "用户喜欢"),
+                (@"我讨厌(.+?)(?:[，。！？\s]|$)", "用户讨厌"),
+                (@"我在(.+?)(?:[，。！？\s]|$)", "用户正在"),
+                (@"我的(.+?)是(.+?)(?:[，。！？\s]|$)", "用户的"),
+            };
+
+            foreach (var (regex, prefix) in patterns)
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(
+                    text, regex, System.Text.RegularExpressions.RegexOptions.None,
+                    System.TimeSpan.FromMilliseconds(100)); // safety timeout
+
+                if (match.Success)
+                {
+                    string value = match.Groups.Count > 2
+                        ? $"{match.Groups[1].Value}{match.Groups[2].Value}"
+                        : match.Groups[1].Value;
+
+                    string fact = $"{prefix}{value.Trim()}";
+                    Data.DataStore.Instance.AddUserFact(fact);
+
+                    if (true) // always log memory extraction
+                        Debug.Log($"[VoiceManager] Memory extracted: {fact}");
+                }
+            }
         }
 
         private void OnBackendLLMResponse(string rawText)
@@ -508,6 +559,19 @@ namespace AstralFox.Voice
         {
             Debug.LogError($"[VoiceManager] Backend error: {error}");
             SetState(VoiceState.Idle);
+        }
+
+        private void OnBackendReconnected()
+        {
+            // If we're stuck in a non-idle state after reconnect, reset
+            if (CurrentState != VoiceState.Idle)
+            {
+                if (_verboseLogging)
+                    Debug.Log($"[VoiceManager] Connection restored while in {CurrentState} — resetting to Idle.");
+                _ttsPlayer.StopImmediate();
+                Animation.PetAnimationManager.Instance?.CurrentAnimator?.OnSpeakingEnd();
+                SetState(VoiceState.Idle);
+            }
         }
 
         #endregion
@@ -611,10 +675,14 @@ namespace AstralFox.Voice
         private void SetState(VoiceState newState)
         {
             if (newState == CurrentState) return;
+            if (_isTransitioning) return; // prevent re-entrant transitions
 
-            VoiceState previous = CurrentState;
-            CurrentState = newState;
-            _stateTimer = 0f;
+            _isTransitioning = true;
+            try
+            {
+                VoiceState previous = CurrentState;
+                CurrentState = newState;
+                _stateTimer = 0f;
 
             // State entry logic
             switch (newState)
@@ -659,10 +727,15 @@ namespace AstralFox.Voice
                     break;
             }
 
-            OnStateChanged?.Invoke(previous, newState);
+                OnStateChanged?.Invoke(previous, newState);
 
-            if (_verboseLogging)
-                Debug.Log($"[VoiceManager] State: {previous} → {newState}");
+                if (_verboseLogging)
+                    Debug.Log($"[VoiceManager] State: {previous} → {newState}");
+            }
+            finally
+            {
+                _isTransitioning = false;
+            }
         }
 
         #endregion

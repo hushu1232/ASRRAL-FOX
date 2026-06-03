@@ -75,6 +75,7 @@ namespace AstralFox.Data
             public WindowState windowState = new WindowState();
             public string authToken = "";
             public string authRefreshToken = "";
+            public List<string> userFacts = new List<string>(); // long-term memory: facts about the user
             public Dictionary<string, float> customFloats = new Dictionary<string, float>();
         }
 
@@ -85,6 +86,8 @@ namespace AstralFox.Data
         private readonly string _filePath;
         private SaveData _data;
         private bool _dirty;
+        private float _lastSaveTime;
+        private const float SaveThrottleInterval = 5f; // minimum seconds between disk writes
 
         // In-memory caches
         private readonly List<ChatRecord> _recentChatCache = new List<ChatRecord>();
@@ -144,9 +147,15 @@ namespace AstralFox.Data
             }
         }
 
+        /// <summary>Throttled save — writes at most once per SaveThrottleInterval.</summary>
         public void Save()
         {
             if (!_dirty) return;
+
+            float now = Time.realtimeSinceStartup;
+            if (now - _lastSaveTime < SaveThrottleInterval) return; // throttle
+
+            _lastSaveTime = now;
 
             try
             {
@@ -396,6 +405,46 @@ namespace AstralFox.Data
 
         #endregion
 
+        #region User Facts (Long-term Memory)
+
+        /// <summary>Add a fact the user has shared (e.g., "用户的名字是小明").</summary>
+        public void AddUserFact(string fact)
+        {
+            if (string.IsNullOrEmpty(fact)) return;
+            fact = Truncate(fact.Trim(), 200);
+
+            // Deduplicate: don't store the same fact twice
+            foreach (string existing in _data.userFacts)
+            {
+                if (existing.Contains(fact) || fact.Contains(existing))
+                    return;
+            }
+
+            _data.userFacts.Add(fact);
+
+            // Keep bounded: max 50 facts
+            while (_data.userFacts.Count > 50)
+                _data.userFacts.RemoveAt(0);
+
+            _dirty = true;
+        }
+
+        /// <summary>Get all stored facts about the user for LLM context injection.</summary>
+        public string GetUserFactsSummary()
+        {
+            if (_data.userFacts.Count == 0) return "";
+            return "【关于用户的信息】\n" + string.Join("\n", _data.userFacts);
+        }
+
+        /// <summary>Clear all user facts.</summary>
+        public void ClearUserFacts()
+        {
+            _data.userFacts.Clear();
+            _dirty = true;
+        }
+
+        #endregion
+
         #region Window State Persistence
 
         public WindowState GetWindowState() => _data.windowState;
@@ -439,9 +488,10 @@ namespace AstralFox.Data
             return text.Substring(0, maxLength);
         }
 
-        /// <summary>Force save on application quit.</summary>
+        /// <summary>Force save on application quit — bypasses throttle.</summary>
         public static void OnApplicationQuit()
         {
+            Instance._lastSaveTime = 0f; // bypass throttle
             Instance.Save();
         }
 

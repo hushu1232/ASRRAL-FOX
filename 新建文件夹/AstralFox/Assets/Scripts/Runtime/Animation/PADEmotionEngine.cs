@@ -193,7 +193,13 @@ namespace AstralFox.Animation
         {
             float dt = Time.deltaTime;
 
-            _rawP = MoveToward(_rawP, _pleasureBaseline, _pleasureDecayRate * _decayMultP * dt);
+            // Affection-based decay scaling:
+            // High affection → slower decay (the fox is happier to see you)
+            // Low affection → normal decay
+            float affection = Data.DataStore.Instance.GetAffection().affectionLevel;
+            float affectionScale = Mathf.Clamp01(1f - affection / 200f); // 0.5 at 100, 1.0 at 0
+
+            _rawP = MoveToward(_rawP, _pleasureBaseline, _pleasureDecayRate * _decayMultP * dt * affectionScale);
             _rawA = MoveToward(_rawA, _arousalBaseline, _arousalDecayRate * _decayMultA * dt);
             _rawD = MoveToward(_rawD, _dominanceBaseline, _dominanceDecayRate * _decayMultD * dt);
 

@@ -70,19 +70,52 @@ namespace AstralFox.Data
 
         private static byte[] GetOrCreateSalt()
         {
+            // 1. Try PlayerPrefs (fast, registry-backed on Windows)
             string saved = UnityEngine.PlayerPrefs.GetString(SaltPrefsKey, "");
             if (!string.IsNullOrEmpty(saved))
             {
                 try { return Convert.FromBase64String(saved); }
-                catch { /* corrupted, regenerate */ }
+                catch { /* corrupted */ }
             }
 
+            // 2. Try file backup (survives PlayerPrefs/registry cleanup)
+            string saltPath = System.IO.Path.Combine(
+                UnityEngine.Application.persistentDataPath, "crypto.salt");
+            if (System.IO.File.Exists(saltPath))
+            {
+                try
+                {
+                    byte[] fileSalt = System.IO.File.ReadAllBytes(saltPath);
+                    if (fileSalt.Length == SaltLength)
+                    {
+                        // Restore to PlayerPrefs
+                        UnityEngine.PlayerPrefs.SetString(SaltPrefsKey, Convert.ToBase64String(fileSalt));
+                        UnityEngine.PlayerPrefs.Save();
+                        return fileSalt;
+                    }
+                }
+                catch { /* corrupted */ }
+            }
+
+            // 3. Generate new salt, persist to BOTH locations
             byte[] salt = new byte[SaltLength];
             using (var rng = RandomNumberGenerator.Create())
                 rng.GetBytes(salt);
 
+            // Primary storage: PlayerPrefs
             UnityEngine.PlayerPrefs.SetString(SaltPrefsKey, Convert.ToBase64String(salt));
             UnityEngine.PlayerPrefs.Save();
+
+            // Backup: file alongside encrypted data (survives registry cleanup)
+            try
+            {
+                System.IO.File.WriteAllBytes(saltPath, salt);
+            }
+            catch
+            {
+                // Non-critical — PlayerPrefs is the primary store
+            }
+
             return salt;
         }
 

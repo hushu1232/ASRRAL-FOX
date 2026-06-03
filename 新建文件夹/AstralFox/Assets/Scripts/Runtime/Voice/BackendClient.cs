@@ -28,7 +28,7 @@ namespace AstralFox.Voice
     ///
     /// For Phase 3 testing, connects to ws://localhost:8765/ws/chat.
     /// </summary>
-    public sealed class BackendClient : MonoBehaviour
+    public sealed class BackendClient : MonoBehaviour, IVoicePipeline
     {
         #region Connection State Machine
 
@@ -93,6 +93,7 @@ namespace AstralFox.Voice
         #region Events
 
         public event Action<bool> OnConnectionChanged;
+        public event Action OnReconnected;            // fired after successful reconnect
         public event Action<string> OnPartialTranscript;
         public event Action<string> OnFinalTranscript;
         public event Action<string> OnLLMResponse;   // full text with tags (legacy/completion)
@@ -121,6 +122,7 @@ namespace AstralFox.Voice
         private ClientWebSocket _ws;
         private CancellationTokenSource _cts;
         private CancellationTokenSource _connectCts;
+        private bool _wasUnexpectedDisconnect;
         private float _reconnectTimer;
         private float _sendTimer;
         private float _pingTimer;
@@ -231,6 +233,15 @@ namespace AstralFox.Voice
                 // Protocol handshake
                 await SendHelloAsync();
 
+                // Fire reconnect event if this was an unexpected drop
+                if (_wasUnexpectedDisconnect)
+                {
+                    _wasUnexpectedDisconnect = false;
+                    OnReconnected?.Invoke();
+                    if (_logMessages)
+                        Debug.Log("[BackendClient] Reconnected after unexpected disconnect.");
+                }
+
                 _ = ReceiveLoopAsync(_cts.Token);
             }
             catch (Exception ex)
@@ -243,6 +254,7 @@ namespace AstralFox.Voice
 
         public async Task DisconnectAsync()
         {
+            _wasUnexpectedDisconnect = false; // manual disconnect, not a drop
             SetState(ConnectionState.Disconnecting);
             _cts?.Cancel();
 
@@ -388,6 +400,7 @@ namespace AstralFox.Voice
             }
             finally
             {
+                _wasUnexpectedDisconnect = true;
                 SetState(ConnectionState.Disconnected);
                 ClearAudioQueue();
                 OnConnectionChanged?.Invoke(false);
