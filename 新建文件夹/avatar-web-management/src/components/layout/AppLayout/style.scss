@@ -1,4 +1,4 @@
-@use '@/styles/variables' as *;
+@use '@/styles/variables' as var;
 
 .app-layout {
   display: flex;
@@ -19,28 +19,28 @@
     flex-direction: column;
     flex: 1;
     background: var(--bg-deep);
-    transition: margin-left $transition-normal;
+    transition: margin-left var.$transition-normal;
 
     &--sidebar-expanded {
-      margin-left: $sidebar-width;
+      margin-left: var.$sidebar-width;
     }
 
     &--sidebar-collapsed {
-      margin-left: $sidebar-collapsed-width;
+      margin-left: var.$sidebar-collapsed-width;
     }
   }
 
   &__content {
     flex: 1;
-    padding: $spacing-3;
-    min-height: calc(100vh - #{$header-height});
+    padding: var.$spacing-3;
+    min-height: calc(100vh - #{var.$header-height});
 
-    @media (min-width: $breakpoint-md) {
-      padding: $spacing-6;
+    @media (min-width: var.$breakpoint-md) {
+      padding: var.$spacing-6;
     }
 
-    @media (min-width: $breakpoint-lg) {
-      padding: $spacing-6 $spacing-8;
+    @media (min-width: var.$breakpoint-lg) {
+      padding: var.$spacing-6 var.$spacing-8;
     }
   }
 }

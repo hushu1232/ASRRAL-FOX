@@ -1,3 +1,4 @@
+// TODO: BEM-migrate
 import type { ReactNode } from 'react';
 import PageTitle from './PageTitle';
 import EmptyState from './EmptyState';

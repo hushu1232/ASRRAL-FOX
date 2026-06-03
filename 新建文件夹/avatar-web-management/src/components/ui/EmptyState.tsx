@@ -1,3 +1,4 @@
+// TODO: BEM-migrate
 import { Empty, Button } from 'antd';
 import type { ReactNode } from 'react';
 

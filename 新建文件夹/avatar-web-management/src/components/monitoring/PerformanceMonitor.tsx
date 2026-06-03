@@ -1,3 +1,4 @@
+// TODO: BEM-migrate
 'use client';
 // 性能监控面板 — 开发环境 Web Vitals 实时可视化悬浮窗
 

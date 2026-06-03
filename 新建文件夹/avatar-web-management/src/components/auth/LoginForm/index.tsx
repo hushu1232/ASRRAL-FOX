@@ -37,21 +37,21 @@ export default function LoginForm() {
 
   return (
     <div className="login-form">
-      <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-        <Image src="/images/logo.svg" alt="星尘" width={56} height={56} style={{ margin: '0 auto 0.75rem', display: 'block' }} priority unoptimized />
+      <div className="login-form__header">
+        <Image src="/images/logo.svg" alt="星尘" width={56} height={56} className="login-form__logo" priority unoptimized />
         <h1 className="login-form__title">{t('title')}</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{t('subtitle')}</p>
+        <p className="login-form__subtitle">{t('subtitle')}</p>
       </div>
 
       {error && <div className="login-form__error">{error}</div>}
 
       <Form onFinish={onFinish} layout="vertical" size="large">
         <Form.Item name="email" rules={[{ required: true, type: 'email', message: t('emailRequired') }]} className="login-form__field">
-          <Input prefix={<MailOutlined style={{ color: 'var(--text-muted)' }} />} placeholder={t('emailPlaceholder')} className="login-form__input" />
+          <Input prefix={<MailOutlined className="login-form__input-icon" />} placeholder={t('emailPlaceholder')} className="login-form__input" />
         </Form.Item>
 
         <Form.Item name="password" rules={[{ required: true, message: t('passwordRequired') }]} className="login-form__field">
-          <Input.Password prefix={<LockOutlined style={{ color: 'var(--text-muted)' }} />} placeholder={t('passwordPlaceholder')} className="login-form__input" />
+          <Input.Password prefix={<LockOutlined className="login-form__input-icon" />} placeholder={t('passwordPlaceholder')} className="login-form__input" />
         </Form.Item>
 
         <Form.Item>
@@ -59,7 +59,7 @@ export default function LoginForm() {
         </Form.Item>
       </Form>
 
-      <div style={{ textAlign: 'right', marginBottom: '1rem' }}>
+      <div className="login-form__forgot">
         <Link href="/forgot-password" className="login-form__link">{t('forgotPassword')}</Link>
       </div>
 

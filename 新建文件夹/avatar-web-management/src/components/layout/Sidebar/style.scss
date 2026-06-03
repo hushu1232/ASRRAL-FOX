@@ -1,39 +1,39 @@
-@use '@/styles/variables' as *;
+@use '@/styles/variables' as var;
 
 .sidebar {
   position: fixed;
   left: 0;
   top: 0;
-  z-index: $z-sidebar;
+  z-index: var.$z-sidebar;
   height: 100vh;
   background: var(--bg-card);
   border-right: 1px solid var(--border-subtle);
   overflow: hidden;
-  transition: width $transition-normal;
+  transition: width var.$transition-normal;
 
   &--expanded {
-    width: $sidebar-width;
+    width: var.$sidebar-width;
   }
 
   &--collapsed {
-    width: $sidebar-collapsed-width;
+    width: var.$sidebar-collapsed-width;
   }
 
   // ── Header: logo + brand name ──
   &__brand {
     display: flex;
     align-items: center;
-    height: $header-height;
+    height: var.$header-height;
     border-bottom: 1px solid var(--border-subtle);
 
     &--expanded {
-      gap: $spacing-3;
-      padding: 0 $spacing-5;
+      gap: var.$spacing-3;
+      padding: 0 var.$spacing-5;
     }
 
     &--collapsed {
       justify-content: center;
-      padding: 0 $spacing-2;
+      padding: 0 var.$spacing-2;
     }
   }
 
@@ -57,7 +57,7 @@
 
   // ── Action button area ──
   &__action {
-    padding: $spacing-3;
+    padding: var.$spacing-3;
 
     &--collapsed {
       display: flex;
@@ -72,13 +72,13 @@
     background: linear-gradient(90deg, var(--accent), var(--info));
     border: none;
     color: #fff;
-    border-radius: $radius-md;
+    border-radius: var.$radius-md;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: $spacing-2;
-    transition: opacity $transition-fast;
+    gap: var.$spacing-2;
+    transition: opacity var.$transition-fast;
 
     &:hover {
       opacity: 0.9;
@@ -94,16 +94,21 @@
   &__menu {
     background: transparent;
     border-inline-end: none;
-    margin-top: $spacing-1;
-    padding: 0 $spacing-3;
+    margin-top: var.$spacing-1;
+    padding: 0 var.$spacing-3;
   }
 
-  // Ant Design menu override (wrapped in BEM context)
+  // Ant Design menu override (wrapped in BEM context).
+  // NOTE: we intentionally use :global() selectors here instead of Ant Design's
+  // ConfigProvider theme-token API. Trade-off: ConfigProvider would be more robust
+  // across Ant Design version upgrades, but :global() keeps overrides co-located
+  // with the component's BEM styles, avoiding a separate theme-config file.
+  // If upgrading Ant Design, check for class-name changes in this block.
   &__menu :global(.ant-menu-item) {
-    border-radius: $radius-md;
+    border-radius: var.$radius-md;
     margin: 2px 0;
     color: var(--text-secondary);
-    transition: all $transition-fast;
+    transition: all var.$transition-fast;
 
     &:hover {
       color: var(--text-primary);
@@ -117,17 +122,17 @@
   }
 
   &__menu :global(.ant-menu-item-divider) {
-    margin: $spacing-2 0;
+    margin: var.$spacing-2 0;
     border-color: var(--border-subtle);
   }
 
   // ── Toggle at bottom ──
   &__toggle {
     position: absolute;
-    bottom: $spacing-4;
+    bottom: var.$spacing-4;
     left: 0;
     right: 0;
-    padding: 0 $spacing-3;
+    padding: 0 var.$spacing-3;
   }
 
   &__toggle-btn {
@@ -140,8 +145,8 @@
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    border-radius: $radius-md;
-    transition: all $transition-fast;
+    border-radius: var.$radius-md;
+    transition: all var.$transition-fast;
 
     &:hover {
       color: var(--text-primary);

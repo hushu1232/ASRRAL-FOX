@@ -1,3 +1,4 @@
+// TODO: BEM-migrate
 'use client';
 
 import { useEffect, useMemo } from 'react';

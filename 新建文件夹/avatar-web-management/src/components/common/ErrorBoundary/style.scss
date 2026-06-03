@@ -1,4 +1,4 @@
-@use '@/styles/variables' as *;
+@use '@/styles/variables' as var;
 
 .error-boundary {
   display: flex;
@@ -6,12 +6,12 @@
   align-items: center;
   justify-content: center;
   min-height: 16rem;
-  padding: $spacing-8;
+  padding: var.$spacing-8;
   text-align: center;
 
   &__icon {
     font-size: 3rem;
-    margin-bottom: $spacing-4;
+    margin-bottom: var.$spacing-4;
     color: var(--error);
   }
 
@@ -19,25 +19,25 @@
     font-size: 1.25rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: $spacing-2;
+    margin-bottom: var.$spacing-2;
   }
 
   &__message {
     font-size: 0.875rem;
     color: var(--text-secondary);
     max-width: 24rem;
-    margin-bottom: $spacing-6;
+    margin-bottom: var.$spacing-6;
   }
 
   &__retry-btn {
-    padding: $spacing-2 $spacing-6;
+    padding: var.$spacing-2 var.$spacing-6;
     background: var(--accent);
     color: #fff;
     border: none;
-    border-radius: $radius-md;
+    border-radius: var.$radius-md;
     cursor: pointer;
     font-weight: 500;
-    transition: background $transition-fast;
+    transition: background var.$transition-fast;
 
     &:hover {
       background: var(--accent-hover);

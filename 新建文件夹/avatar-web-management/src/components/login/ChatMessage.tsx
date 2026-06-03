@@ -1,3 +1,4 @@
+// TODO: BEM-migrate
 'use client';
 
 import CharacterAvatar from './CharacterAvatar';

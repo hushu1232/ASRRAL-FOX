@@ -1,3 +1,4 @@
+// TODO: BEM-migrate
 'use client';
 // TimeAwarenessOverlay — 时间感知气泡提示（叠放在 ModelViewer 上方）
 

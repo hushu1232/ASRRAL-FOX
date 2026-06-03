@@ -35,23 +35,23 @@ export default function RegisterForm() {
 
   return (
     <div className="register-form">
-      <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-        <Image src="/images/logo.svg" alt="星尘" width={56} height={56} style={{ margin: '0 auto 0.75rem', display: 'block' }} priority unoptimized />
+      <div className="register-form__header">
+        <Image src="/images/logo.svg" alt="星尘" width={56} height={56} className="register-form__logo" priority unoptimized />
         <h1 className="register-form__title">{t('title')}</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{t('subtitle')}</p>
+        <p className="register-form__subtitle">{t('subtitle')}</p>
       </div>
 
       {error && <div className="register-form__error">{error}</div>}
 
       <Form layout="vertical" onFinish={onFinish} autoComplete="off">
         <Form.Item name="email" rules={[{ required: true, type: 'email' }, { type: 'email' }]} className="register-form__field">
-          <Input prefix={<MailOutlined style={{ color: 'var(--text-muted)' }} />} placeholder={t('emailPlaceholder')} className="register-form__input" />
+          <Input prefix={<MailOutlined className="register-form__input-icon" />} placeholder={t('emailPlaceholder')} className="register-form__input" />
         </Form.Item>
         <Form.Item name="username" rules={[{ required: true }, { min: 2 }, { max: 32 }]} className="register-form__field">
-          <Input prefix={<UserOutlined style={{ color: 'var(--text-muted)' }} />} placeholder={t('usernamePlaceholder')} className="register-form__input" />
+          <Input prefix={<UserOutlined className="register-form__input-icon" />} placeholder={t('usernamePlaceholder')} className="register-form__input" />
         </Form.Item>
         <Form.Item name="password" rules={[{ required: true }, { min: 8 }]} className="register-form__field">
-          <Input.Password prefix={<LockOutlined style={{ color: 'var(--text-muted)' }} />} placeholder={t('passwordPlaceholder')} className="register-form__input" />
+          <Input.Password prefix={<LockOutlined className="register-form__input-icon" />} placeholder={t('passwordPlaceholder')} className="register-form__input" />
         </Form.Item>
         <Form.Item
           name="confirmPassword"
@@ -64,7 +64,7 @@ export default function RegisterForm() {
           })]}
           className="register-form__field"
         >
-          <Input.Password prefix={<LockOutlined style={{ color: 'var(--text-muted)' }} />} placeholder={t('confirmPasswordPlaceholder')} className="register-form__input" />
+          <Input.Password prefix={<LockOutlined className="register-form__input-icon" />} placeholder={t('confirmPasswordPlaceholder')} className="register-form__input" />
         </Form.Item>
 
         <Form.Item>

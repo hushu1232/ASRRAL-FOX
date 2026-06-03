@@ -78,7 +78,7 @@ export default function Header() {
             <ThemeToggle />
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
               <div className="header__user-trigger" role="button" tabIndex={0} aria-label={th('profile')}>
-                <Avatar size="small" src={user?.avatar_url} icon={<UserOutlined />} style={{ backgroundColor: '#d97706' }}>
+                <Avatar size="small" src={user?.avatar_url} icon={<UserOutlined />} className="header__avatar">
                   {!user?.avatar_url && (user?.username || user?.email || '?')[0]?.toUpperCase()}
                 </Avatar>
                 <span className="header__username">{user?.username || user?.email}</span>

@@ -1,4 +1,4 @@
-@use '@/styles/variables' as *;
+@use '@/styles/variables' as var;
 
 .placeholder-image {
   display: flex;
@@ -15,7 +15,7 @@
   }
 
   &--rounded {
-    border-radius: $radius-md;
+    border-radius: var.$radius-md;
   }
 
   &--circle {

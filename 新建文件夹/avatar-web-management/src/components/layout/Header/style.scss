@@ -1,18 +1,18 @@
-@use '@/styles/variables' as *;
+@use '@/styles/variables' as var;
 
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: $header-height;
-  padding: 0 $spacing-6;
+  height: var.$header-height;
+  padding: 0 var.$spacing-6;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-subtle);
 
   &__left {
     display: flex;
     align-items: center;
-    gap: $spacing-4;
+    gap: var.$spacing-4;
     flex: 1;
     max-width: 28rem;
   }
@@ -20,7 +20,7 @@
   &__mobile-toggle {
     color: var(--text-primary);
 
-    @media (min-width: $breakpoint-md) {
+    @media (min-width: var.$breakpoint-md) {
       display: none;
     }
   }
@@ -28,7 +28,7 @@
   &__breadcrumb {
     display: none;
 
-    @media (min-width: $breakpoint-md) {
+    @media (min-width: var.$breakpoint-md) {
       display: block;
     }
   }
@@ -48,14 +48,14 @@
   &__right {
     display: flex;
     align-items: center;
-    gap: $spacing-4;
+    gap: var.$spacing-4;
   }
 
   // ── User dropdown trigger ──
   &__user-trigger {
     display: flex;
     align-items: center;
-    gap: $spacing-2;
+    gap: var.$spacing-2;
     cursor: pointer;
     user-select: none;
 
@@ -69,7 +69,7 @@
     font-size: 0.875rem;
     color: var(--text-primary);
 
-    @media (max-width: $breakpoint-sm) {
+    @media (max-width: var.$breakpoint-sm) {
       display: none;
     }
   }
@@ -78,7 +78,7 @@
   &__guest-actions {
     display: flex;
     align-items: center;
-    gap: $spacing-2;
+    gap: var.$spacing-2;
   }
 
   &__login-btn {
@@ -89,5 +89,9 @@
     font-size: 0.875rem;
     border-color: var(--border-subtle);
     color: var(--text-primary);
+  }
+
+  &__avatar {
+    background-color: var(--accent);
   }
 }

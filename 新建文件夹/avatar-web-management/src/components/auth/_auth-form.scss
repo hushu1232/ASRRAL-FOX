@@ -1,0 +1,92 @@
+// ─── Shared Auth Form Mixin ─────────────────────────────────────
+// Shared by LoginForm and RegisterForm (~80% identical BEM blocks).
+// Include inside a block selector, e.g.:
+//   .login-form { @include auth-form-base; … }
+//
+@use '@/styles/variables' as var;
+
+@mixin auth-form-base {
+  width: 100%;
+  max-width: 24rem;
+  margin: 0 auto;
+
+  &__header {
+    text-align: center;
+    margin-bottom: var.$spacing-8;
+  }
+
+  &__logo {
+    margin: 0 auto var.$spacing-3;
+    display: block;
+  }
+
+  &__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  &__subtitle {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  &__input-icon {
+    color: var(--text-muted);
+  }
+
+  &__field {
+    margin-bottom: var.$spacing-4;
+  }
+
+  &__input {
+    height: 44px;
+    background: var(--bg-input);
+    border-color: var(--border-subtle);
+    color: var(--text-primary);
+    border-radius: var.$radius-md;
+  }
+
+  &__submit {
+    width: 100%;
+    height: 44px;
+    font-weight: 600;
+    font-size: 1rem;
+    border-radius: var.$radius-md;
+    margin-top: var.$spacing-2;
+    background: var(--accent);
+    border: none;
+
+    &:hover {
+      background: var(--accent-hover);
+    }
+  }
+
+  &__footer {
+    text-align: center;
+    margin-top: var.$spacing-4;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  &__link {
+    color: var(--accent);
+    font-weight: 500;
+
+    &:hover {
+      color: var(--accent-hover);
+    }
+  }
+
+  &__error {
+    color: var(--error);
+    font-size: 0.875rem;
+    margin-bottom: var.$spacing-4;
+    text-align: center;
+  }
+
+  &__forgot {
+    text-align: right;
+    margin-bottom: 1rem;
+  }
+}

@@ -1,6 +1,6 @@
 // ─── Design Tokens ──────────────────────────────────────────────
 // BEM-compliant global variables for the AstralFox web platform.
-// Import into component SCSS via: @use '@/styles/variables' as *;
+// Import into component SCSS via: @use '@/styles/variables' as var;
 
 // ── Spacing Scale (4px base) ──
 $spacing-1: 0.25rem;  // 4px
