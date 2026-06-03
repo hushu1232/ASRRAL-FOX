@@ -1,0 +1,24 @@
+@use '@/styles/variables' as *;
+
+.placeholder-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  overflow: hidden;
+
+  &__icon {
+    font-size: 2rem;
+    opacity: 0.4;
+  }
+
+  &--rounded {
+    border-radius: $radius-md;
+  }
+
+  &--circle {
+    border-radius: 50%;
+  }
+}
