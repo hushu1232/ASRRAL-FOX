@@ -6,7 +6,8 @@ import Script from 'next/script';
 import ThemeProvider from '@/components/providers/ThemeProvider';
 import PerformanceMonitor from '@/components/monitoring/PerformanceMonitor';
 import CookieConsent from '@/components/common/CookieConsent';
-import '@/styles/global.scss';
+import './globals.css';        // Tailwind + design tokens + Ant Design overrides (source of truth)
+import '@/styles/global.scss';  // BEM reset + supplementary styles
 
 const geist = Geist({
   subsets: ['latin'],

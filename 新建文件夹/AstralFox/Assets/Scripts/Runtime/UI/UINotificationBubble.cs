@@ -49,6 +49,9 @@ namespace AstralFox.UI
         {
             if (_voiceManager != null)
                 _voiceManager.OnUserNotification += ShowMessage;
+
+            // Also listen to DiagnosticBus for system-level errors
+            Diagnostics.DiagnosticBus.Instance.OnDiagnostic += OnSystemDiagnostic;
         }
 
         private void Update()
@@ -71,10 +74,21 @@ namespace AstralFox.UI
             }
         }
 
+        private void OnSystemDiagnostic(Diagnostics.DiagnosticBus.Severity severity, string source, string message)
+        {
+            // Only show errors and warnings to the user
+            if (severity == Diagnostics.DiagnosticBus.Severity.Error ||
+                severity == Diagnostics.DiagnosticBus.Severity.Fatal)
+            {
+                ShowMessage($"{message}");
+            }
+        }
+
         private void OnDestroy()
         {
             if (_voiceManager != null)
                 _voiceManager.OnUserNotification -= ShowMessage;
+            Diagnostics.DiagnosticBus.Instance.OnDiagnostic -= OnSystemDiagnostic;
         }
 
         public void ShowMessage(string message)

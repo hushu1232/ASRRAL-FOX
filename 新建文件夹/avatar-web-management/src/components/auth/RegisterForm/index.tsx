@@ -43,39 +43,41 @@ export default function RegisterForm() {
 
       {error && <div className="register-form__error">{error}</div>}
 
-      <Form layout="vertical" onFinish={onFinish} autoComplete="off">
-        <Form.Item name="email" rules={[{ required: true, type: 'email' }, { type: 'email' }]} className="register-form__field">
-          <Input prefix={<MailOutlined className="register-form__input-icon" />} placeholder={t('emailPlaceholder')} className="register-form__input" />
-        </Form.Item>
-        <Form.Item name="username" rules={[{ required: true }, { min: 2 }, { max: 32 }]} className="register-form__field">
-          <Input prefix={<UserOutlined className="register-form__input-icon" />} placeholder={t('usernamePlaceholder')} className="register-form__input" />
-        </Form.Item>
-        <Form.Item name="password" rules={[{ required: true }, { min: 8 }]} className="register-form__field">
-          <Input.Password prefix={<LockOutlined className="register-form__input-icon" />} placeholder={t('passwordPlaceholder')} className="register-form__input" />
-        </Form.Item>
-        <Form.Item
-          name="confirmPassword"
-          dependencies={['password']}
-          rules={[{ required: true }, ({ getFieldValue }) => ({
-            validator(_, value) {
-              if (!value || getFieldValue('password') === value) return Promise.resolve();
-              return Promise.reject(new Error(t('passwordMismatch')));
-            },
-          })]}
-          className="register-form__field"
-        >
-          <Input.Password prefix={<LockOutlined className="register-form__input-icon" />} placeholder={t('confirmPasswordPlaceholder')} className="register-form__input" />
-        </Form.Item>
+      <div className="register-form__card">
+        <Form layout="vertical" onFinish={onFinish} autoComplete="off">
+          <Form.Item name="email" rules={[{ required: true, type: 'email' }, { type: 'email' }]} className="register-form__field">
+            <Input prefix={<MailOutlined className="register-form__input-icon" />} placeholder={t('emailPlaceholder')} className="register-form__input" />
+          </Form.Item>
+          <Form.Item name="username" rules={[{ required: true }, { min: 2 }, { max: 32 }]} className="register-form__field">
+            <Input prefix={<UserOutlined className="register-form__input-icon" />} placeholder={t('usernamePlaceholder')} className="register-form__input" />
+          </Form.Item>
+          <Form.Item name="password" rules={[{ required: true }, { min: 8 }]} className="register-form__field">
+            <Input.Password prefix={<LockOutlined className="register-form__input-icon" />} placeholder={t('passwordPlaceholder')} className="register-form__input" />
+          </Form.Item>
+          <Form.Item
+            name="confirmPassword"
+            dependencies={['password']}
+            rules={[{ required: true }, ({ getFieldValue }) => ({
+              validator(_, value) {
+                if (!value || getFieldValue('password') === value) return Promise.resolve();
+                return Promise.reject(new Error(t('passwordMismatch')));
+              },
+            })]}
+            className="register-form__field"
+          >
+            <Input.Password prefix={<LockOutlined className="register-form__input-icon" />} placeholder={t('confirmPasswordPlaceholder')} className="register-form__input" />
+          </Form.Item>
 
-        <Form.Item>
-          <Button type="primary" htmlType="submit" loading={loading} className="register-form__submit">{t('registerButton')}</Button>
-        </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={loading} className="register-form__submit">{t('registerButton')}</Button>
+          </Form.Item>
+        </Form>
 
         <p className="register-form__footer">
           {t('hasAccount')}{' '}
           <Link href="/login" className="register-form__link">{t('login')}</Link>
         </p>
-      </Form>
+      </div>
     </div>
   );
 }

@@ -246,7 +246,7 @@ namespace AstralFox.Voice
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[BackendClient] Connection failed: {ex.Message}");
+                Diagnostics.DiagnosticBus.Warn("BackendClient", $"Connection failed: {ex.Message}");
                 SetState(ConnectionState.Disconnected);
                 OnConnectionChanged?.Invoke(false);
             }

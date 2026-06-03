@@ -78,6 +78,16 @@
     }
   }
 
+  &__card {
+    backdrop-filter: blur(24px);
+    border-radius: var.$radius-xl;
+    padding: var.$spacing-8;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-card);
+    margin-bottom: var.$spacing-6;
+  }
+
   &__error {
     color: var(--error);
     font-size: 0.875rem;
