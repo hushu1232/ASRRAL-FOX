@@ -1,0 +1,1161 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AstralFox Market API",
+    "version": "1.0.0",
+    "description": "AI 桌面宠物市场 REST API。提供商品浏览、购买、评价、卖家管理等功能。所有端点（除公开端点外）需要 Bearer Token 认证。"
+  },
+  "servers": [
+    { "url": "http://localhost:3000", "description": "本地开发" },
+    { "url": "https://avatar.example.com", "description": "生产环境" }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "tags": ["认证"],
+        "summary": "邮箱密码登录",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "minLength": 8 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "登录成功，返回 accessToken + 设置 refreshToken cookie" },
+          "401": { "description": "邮箱或密码错误" }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": ["认证"],
+        "summary": "邮箱注册",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "username", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "username": { "type": "string", "minLength": 2 },
+                  "password": { "type": "string", "minLength": 8 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "注册成功" },
+          "409": { "description": "邮箱已被注册" }
+        }
+      }
+    },
+    "/api/auth/forgot-password": {
+      "post": {
+        "tags": ["认证"],
+        "summary": "发送密码重置链接",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "如果邮箱已注册，将收到重置链接" }
+        }
+      }
+    },
+    "/api/auth/reset-password": {
+      "post": {
+        "tags": ["认证"],
+        "summary": "重置密码",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["token", "newPassword"],
+                "properties": {
+                  "token": { "type": "string" },
+                  "newPassword": { "type": "string", "minLength": 8 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "密码已重置" },
+          "400": { "description": "链接无效或已过期" }
+        }
+      }
+    },
+    "/api/avatars": {
+      "get": {
+        "tags": ["形象"],
+        "summary": "获取形象列表",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["draft", "published", "archived"] } }
+        ],
+        "responses": {
+          "200": { "description": "分页形象列表" }
+        }
+      },
+      "post": {
+        "tags": ["形象"],
+        "summary": "创建新形象",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "style"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "style": { "type": "string" },
+                  "base_model": { "type": "string", "enum": ["male", "female"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "形象创建成功" }
+        }
+      }
+    },
+    "/api/avatars/batch": {
+      "post": {
+        "tags": ["形象"],
+        "summary": "批量操作形象",
+        "description": "支持批量删除、发布、取消发布、归档操作。单次最多 100 个。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["action", "ids"],
+                "properties": {
+                  "action": { "type": "string", "enum": ["delete", "publish", "unpublish", "archive"] },
+                  "ids": { "type": "array", "items": { "type": "string" }, "maxItems": 100 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "操作结果，返回受影响行数" }
+        }
+      }
+    },
+    "/api/avatars/{id}": {
+      "get": {
+        "tags": ["形象"],
+        "summary": "获取形象详情",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "形象详情（含版本列表）" },
+          "404": { "description": "形象不存在" }
+        }
+      },
+      "put": {
+        "tags": ["形象"],
+        "summary": "更新形象信息",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "style": { "type": "string" },
+                  "status": { "type": "string", "enum": ["draft", "published", "archived"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "形象已更新" }
+        }
+      },
+      "delete": {
+        "tags": ["形象"],
+        "summary": "删除形象",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "形象已删除" }
+        }
+      }
+    },
+    "/api/avatars/{id}/export": {
+      "get": {
+        "tags": ["形象"],
+        "summary": "导出形象为 GLB 或 VRM",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "format", "in": "query", "schema": { "type": "string", "enum": ["glb", "vrm"], "default": "glb" } }
+        ],
+        "responses": {
+          "200": { "description": "二进制模型文件" }
+        }
+      }
+    },
+    "/api/avatars/{id}/versions": {
+      "post": {
+        "tags": ["版本"],
+        "summary": "创建新版本",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "blendshape_snapshot": { "type": "object" },
+                  "body_params": { "type": "object" },
+                  "equipped_parts": { "type": "array" },
+                  "material_overrides": { "type": "object" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "版本创建成功" }
+        }
+      }
+    },
+    "/api/avatars/{id}/versions/{versionId}/restore": {
+      "post": {
+        "tags": ["版本"],
+        "summary": "回滚到指定版本",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "versionId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "回滚成功，返回新版本" }
+        }
+      }
+    },
+    "/api/avatars/{id}/screenshot": {
+      "post": {
+        "tags": ["截图"],
+        "summary": "创建 4K 截图任务",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "width": { "type": "integer", "default": 3840 },
+                  "height": { "type": "integer", "default": 2160 },
+                  "backgroundColor": { "type": "string" },
+                  "cameraPreset": { "type": "string", "enum": ["front", "side", "back", "angle"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": { "description": "任务已入队，返回 jobId" }
+        }
+      },
+      "get": {
+        "tags": ["截图"],
+        "summary": "查询截图任务状态",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "jobId", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "任务状态（pending/processing/completed/failed）" }
+        }
+      }
+    },
+    "/api/parts": {
+      "get": {
+        "tags": ["部件"],
+        "summary": "获取部件目录",
+        "responses": {
+          "200": { "description": "部件列表（按 category 和 name 排序）" }
+        }
+      }
+    },
+    "/api/parts/validate": {
+      "post": {
+        "tags": ["部件"],
+        "summary": "验证部件兼容性",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["equippedPartIds", "newPartId"],
+                "properties": {
+                  "equippedPartIds": { "type": "array", "items": { "type": "string" } },
+                  "newPartId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "冲突列表 + 被禁用的部件 ID" }
+        }
+      }
+    },
+    "/api/parts/rules": {
+      "get": {
+        "tags": ["部件"],
+        "summary": "获取部件规则",
+        "responses": {
+          "200": { "description": "互斥/依赖规则列表" }
+        }
+      }
+    },
+    "/api/assets": {
+      "get": {
+        "tags": ["资产"],
+        "summary": "获取资产列表",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "type", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "分页资产列表" }
+        }
+      }
+    },
+    "/api/assets/batch": {
+      "post": {
+        "tags": ["资产"],
+        "summary": "批量操作资产",
+        "description": "支持批量删除、归档。单次最多 100 个。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["action", "ids"],
+                "properties": {
+                  "action": { "type": "string", "enum": ["delete", "archive"] },
+                  "ids": { "type": "array", "items": { "type": "string" }, "maxItems": 100 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "操作结果" }
+        }
+      }
+    },
+    "/api/assets/upload/init": {
+      "post": {
+        "tags": ["上传"],
+        "summary": "初始化分块上传会话",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["filename", "fileSize", "chunkSize"],
+                "properties": {
+                  "filename": { "type": "string" },
+                  "fileSize": { "type": "integer" },
+                  "chunkSize": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "上传会话详情（uploadId, totalChunks）" }
+        }
+      }
+    },
+    "/api/assets/upload/{uploadId}/chunk": {
+      "post": {
+        "tags": ["上传"],
+        "summary": "上传单个分块",
+        "parameters": [{ "name": "uploadId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "分块上传进度" }
+        }
+      }
+    },
+    "/api/assets/upload/{uploadId}/complete": {
+      "post": {
+        "tags": ["上传"],
+        "summary": "合并分块，完成上传",
+        "parameters": [{ "name": "uploadId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "资产记录，状态为 processing" }
+        }
+      }
+    },
+    "/api/templates": {
+      "get": {
+        "tags": ["模板"],
+        "summary": "获取模板市场列表",
+        "description": "按分类筛选已发布的模板形象。响应包含 Cache-Control 头，默认缓存 60s。",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "category", "in": "query", "schema": { "type": "string" } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "分页模板列表（含作者信息）" }
+        }
+      }
+    },
+    "/api/settings/profile": {
+      "get": {
+        "tags": ["设置"],
+        "summary": "获取用户资料",
+        "responses": {
+          "200": { "description": "用户资料" }
+        }
+      },
+      "put": {
+        "tags": ["设置"],
+        "summary": "更新用户资料",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string" },
+                  "bio": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "资料已更新" }
+        }
+      }
+    },
+    "/api/revalidate": {
+      "post": {
+        "tags": ["系统"],
+        "summary": "按需 ISR 缓存刷新 (Webhook)",
+        "description": "需要 REVALIDATE_SECRET 验证。用于在内容更新后刷新 CDN/ISR 缓存。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["secret"],
+                "properties": {
+                  "secret": { "type": "string" },
+                  "paths": { "type": "array", "items": { "type": "string" } },
+                  "tags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "已刷新的路径/标签数量" },
+          "401": { "description": "密钥无效" }
+        }
+      }
+    },
+    "/api/auth/sso": {
+      "get": {
+        "tags": ["认证"],
+        "summary": "SSO 登录入口",
+        "description": "重定向到企业 SSO 授权页面",
+        "security": [],
+        "responses": {
+          "302": { "description": "重定向到 SSO 提供商" }
+        }
+      }
+    },
+    "/api/auth/sso/callback": {
+      "get": {
+        "tags": ["认证"],
+        "summary": "SSO 回调处理",
+        "description": "处理 SSO 授权回调，创建/查找用户并签发 JWT",
+        "security": [],
+        "responses": {
+          "302": { "description": "重定向到登录页面或仪表盘" }
+        }
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": ["认证"],
+        "summary": "刷新 Access Token",
+        "description": "使用 refresh_token cookie 获取新的 access token",
+        "security": [],
+        "responses": {
+          "200": { "description": "返回新的 accessToken" },
+          "401": { "description": "refresh_token 无效或已过期" }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": ["认证"],
+        "summary": "退出登录",
+        "description": "吊销 refresh_token",
+        "responses": {
+          "200": { "description": "退出成功" }
+        }
+      }
+    },
+    "/api/dashboard/stats": {
+      "get": {
+        "tags": ["工作台"],
+        "summary": "获取仪表盘统计数据",
+        "description": "返回形象总数、本月创建数、待审核数、存储用量、最近形象列表、创作趋势和部件使用分布",
+        "responses": {
+          "200": { "description": "仪表盘各项统计数据" }
+        }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "tags": ["通知"],
+        "summary": "获取通知列表",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "分页通知列表" }
+        }
+      }
+    },
+    "/api/notifications/unread-count": {
+      "get": {
+        "tags": ["通知"],
+        "summary": "获取未读通知数量",
+        "responses": {
+          "200": { "description": "未读通知计数" }
+        }
+      }
+    },
+    "/api/notifications/read-all": {
+      "post": {
+        "tags": ["通知"],
+        "summary": "标记所有通知为已读",
+        "responses": {
+          "200": { "description": "操作成功" }
+        }
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "post": {
+        "tags": ["通知"],
+        "summary": "标记单条通知为已读",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "操作成功" },
+          "404": { "description": "通知不存在" }
+        }
+      }
+    },
+    "/api/assets/{id}/file": {
+      "get": {
+        "tags": ["资产"],
+        "summary": "下载资产原始文件",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "文件流" },
+          "404": { "description": "资产不存在" }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "tags": ["搜索"],
+        "summary": "全文搜索",
+        "description": "使用 PostgreSQL 全文搜索，支持多表联合搜索",
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "type", "in": "query", "schema": { "type": "string", "enum": ["avatar", "asset", "template"] } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "搜索结果" }
+        }
+      }
+    },
+    "/api/settings/2fa": {
+      "get": {
+        "tags": ["设置"],
+        "summary": "获取 2FA 状态",
+        "responses": {
+          "200": { "description": "2FA 配置状态" }
+        }
+      },
+      "post": {
+        "tags": ["设置"],
+        "summary": "设置 2FA",
+        "description": "启用或禁用双因素认证",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["action"],
+                "properties": {
+                  "action": { "type": "string", "enum": ["enable", "disable"] },
+                  "token": { "type": "string", "description": "TOTP 验证码（启用时必需）" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "操作成功" }
+        }
+      }
+    },
+    "/api/settings/api-keys": {
+      "get": {
+        "tags": ["设置"],
+        "summary": "获取 API 密钥列表",
+        "responses": {
+          "200": { "description": "API 密钥列表（不含密钥值）" }
+        }
+      },
+      "post": {
+        "tags": ["设置"],
+        "summary": "创建 API 密钥",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "scopes": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "密钥已创建，返回完整密钥值（仅此一次）" }
+        }
+      }
+    },
+    "/api/settings/api-keys/{id}": {
+      "delete": {
+        "tags": ["设置"],
+        "summary": "吊销 API 密钥",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "密钥已吊销" }
+        }
+      }
+    },
+    "/api/settings/login-history": {
+      "get": {
+        "tags": ["设置"],
+        "summary": "获取登录历史",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "分页登录历史" }
+        }
+      }
+    },
+    "/api/admin/stats": {
+      "get": {
+        "tags": ["管理后台"],
+        "summary": "获取平台统计",
+        "description": "需要 admin 角色。返回用户总数、形象总数、资产总数、存储用量",
+        "responses": {
+          "200": { "description": "平台统计数据" },
+          "403": { "description": "权限不足" }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": ["管理后台"],
+        "summary": "获取用户列表",
+        "description": "需要 admin 角色",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "role", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "分页用户列表" },
+          "403": { "description": "权限不足" }
+        }
+      }
+    },
+    "/api/admin/users/{id}": {
+      "put": {
+        "tags": ["管理后台"],
+        "summary": "更新用户（角色、状态）",
+        "description": "需要 admin 角色",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": { "type": "string", "enum": ["super_admin", "workspace_admin", "user"] },
+                  "status": { "type": "string", "enum": ["active", "suspended"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "用户已更新" },
+          "403": { "description": "权限不足" }
+        }
+      }
+    },
+    "/api/admin/reviews": {
+      "get": {
+        "tags": ["管理后台"],
+        "summary": "获取审核列表",
+        "description": "需要 reviewer 或 admin 角色",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["pending", "approved", "rejected"] } }
+        ],
+        "responses": {
+          "200": { "description": "分页审核列表" },
+          "403": { "description": "权限不足" }
+        }
+      }
+    },
+    "/api/admin/reviews/{id}": {
+      "put": {
+        "tags": ["管理后台"],
+        "summary": "审核裁决",
+        "description": "需要 reviewer 或 admin 角色",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["action"],
+                "properties": {
+                  "action": { "type": "string", "enum": ["approve", "reject"] },
+                  "comment": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "审核完成" },
+          "403": { "description": "权限不足" }
+        }
+      }
+    },
+    "/api/admin/audit-logs": {
+      "get": {
+        "tags": ["管理后台"],
+        "summary": "获取审计日志",
+        "description": "需要 admin 角色",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "action", "in": "query", "schema": { "type": "string" } },
+          { "name": "userId", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "分页审计日志" },
+          "403": { "description": "权限不足" }
+        }
+      }
+    },
+    "/api/pet/config": {
+      "get": {
+        "tags": ["宠物"],
+        "summary": "获取桌面宠物配置",
+        "description": "返回完整宠物配置（含解密后的 API 密钥）。无配置时自动创建默认配置。",
+        "responses": {
+          "200": { "description": "宠物配置（pet_name, personality, backstory, animation_model, idle_timeout, wander_interval, params, bodyParams, equippedParts, mappedAssets 等）" }
+        }
+      },
+      "put": {
+        "tags": ["宠物"],
+        "summary": "更新桌面宠物配置",
+        "description": "更新宠物的外观、行为等配置。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pet_name": { "type": "string", "minLength": 1 },
+                  "personality": { "type": "string" },
+                  "backstory": { "type": "string" },
+                  "animation_model": { "type": "string", "enum": ["live2d", "dragonbones", "vrm"] },
+                  "ffmpeg_path": { "type": "string" },
+                  "idle_timeout": { "type": "number", "minimum": 0, "description": "闲置超时（秒），0=永不触发" },
+                  "wander_interval": { "type": "number", "minimum": 0 },
+                  "avatar_id": { "type": "string", "description": "关联的虚拟形象 ID" },
+                  "model_path": { "type": "string" },
+                  "params": { "type": "array", "items": { "type": "object", "properties": { "key": { "type": "string" }, "value": { "type": "number" } } } },
+                  "body_params": { "type": "array", "items": { "type": "object", "properties": { "key": { "type": "string" }, "value": { "type": "number" } } } },
+                  "equipped_parts": { "type": "array", "items": { "type": "object", "properties": { "slot": { "type": "string" }, "part_id": { "type": "string" } } } },
+                  "material_overrides": { "type": "object" },
+                  "mapped_assets": { "type": "array", "items": { "type": "object", "properties": { "slotName": { "type": "string" }, "assetId": { "type": "string" }, "assetType": { "type": "string", "enum": ["model", "texture", "animation", "sound"] } } } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "配置已更新" }
+        }
+      }
+    },
+    "/api/pet/export": {
+      "get": {
+        "tags": ["宠物"],
+        "summary": "导出宠物配置（Unity 客户端合同）",
+        "description": "返回蛇形命名 JSON，符合 Unity AstralFox 客户端预期的 PetConfigExport 模式。与 tests/schemas/pet-export-schema.json 保持一致。",
+        "responses": {
+          "200": { "description": "PetConfigExport JSON（version, petName, personality, backstory, animationModel, idleTimeout, wanderInterval, params, bodyParams, equippedParts, mappedAssets）" }
+        }
+      }
+    },
+    "/api/pet/assets": {
+      "get": {
+        "tags": ["宠物"],
+        "summary": "获取可用资产列表",
+        "parameters": [
+          { "name": "type", "in": "query", "schema": { "type": "string", "enum": ["model", "texture", "animation", "sound"] } }
+        ],
+        "responses": {
+          "200": { "description": "资产列表（按类型筛选）" }
+        }
+      },
+      "post": {
+        "tags": ["宠物"],
+        "summary": "添加资产映射",
+        "description": "将资产（模型/贴图/动画/音效）绑定到宠物的插槽位置",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["assetId", "assetType", "slotName"],
+                "properties": {
+                  "assetId": { "type": "string" },
+                  "assetType": { "type": "string", "enum": ["model", "texture", "animation", "sound"] },
+                  "slotName": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "资产映射已创建" },
+          "404": { "description": "宠物配置不存在" }
+        }
+      }
+    },
+    "/api/pet/set-avatar": {
+      "post": {
+        "tags": ["宠物"],
+        "summary": "绑定形象到桌面宠物",
+        "description": "将已有的虚拟形象（avatar）关联为桌面宠物模型",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["avatarId"],
+                "properties": {
+                  "avatarId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "形象已关联到宠物配置" },
+          "400": { "description": "avatarId 缺失" }
+        }
+      }
+    },
+    "/api/pet/session": {
+      "post": {
+        "tags": ["宠物"],
+        "summary": "桌面宠物会话生命周期",
+        "description": "管理 Unity 桌面宠物的会话：start 开始会话，update 更新交互计数/崩溃日志，end 结束会话",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["action"],
+                "properties": {
+                  "action": { "type": "string", "enum": ["start", "update", "end"] },
+                  "sessionId": { "type": "string", "description": "update/end 时必填" },
+                  "interactionCount": { "type": "integer", "description": "交互计数" },
+                  "crashLog": { "type": "string", "description": "崩溃日志" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "会话已创建（start）" },
+          "200": { "description": "会话已更新/已结束" },
+          "400": { "description": "action 无效" }
+        }
+      }
+    },
+    "/api/admin/experiments": {
+      "get": {
+        "tags": ["管理后台"],
+        "summary": "获取实验配置列表",
+        "description": "需要 admin 角色。返回所有 A/B 实验及其流量分配。",
+        "responses": {
+          "200": { "description": "实验列表" },
+          "403": { "description": "权限不足" }
+        }
+      },
+      "post": {
+        "tags": ["管理后台"],
+        "summary": "创建实验",
+        "description": "需要 admin 角色。创建 A/B 功能实验，配置流量百分比。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "key", "trafficPercent"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "key": { "type": "string", "description": "代码中使用的标志键" },
+                  "description": { "type": "string" },
+                  "trafficPercent": { "type": "integer", "minimum": 0, "maximum": 100 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "实验已创建" },
+          "403": { "description": "权限不足" }
+        }
+      }
+    },
+    "/api/admin/experiments/{id}": {
+      "put": {
+        "tags": ["管理后台"],
+        "summary": "更新实验",
+        "description": "需要 admin 角色。修改实验流量或状态。",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "实验已更新" },
+          "403": { "description": "权限不足" }
+        }
+      },
+      "delete": {
+        "tags": ["管理后台"],
+        "summary": "删除实验",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "实验已删除" },
+          "403": { "description": "权限不足" }
+        }
+      }
+    },
+    "/api/admin/oauth-clients": {
+      "get": {
+        "tags": ["管理后台"],
+        "summary": "获取 OAuth 客户端列表",
+        "description": "需要 admin 角色",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "OAuth 客户端列表" },
+          "403": { "description": "权限不足" }
+        }
+      },
+      "post": {
+        "tags": ["管理后台"],
+        "summary": "创建 OAuth 客户端",
+        "description": "需要 admin 角色",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["clientName", "redirectUris"],
+                "properties": {
+                  "clientName": { "type": "string" },
+                  "redirectUris": { "type": "array", "items": { "type": "string", "format": "uri" } },
+                  "scopes": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "OAuth 客户端已创建，返回 clientId 和 clientSecret（仅此一次）" },
+          "403": { "description": "权限不足" }
+        }
+      }
+    },
+    "/api/admin/oauth-clients/{id}": {
+      "put": {
+        "tags": ["管理后台"],
+        "summary": "更新 OAuth 客户端",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "客户端已更新" },
+          "403": { "description": "权限不足" }
+        }
+      },
+      "delete": {
+        "tags": ["管理后台"],
+        "summary": "吊销 OAuth 客户端",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "客户端已吊销" },
+          "403": { "description": "权限不足" }
+        }
+      }
+    },
+    "/api/oauth/authorize": {
+      "get": {
+        "tags": ["OAuth 2.0"],
+        "summary": "OAuth 授权端点",
+        "description": "第三方应用授权入口。用户登录后展示权限确认页。",
+        "parameters": [
+          { "name": "client_id", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "redirect_uri", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "response_type", "in": "query", "schema": { "type": "string", "enum": ["code"] } },
+          { "name": "scope", "in": "query", "schema": { "type": "string" } },
+          { "name": "state", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "权限确认页面" },
+          "400": { "description": "参数无效" }
+        }
+      }
+    },
+    "/api/oauth/token": {
+      "post": {
+        "tags": ["OAuth 2.0"],
+        "summary": "OAuth Token 端点",
+        "description": "用授权码换取访问令牌。支持 PKCE。",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": ["grant_type", "code", "redirect_uri", "client_id"],
+                "properties": {
+                  "grant_type": { "type": "string", "enum": ["authorization_code", "refresh_token"] },
+                  "code": { "type": "string" },
+                  "redirect_uri": { "type": "string" },
+                  "client_id": { "type": "string" },
+                  "client_secret": { "type": "string" },
+                  "code_verifier": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "access_token + refresh_token" },
+          "400": { "description": "授权码无效或已过期" }
+        }
+      }
+    },
+    "/api/oauth/userinfo": {
+      "get": {
+        "tags": ["OAuth 2.0"],
+        "summary": "OAuth UserInfo 端点",
+        "description": "返回当前令牌持有者的用户信息（OpenID Connect 风格）",
+        "responses": {
+          "200": { "description": "用户信息（sub, email, username）" },
+          "401": { "description": "令牌无效" }
+        }
+      }
+    },
+    "/api/metrics": {
+      "get": {
+        "tags": ["系统"],
+        "summary": "Prometheus 指标端点",
+        "description": "返回 Prometheus 文本格式的 HTTP 指标（请求计数、延迟直方图、速率限制等）。通过 podAnnotations 自动发现。",
+        "security": [],
+        "responses": {
+          "200": { "description": "Prometheus text/plain 格式指标" }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": ["系统"],
+        "summary": "健康检查",
+        "security": [],
+        "responses": {
+          "200": { "description": "服务正常" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

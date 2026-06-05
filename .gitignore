@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# AI Models (too large for GitHub — use Git LFS if needed)
+*.pt
+*.onnx
+*.gguf
+models/
+
+# Unity generated
+[Ll]ibrary/
+[Tt]emp/
+[Bb]uild/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+*.log
+
+# Node.js / Web
+node_modules/
+.next/
+.env
+.env.local
+
+# Archives
+*.zip
+*.zip.part*
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log

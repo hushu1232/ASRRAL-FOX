@@ -1,0 +1,400 @@
+# Prometheus alerting rules for avatar-web-management
+# Evaluated by Prometheus server, alerts forwarded to Alertmanager
+
+groups:
+  - name: avatar-web-http
+    rules:
+      # ── 5xx error rate ──────────────────────────────────
+      - alert: High5xxRate
+        expr: |
+          rate(avatar_http_requests_total{status_code=~"5.."}[5m]) /
+          rate(avatar_http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: http
+        annotations:
+          summary: "High 5xx error rate ({{ $value | humanizePercentage }})"
+          description: >
+            Route {{ $labels.route }} is returning 5xx errors at {{ $value | humanizePercentage }}
+            over the last 5 minutes. Check logs and Sentry for root cause.
+
+      # ── P99 latency spike ───────────────────────────────
+      - alert: HighP99Latency
+        expr: |
+          histogram_quantile(0.99,
+            rate(avatar_http_request_duration_seconds_bucket[5m])
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          component: http
+        annotations:
+          summary: "P99 latency > 2s on {{ $labels.route }}"
+          description: >
+            Route {{ $labels.route }} has P99 latency of {{ $value }}s.
+            Check database query performance and upstream service health.
+
+      # ── In-flight request congestion ────────────────────
+      - alert: HighConcurrentRequests
+        expr: avatar_http_requests_in_flight > 100
+        for: 2m
+        labels:
+          severity: warning
+          component: http
+        annotations:
+          summary: "{{ $value }} concurrent in-flight requests"
+          description: >
+            High request concurrency detected. Consider scaling horizontally.
+
+  - name: avatar-web-database
+    rules:
+      # ── DB query latency ────────────────────────────────
+      - alert: SlowDatabaseQueries
+        expr: |
+          histogram_quantile(0.95,
+            rate(avatar_db_query_duration_seconds_bucket[5m])
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "P95 DB query latency > 500ms ({{ $labels.operation }})"
+          description: >
+            Database queries for {{ $labels.model }}.{{ $labels.operation }}
+            are taking > 500ms at P95. Check PostgreSQL connection pool and index usage.
+
+      # ── DB error rate ───────────────────────────────────
+      - alert: DatabaseErrorSpike
+        expr: |
+          rate(avatar_db_queries_total{status="error"}[5m]) /
+          rate(avatar_db_queries_total[5m]) > 0.01
+        for: 3m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database error rate above 1%"
+          description: >
+            {{ $value | humanizePercentage }} of database queries are failing.
+            Check PostgreSQL connectivity and connection pool health.
+
+  - name: avatar-web-cache
+    rules:
+      # ── Cache miss rate ─────────────────────────────────
+      - alert: HighCacheMissRate
+        expr: |
+          rate(avatar_cache_misses_total[10m]) /
+          (rate(avatar_cache_hits_total[10m]) + rate(avatar_cache_misses_total[10m]))
+          > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Cache miss rate > 50% ({{ $value | humanizePercentage }})"
+          description: >
+            {{ $labels.cache_type }} cache hit rate is unusually low.
+            Verify Redis connectivity and cache TTL configuration.
+
+      # ── Redis unavailable (no cache activity) ───────────
+      - alert: CacheSilent
+        expr: |
+          rate(avatar_cache_hits_total[5m]) == 0
+          and rate(avatar_cache_misses_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "No cache activity for 5 minutes"
+          description: >
+            Cache layer may be unavailable. Application will use database directly.
+            Check Redis connectivity.
+
+  - name: avatar-web-rate-limit
+    rules:
+      # ── Rate limit abuse ────────────────────────────────
+      - alert: RateLimitSpike
+        expr: rate(avatar_rate_limit_hits_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "Elevated rate limit hits ({{ $value }}/s)"
+          description: >
+            Route {{ $labels.route }} is receiving excessive requests.
+            Investigate for potential abuse or misconfigured clients.
+
+  # ═══════════════════════════════════════════════════════════
+  # SLO-based burn-rate alerting (Google SRE workbook model)
+  # SLO: 99.9% availability = 0.1% error budget per 30d
+  #       P95 latency < 2s
+  # ═══════════════════════════════════════════════════════════
+  - name: avatar-web-slo
+    rules:
+      # ── Availability recording rules ───────────────────────
+      # SLI: ratio of successful requests over 5m
+      - record: sli:availability:ratio5m
+        expr: |
+          sum(rate(avatar_http_requests_total{status_code!~"5.."}[5m]))
+          /
+          sum(rate(avatar_http_requests_total[5m]))
+
+      # Error rate: 1 - SLI
+      - record: sli:error_rate:ratio5m
+        expr: 1 - sli:availability:ratio5m
+
+      # Burn rate: current error rate / allowed error rate (0.001 for 99.9%)
+      - record: slo:burn_rate:ratio5m
+        expr: sli:error_rate:ratio5m / 0.001
+
+      # Error budget remaining (30d window)
+      - record: slo:error_budget:remaining_pct
+        expr: |
+          (1 - (
+            sum(rate(avatar_http_requests_total{status_code=~"5.."}[30d]))
+            /
+            sum(rate(avatar_http_requests_total[30d]))
+          ) / 0.001)
+
+      # ── Latency recording rules ─────────────────────────────
+      # Latency SLI: ratio of requests under 2s P95
+      - record: sli:latency_p95:ratio5m
+        expr: |
+          (
+            histogram_quantile(0.95,
+              sum(rate(avatar_http_request_duration_seconds_bucket[5m])) by (le)
+            ) < 2.0
+          )
+
+      # Latency burn rate vs. SLO target (P95 < 2s)
+      - record: slo:latency_burn_rate:ratio5m
+        expr: |
+          (1 - sli:latency_p95:ratio5m) / 0.001
+
+      # ── Burn-rate alerts (availability) ────────────────────
+      # Critical: 14.4x burn rate for 1h → exhausts 2% of 30d budget
+      - alert: SLOBurnRateCritical
+        expr: slo:burn_rate:ratio5m > 14.4
+        for: 1h
+        labels:
+          severity: critical
+          component: slo
+        annotations:
+          summary: "SLO burn rate critical: {{ $value | humanize }}x"
+          description: >
+            Error budget burning at {{ $value | humanize }}x the allowed rate.
+            At this rate, the 30-day error budget will be exhausted in ~50 hours.
+            Escalate to on-call immediately. Check 5xx rates and DB health.
+
+      # Warning: 6x burn rate for 6h → exhausts 5% of 30d budget
+      - alert: SLOBurnRateWarning
+        expr: slo:burn_rate:ratio5m > 6
+        for: 6h
+        labels:
+          severity: warning
+          component: slo
+        annotations:
+          summary: "SLO burn rate elevated: {{ $value | humanize }}x"
+          description: >
+            Error budget burning at {{ $value | humanize }}x for over 6 hours.
+            Freeze non-critical deploys, investigate root cause.
+
+      # ── Multi-window burn rate (page-worthy) ───────────────
+      # Both short (1h) AND long (6h) windows must fire to page.
+      # 1h @ 14.4x → burns 2% budget   |   6h @ 6x → burns 5% budget
+      - alert: SLOBurnRatePage
+        expr: |
+          (slo:burn_rate:ratio5m > 14.4)
+          and
+          (slo:burn_rate:ratio5m > 6)
+        for: 1h
+        labels:
+          severity: page
+          component: slo
+        annotations:
+          summary: "SLO multi-window burn: SHORT={{ with query \"slo:burn_rate:ratio5m\" }}{{ . | humanize }}x{{ end }}"
+          description: >
+            Multi-window burn rate threshold breached — both short (1h @ 14.4x)
+            and long (6h @ 6x) windows tripped. Error budget consumption is severe
+            AND sustained. Open incident bridge immediately. Freeze all deploys.
+
+      # ── Latency SLO alerts ──────────────────────────────────
+      - alert: SLOLatencyBurnRateWarning
+        expr: slo:latency_burn_rate:ratio5m > 6
+        for: 10m
+        labels:
+          severity: warning
+          component: slo
+        annotations:
+          summary: "Latency SLO burn rate elevated: {{ $value | humanize }}x"
+          description: >
+            P95 latency is exceeding the 2s target at a rate that will consume
+            significant error budget. Check for slow database queries, upstream
+            service latency, or GC pressure.
+
+      - alert: SLOLatencyBurnRateCritical
+        expr: slo:latency_burn_rate:ratio5m > 14.4
+        for: 30m
+        labels:
+          severity: critical
+          component: slo
+        annotations:
+          summary: "Latency SLO burn rate critical: {{ $value | humanize }}x"
+          description: >
+            P95 latency error budget burning dangerously fast. At this rate the
+            30-day latency budget will be consumed in hours. Investigate immediately.
+
+      # Info: 2x burn rate for 1d — budget trending down
+      - alert: SLOBurnRateInfo
+        expr: slo:burn_rate:ratio5m > 2
+        for: 1d
+        labels:
+          severity: info
+          component: slo
+        annotations:
+          summary: "SLO burn rate above baseline: {{ $value | humanize }}x"
+          description: >
+            Error budget consumption is above normal for >24h.
+            Review recent deploys and create investigation ticket.
+
+      # Error budget exhausted (<5% left)
+      - alert: SLOErrorBudgetLow
+        expr: slo:error_budget:remaining_pct < 5
+        for: 5m
+        labels:
+          severity: critical
+          component: slo
+        annotations:
+          summary: "Error budget critically low: {{ $value | humanize }}% remaining"
+          description: >
+            Less than 5% error budget remaining for the 30-day window.
+            All non-emergency changes must be blocked. Open incident bridge.
+
+      # Error budget 50% consumed
+      - alert: SLOErrorBudgetHalf
+        expr: slo:error_budget:remaining_pct < 50
+        for: 5m
+        labels:
+          severity: warning
+          component: slo
+        annotations:
+          summary: "Error budget 50% consumed: {{ $value | humanize }}% remaining"
+          description: >
+            Half of the 30-day error budget consumed.
+            Review recent incidents and consider deployment freeze.
+
+  - name: avatar-web-infrastructure
+    rules:
+      # ── DB connection pool exhaustion ────────────────────
+      - alert: DbPoolExhausted
+        expr: avatar_db_pool_idle < 2
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "DB connection pool nearly exhausted ({{ $value }} idle)"
+          description: >
+            Only {{ $value }} idle connection(s) remaining in the PostgreSQL pool
+            (total: {{ $labels }}). New queries will queue or timeout.
+            Check for connection leaks or long-running queries.
+
+      # ── DB pool client wait queue ────────────────────────
+      - alert: DbPoolQueueBuilding
+        expr: avatar_db_pool_waiting > 0
+        for: 3m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "{{ $value }} client(s) waiting for a DB connection"
+          description: >
+            Clients are queued waiting for database connections.
+            Consider increasing PG_POOL_MAX or optimizing slow queries.
+
+      # ── Redis unreachable ────────────────────────────────
+      - alert: RedisDown
+        expr: avatar_redis_up == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Redis is unreachable"
+          description: >
+            Redis connectivity check failed. Cache and rate-limiting are degraded.
+            Verify Redis pod status and network connectivity.
+            Application will continue serving but performance may degrade.
+
+      # ── Rigging service health ───────────────────────────
+      - alert: RiggingServiceDown
+        expr: avatar_rigging_up == 0
+        for: 3m
+        labels:
+          severity: warning
+          component: ai
+        annotations:
+          summary: "AI rigging service is unreachable"
+          description: >
+            The rigging microservice health check failed.
+            AI avatar generation will be unavailable until the service recovers.
+            Check rigging pod status and GPU availability.
+
+      # ── Disk space (node_exporter) ───────────────────────
+      - alert: DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.20
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "Disk usage > 80% on {{ $labels.instance }}"
+          description: >
+            Filesystem {{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free.
+            Clean up logs, temp files, or expand volume.
+
+      # ── Memory pressure (node_exporter) ──────────────────
+      - alert: MemoryPressure
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+        for: 5m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Memory usage > 85% on {{ $labels.instance }}"
+          description: >
+            Available memory critically low ({{ $value | humanizePercentage }} used).
+            Check for memory leaks, reduce replica memory requests, or scale vertically.
+
+  - name: avatar-web-application
+    rules:
+      # ── Zero healthy instances ──────────────────────────
+      - alert: ServiceDown
+        expr: up{job="avatar-web"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "Service {{ $labels.instance }} is down"
+          description: >
+            Instance {{ $labels.instance }} is not reachable.
+            Check pod status, CrashLoopBackOff, or OOMKill events.
+
+      # ── Pod restart frequency ───────────────────────────
+      - alert: FrequentRestarts
+        expr: rate(kube_pod_container_status_restarts_total{container="avatar-web"}[1h]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "Pod restarting frequently"
+          description: >
+            Container is restarting at {{ $value }}/hour. Check logs for crash cause.

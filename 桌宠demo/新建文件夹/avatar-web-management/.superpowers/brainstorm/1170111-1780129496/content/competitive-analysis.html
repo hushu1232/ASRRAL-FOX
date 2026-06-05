@@ -1,0 +1,290 @@
+<h2>AstralFox 桌宠模块 — 竞品对比分析</h2>
+<p class="subtitle">基于架构蓝图 (ADR-009 + pet-runbook) vs. 2025-2026 年主流桌面 AI 宠物产品</p>
+
+<div class="section">
+  <h3>1. 产品定位对比</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-size:13px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="background:var(--ds-colors-bg-cardHover);text-align:left;">
+          <th style="padding:10px;">产品</th><th style="padding:10px;">类型</th><th style="padding:10px;">AI 引擎</th><th style="padding:10px;">渲染</th><th style="padding:10px;">平台</th><th style="padding:10px;">离线</th><th style="padding:10px;">商业模式</th>
+        </tr></thead>
+        <tbody>
+          <tr style="background:rgba(217,119,6,0.08);">
+            <td style="padding:10px;"><strong>🦊 AstralFox</strong></td>
+            <td style="padding:10px;">创作平台 + AI 伴侣</td>
+            <td style="padding:10px;">LLMUnity + Qwen2.5 + FunASR + sherpa-onnx</td>
+            <td style="padding:10px;">Unity + Live2D</td>
+            <td style="padding:10px;">Windows</td>
+            <td style="padding:10px;color:#16a34a;">✅ 全离线</td>
+            <td style="padding:10px;">形象市场 + 订阅</td>
+          </tr>
+          <tr>
+            <td style="padding:10px;">AI Desktop Pet (Steam)</td>
+            <td style="padding:10px;">纯桌面伴侣</td>
+            <td style="padding:10px;">内置本地 LLM</td>
+            <td style="padding:10px;">Live2D Cubism</td>
+            <td style="padding:10px;">Windows</td>
+            <td style="padding:10px;color:#16a34a;">✅ 全离线</td>
+            <td style="padding:10px;">买断 ($16)</td>
+          </tr>
+          <tr>
+            <td style="padding:10px;">你的AI桌宠 (Steam)</td>
+            <td style="padding:10px;">可编程 AI 助手</td>
+            <td style="padding:10px;">外部 API (Gemini/Claude/GPT)</td>
+            <td style="padding:10px;">Live2D 可导入</td>
+            <td style="padding:10px;">Windows</td>
+            <td style="padding:10px;color:#dc2626;">❌ 需联网</td>
+            <td style="padding:10px;">免费 + 内购</td>
+          </tr>
+          <tr>
+            <td style="padding:10px;">Codex Pets</td>
+            <td style="padding:10px;">编码助手状态指示器</td>
+            <td style="padding:10px;">无 (仅状态映射)</td>
+            <td style="padding:10px;">macOS Sprite</td>
+            <td style="padding:10px;">macOS</td>
+            <td style="padding:10px;color:#16a34a;">✅</td>
+            <td style="padding:10px;">免费 (Codex 内置)</td>
+          </tr>
+          <tr>
+            <td style="padding:10px;">EMO (Living.AI)</td>
+            <td style="padding:10px;">物理桌面机器人</td>
+            <td style="padding:10px;">NPU + ChatGPT</td>
+            <td style="padding:10px;">物理硬件</td>
+            <td style="padding:10px;">Hardware</td>
+            <td style="padding:10px;color:#16a34a;">✅</td>
+            <td style="padding:10px;">硬件 ($279-379)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>2. 架构深度对比</h3>
+  <div class="split">
+    <div class="mockup" style="flex:1;">
+      <div class="mockup-header">🦊 AstralFox 桌宠架构</div>
+      <div class="mockup-body" style="font-family:monospace;font-size:11px;line-height:1.7;">
+<pre style="margin:0;color:var(--ds-colors-text-primary);">
+┌─────────────────────────────────┐
+│     Unity Client (桌宠前端)      │
+│  ├── Live2D Cubism 渲染         │
+│  ├── 语音采集 (麦克风)           │
+│  ├── 音频播放 (TTS 输出)        │
+│  └── WebSocket 实时流           │
+└──────────┬──────────────────────┘
+           │ REST + WS
+┌──────────▼──────────────────────┐
+│   Next.js BFF (Web 管理平台)     │
+│  ├── /api/pet/config 配置管理    │
+│  ├── /api/pet/session 会话管理   │
+│  ├── /api/pet/chat LLM 对话     │
+│  ├── /api/pet/tts 语音合成      │
+│  ├── /api/pet/assets 素材管理   │
+│  └── /api/pet/export 配置导出   │
+└──────────┬──────────────────────┘
+           │
+┌──────────▼──────────────────────┐
+│         AI 引擎 (本地)           │
+│  ├── LLMUnity + Qwen2.5 (对话)  │
+│  ├── FunASR (语音识别)          │
+│  ├── sherpa-onnx (TTS)          │
+│  └── GPT-SoVITS (声音克隆)      │
+└──────────┬──────────────────────┘
+           │
+┌──────────▼──────────────────────┐
+│       数据层 (PostgreSQL)        │
+│  ├── pet_configs (1:1 User)     │
+│  ├── pet_asset_mappings         │
+│  └── pet_session_logs (分析)    │
+└─────────────────────────────────┘
+</pre>
+      </div>
+    </div>
+    <div class="mockup" style="flex:1;">
+      <div class="mockup-header">🏢 竞品典型架构 (你的AI桌宠 / Steam AI Pet)</div>
+      <div class="mockup-body" style="font-family:monospace;font-size:11px;line-height:1.7;">
+<pre style="margin:0;color:var(--ds-colors-text-primary);">
+┌─────────────────────────────────┐
+│       桌面客户端 (单体)          │
+│  ├── Live2D / Sprite 渲染       │
+│  ├── 本地 LLM 推理 (可选)        │
+│  ├── 语音 I/O                   │
+│  └── 直接调用外部 API            │
+└──────────┬──────────────────────┘
+           │ 直接调用
+┌──────────▼──────────────────────┐
+│      云端 API (或本地 LLM)       │
+│  ├── OpenAI / Gemini / Claude   │
+│  ├── Azure / 阿里云 TTS         │
+│  └── 向量数据库 (记忆)           │
+└─────────────────────────────────┘
+           │
+      (无 BFF 层)
+      (无用户管理)
+      (无市场系统)
+</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>3. 功能维度全面对比</h3>
+  <div class="mockup">
+    <div class="mockup-body">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="background:var(--ds-colors-bg-cardHover);text-align:left;">
+          <th style="padding:8px;">维度</th>
+          <th style="padding:8px;background:rgba(217,119,6,0.1);">🦊 AstralFox</th>
+          <th style="padding:8px;">AI Desktop Pet</th>
+          <th style="padding:8px;">你的AI桌宠</th>
+          <th style="padding:8px;">WindowPet</th>
+          <th style="padding:8px;">Codex Pets</th>
+        </tr></thead>
+        <tbody>
+          <tr><td style="padding:8px;font-weight:600;">离线运行</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ 全离线</td>
+            <td style="padding:8px;color:#16a34a;">✅</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#16a34a;">✅</td>
+            <td style="padding:8px;color:#16a34a;">✅</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">AI 对话</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ Qwen2.5</td>
+            <td style="padding:8px;color:#16a34a;">✅ 本地LLM</td>
+            <td style="padding:8px;color:#16a34a;">✅ 多模型</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">语音识别</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ FunASR</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#16a34a;">✅ STT</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">TTS 合成</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ sherpa-onnx</td>
+            <td style="padding:8px;color:#16a34a;">✅</td>
+            <td style="padding:8px;color:#16a34a;">✅</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">声音克隆</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ GPT-SoVITS</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">Live2D</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ Unity+Cubism</td>
+            <td style="padding:8px;color:#16a34a;">✅ Cubism SDK</td>
+            <td style="padding:8px;color:#16a34a;">✅ 可导入</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">多模型支持</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ VRM/DragonBones</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">创意市场</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ 完整市场</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">Web 管理</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ Next.js</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">角色系统</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ RBAC+游客</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">会话分析</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ PostgreSQL</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+          <tr><td style="padding:8px;font-weight:600;">K8s/CI/CD</td>
+            <td style="padding:8px;background:rgba(217,119,6,0.05);color:#16a34a;">✅ Helm+ArgoCD</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td>
+            <td style="padding:8px;color:#dc2626;">❌</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>4. 核心竞争力分析</h3>
+  <div class="cards">
+    <div class="card">
+      <div class="card-body">
+        <h3>🟢 独特优势</h3>
+        <ul style="font-size:12px;color:var(--ds-colors-text-secondary);">
+          <li><strong>全离线原生</strong> — 唯一同时支持本地 LLM + ASR + TTS + 声音克隆的桌宠产品</li>
+          <li><strong>创作者经济</strong> — 唯一具有完整形象市场的桌宠平台 (模型/人格卡/语音包/动画交易)</li>
+          <li><strong>企业级基础设施</strong> — 唯一的 K8s/Helm/ArgoCD/Terraform 部署、Prometheus 监控、SLO 管理的桌宠项目</li>
+          <li><strong>Web+Unity 双端</strong> — BFF 层复用认证/存储/数据库，Web 端管理 + Unity 端运行</li>
+          <li><strong>多模型支持</strong> — Live2D + VRM + DragonBones，竞品仅支持单一格式</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>🟡 待追赶</h3>
+        <ul style="font-size:12px;color:var(--ds-colors-text-secondary);">
+          <li><strong>跨平台支持</strong> — 竞品 WindowPet 支持 Win/Mac/Linux，Codex Pets 支持 macOS，AstralFox 仅 Windows</li>
+          <li><strong>安装包体积</strong> — 完整 Unity+AI 引擎约 2-5GB，WindowPet < 10MB</li>
+          <li><strong>macOS 市场</strong> — Codex Pets (macOS 独占) 拥有大量开发者用户</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>🔴 竞争威胁</h3>
+        <ul style="font-size:12px;color:var(--ds-colors-text-secondary);">
+          <li><strong>Steam 桌宠爆发</strong> — "AI Desktop Pet" 和 "你的AI桌宠" 在 Steam 快速增长，拥有成熟分发渠道</li>
+          <li><strong>AI Agent 桌宠融合</strong> — Codex Pets 模式将桌宠与 AI 开发工具深度绑定，开辟新品类</li>
+          <li><strong>硬件化趋势</strong> — EMO/Loona/Moflin 提供物理触感交互，纯软件桌宠有被替代风险</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>5. 战略建议</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="font-size:12px;color:var(--ds-colors-text-secondary);line-height:1.7;">
+      <strong>短期 (1-3 月)：巩固核心优势</strong>
+      <ol>
+        <li>完成 OpenAI/Azure 残留清理后的全离线验证</li>
+        <li>降低安装包体积 — 考虑 modular AI 引擎按需下载</li>
+        <li>Steam 上架 — 利用现有 Unity 构建发布到 Steam 获取分发渠道</li>
+      </ol>
+      <strong>中期 (3-6 月)：拓展平台 + 生态</strong>
+      <ol>
+        <li>macOS 移植 — 使用 Unity macOS build target</li>
+        <li>AI Agent 集成 — 参考 Codex Pets 模式，将桌宠与 Claude Code 等 AI 编程工具联动</li>
+        <li>创建者 SDK — 让第三方开发者创建和销售 Live2D 模型/人格卡/语音包</li>
+      </ol>
+      <strong>长期 (6-12 月)：平台化 + 硬件探索</strong>
+      <ol>
+        <li>硬件伴侣 — 低成本 ESP32 蓝牙设备 (参考 Claude Buddy M5StickC)</li>
+        <li>跨平台统一 — 考虑 Tauri 重写轻量版前端，降低资源占用</li>
+        <li>开放 API — 让第三方 AI 应用接入 AstralFox 形象系统</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px;">数据来源：各产品官网、Steam 商店页、GitHub、技术博客。分析日期：2026-05-30。</p>

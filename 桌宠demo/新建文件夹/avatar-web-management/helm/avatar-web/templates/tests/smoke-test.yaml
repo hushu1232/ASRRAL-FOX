@@ -1,0 +1,78 @@
+{{/*
+Post-deployment smoke test — validates the release is functional.
+Run with: helm test {{ .Release.Name }} --timeout 2m
+*/}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "avatar-web.fullname" . }}-smoke-test
+  labels:
+    {{- include "avatar-web.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    helm.sh/hook: test-success
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: smoke-test
+      image: curlimages/curl:latest
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          APP_URL="http://{{ include "avatar-web.fullname" . }}:{{ .Values.service.port }}"
+          FAIL=0
+
+          echo "=== Smoke Test — {{ include "avatar-web.fullname" . }} ==="
+
+          # 1. Health check
+          echo "[1/4] Health check..."
+          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health")
+          if [ "$HEALTH" != "200" ]; then
+            echo "  FAIL — /api/health returned $HEALTH (expected 200)"
+            FAIL=1
+          else
+            echo "  PASS — /api/health → 200"
+          fi
+
+          # 2. Pet config API (unauthenticated → 401 is expected and valid)
+          echo "[2/4] Pet config API..."
+          PET_CONFIG=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/pet/config")
+          if [ "$PET_CONFIG" != "401" ]; then
+            echo "  FAIL — /api/pet/config returned $PET_CONFIG (expected 401 — auth required)"
+            FAIL=1
+          else
+            echo "  PASS — /api/pet/config → 401 (auth required)"
+          fi
+
+          # 3. Static page rendering
+          echo "[3/4] Login page..."
+          LOGIN=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/login")
+          if [ "$LOGIN" != "200" ]; then
+            echo "  FAIL — /login returned $LOGIN (expected 200)"
+            FAIL=1
+          else
+            echo "  PASS — /login → 200"
+          fi
+
+          # 4. Metrics endpoint
+          echo "[4/4] Metrics endpoint..."
+          METRICS=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/metrics")
+          if [ "$METRICS" != "200" ]; then
+            echo "  FAIL — /api/metrics returned $METRICS (expected 200)"
+            FAIL=1
+          else
+            echo "  PASS — /api/metrics → 200"
+          fi
+
+          echo "=== Smoke Test Complete: $([ $FAIL -eq 0 ] && echo 'ALL PASSED' || echo 'FAILURES DETECTED') ==="
+          exit $FAIL
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi

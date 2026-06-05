@@ -1,0 +1,155 @@
+<h2>方案 C 架构设计（第 1/4 层：架构 + 组件）</h2>
+<p class="subtitle">目标：低风险渐进增强，保留 Ant Design 组件，引入 react-admin 模式精华</p>
+
+<div class="section">
+  <h3>1. 优化后的组件树</h3>
+  <div class="mockup">
+    <div class="mockup-header">AppLayout 结构（新增组件以 🆕 标记）</div>
+    <div class="mockup-body" style="font-family:monospace;font-size:12px;color:#a8a29e;line-height:1.8;">
+<pre style="color:#e2e8f0;margin:0;">
+AppLayout
+├── 🆕 SkipToMain (焦点管理 + 跳过导航)
+├── Sidebar (现有，增强移动端 Drawer 模式)
+│   ├── Logo + Brand
+│   ├── 🆕 QuickActionGroup (新建/搜索/导出 快捷操作)
+│   ├── Menu (现有，角色过滤 + 路由预取)
+│   └── CollapseToggle (现有)
+├── Layout (现有右侧容器)
+│   ├── Header
+│   │   ├── 🆕 BreadcrumbNav (自动面包屑，react-admin 风格)
+│   │   ├── 🆕 AppBarActions (页面级操作：创建/刷新/导出)
+│   │   ├── SearchModal (现有，⌘K 全局搜索)
+│   │   ├── 🆕 ThemeToggle (浅色/深色/系统)
+│   │   ├── NotificationDropdown (现有)
+│   │   └── UserMenu (现有)
+│   └── Content (main)
+│       ├── 🆕 PageTitle (标题 + 副标题 + 操作按钮)
+│       ├── 🆕 FilterBar (列表页筛选器 + 排序器)
+│       ├── 🆕 BulkActionBar (批量操作工具栏)
+│       ├── 🆕 ListView / EditView / CreateView / ShowView (统一页面模式)
+│       ├── 🆕 EmptyState (空状态规范组件)
+│       └── 🆕 OptimisticFeedback (乐观更新结果反馈)
+</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>2. 六个核心新增模式</h3>
+  <div class="cards">
+    <div class="card">
+      <div class="card-body">
+        <h3>📋 统一页面模式</h3>
+        <p style="font-size:12px;color:var(--ds-colors-text-secondary);">
+          <code>ListView</code> → 筛选+排序+分页+批量操作<br/>
+          <code>EditView</code> → 表单+校验+乐观提交+撤销<br/>
+          <code>CreateView</code> → 向导分步+实时预览<br/>
+          <code>ShowView</code> → 详情+关联+操作<br/>
+          <em>以约定而非组件形式存在，透传 Ant Design</em>
+        </p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>🎨 主题引擎</h3>
+        <p style="font-size:12px;color:var(--ds-colors-text-secondary);">
+          基于现有 CSS 变量体系，新增：<br/>
+          • <code>ThemeProvider</code> — 浅色/深色/系统三态<br/>
+          • ConfigProvider 动态 token 注入<br/>
+          • 持久化到 localStorage + cookie (SSR 首屏)<br/>
+          • 平滑过渡动画 (0.3s 背景色过渡)
+        </p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>🔍 筛选器系统</h3>
+        <p style="font-size:12px;color:var(--ds-colors-text-secondary);">
+          可复用的 <code>&lt;FilterBar&gt;</code> 组件：<br/>
+          • 搜索框 + 多选筛选 + 排序器<br/>
+          • URL query params 同步 (可分享/可收藏)<br/>
+          • 移动端折叠到底部抽屉<br/>
+          • 预设筛选保存
+        </p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>⚡ 乐观更新 UI</h3>
+        <p style="font-size:12px;color:var(--ds-colors-text-secondary);">
+          react-admin 的 mutate+undo 模式：<br/>
+          • 操作立即反映 UI（SWR optimisticData）<br/>
+          • 失败时 Toast + 撤销按钮<br/>
+          • 批量操作显示进度条<br/>
+          • 离线队列（IndexedDB 暂存）
+        </p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>♿ 可访问性增强</h3>
+        <p style="font-size:12px;color:var(--ds-colors-text-secondary);">
+          react-admin 级别的 a11y：<br/>
+          • 完整焦点管理（弹窗/抽屉/模态框）<br/>
+          • aria-live 区域标注（动态内容播报）<br/>
+          • 键盘导航标准化（Tab/Arrow/Escape）<br/>
+          • axe-core 集成 CI 检查
+        </p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>🧩 仪表盘小部件</h3>
+        <p style="font-size:12px;color:var(--ds-colors-text-secondary);">
+          可配置的 Dashboard 系统：<br/>
+          • Widget 注册机制<br/>
+          • 拖拽排序 + 显示/隐藏<br/>
+          • 按角色预设布局<br/>
+          • 数据刷新间隔可配
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>3. 文件结构变更（仅列出新增/变更）</h3>
+  <div class="mockup" style="margin-bottom:12px;">
+    <div class="mockup-body" style="font-family:monospace;font-size:11px;color:#a8a29e;line-height:1.7;">
+<pre>
+src/
+├── components/
+│   ├── layout/
+│   │   ├── AppLayout.tsx          [变更] 集成 SkipToMain + ThemeToggle + 移动端 Drawer
+│   │   ├── Header.tsx             [变更] 添加 BreadcrumbNav + AppBarActions
+│   │   ├── Sidebar.tsx            [变更] 移动端 Drawer 模式 + QuickActionGroup
+│   │   ├── 🆕 BreadcrumbNav.tsx   [新增] 自动面包屑导航
+│   │   ├── 🆕 AppBarActions.tsx   [新增] 页面级操作按钮
+│   │   ├── 🆕 FilterBar.tsx       [新增] 筛选器 + 排序器
+│   │   ├── 🆕 BulkActionBar.tsx   [新增] 批量操作工具栏
+│   ├── ui/
+│   │   ├── 🆕 ListView.tsx        [新增] 列表页面容器
+│   │   ├── 🆕 EditView.tsx        [新增] 编辑页面容器
+│   │   ├── 🆕 ShowView.tsx        [新增] 详情页面容器
+│   │   ├── 🆕 PageTitle.tsx       [新增] 页面标题组件
+│   │   ├── 🆕 EmptyState.tsx      [新增] 空状态规范组件
+│   │   ├── 🆕 OptimisticFeedback.tsx [新增] 乐观更新反馈
+│   │   ├── 🆕 ThemeToggle.tsx     [新增] 主题切换
+│   ├── dashboard/
+│   │   ├── 🆕 WidgetRegistry.ts   [新增] 小部件注册系统
+│   │   ├── 🆕 WidgetContainer.tsx [新增] 小部件容器
+│   ├── providers/
+│   │   ├── AntdProvider.tsx       [变更] 集成 ThemeProvider
+│   │   ├── 🆕 ThemeProvider.tsx   [新增] 主题引擎
+├── stores/
+│   ├── 🆕 themeStore.ts           [新增] 主题状态 (Zustand)
+│   ├── uiStore.ts                 [变更] 添加移动端检测
+├── lib/
+│   ├── 🆕 focus-manager.ts        [新增] 焦点陷阱 + 焦点恢复
+│   ├── 🆕 a11y-test-utils.ts      [新增] 可访问性测试工具
+</pre>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">👆 这是架构和组件层的设计。接下来展示安全加固 + 性能优化细节。告诉我这层设计是否符合预期？</p>

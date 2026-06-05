@@ -1,0 +1,30 @@
+{
+  "tail": {
+    "stiffness": 0.2,
+    "damping": 0.5,
+    "mass": 2.0,
+    "pendulum_length": 2.0,
+    "comment": "Thick animal tail (fox/wolf) - heavy, slow, sweeping"
+  },
+  "tail_tip": {
+    "stiffness": 0.15,
+    "damping": 0.55,
+    "mass": 0.8,
+    "pendulum_length": 1.5,
+    "comment": "Tail tip segment - follows base tail motion with delay"
+  },
+  "ear": {
+    "stiffness": 0.6,
+    "damping": 0.35,
+    "mass": 0.7,
+    "pendulum_length": 0.5,
+    "comment": "Animal ears - alert, responsive"
+  },
+  "fluff": {
+    "stiffness": 0.1,
+    "damping": 0.7,
+    "mass": 0.2,
+    "pendulum_length": 0.3,
+    "comment": "Cheek/chest fluff - highly damped micro-motion"
+  }
+}

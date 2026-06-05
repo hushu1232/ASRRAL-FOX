@@ -1,0 +1,50 @@
+@use '@/styles/variables' as var;
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+
+  &--loading {
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-deep);
+  }
+
+  &__sidebar-area {
+    flex-shrink: 0;
+  }
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    background: var(--bg-deep);
+    transition: margin-left var.$transition-normal;
+
+    &--sidebar-expanded {
+      margin-left: var.$sidebar-width;
+    }
+
+    &--sidebar-collapsed {
+      margin-left: var.$sidebar-collapsed-width;
+    }
+  }
+
+  &__content {
+    flex: 1;
+    padding: var.$spacing-3;
+    min-height: calc(100vh - #{var.$header-height});
+    // Per DESIGN.md: content is centered with max-width on large screens
+    max-width: 1440px;
+    margin: 0 auto;
+    width: 100%;
+
+    @media (min-width: var.$breakpoint-md) {
+      padding: var.$spacing-6;
+    }
+
+    @media (min-width: var.$breakpoint-lg) {
+      padding: var.$spacing-6 var.$spacing-8;
+    }
+  }
+}

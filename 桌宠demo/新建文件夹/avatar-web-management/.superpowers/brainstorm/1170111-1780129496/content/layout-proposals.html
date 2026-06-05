@@ -1,0 +1,195 @@
+<h2>三种布局优化方案对比</h2>
+<p class="subtitle">基于 react-admin 布局模式，结合当前 Ant Design 技术栈</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>增量优化方案</h3>
+      <p>保持现有结构，聚焦安全/a11y/响应式/性能的补齐</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>React-Admin 风格重构</h3>
+      <p>采用 AppBar+Menu 分离、数据驱动CRUD、主题引擎等核心模式</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>混合渐进方案（推荐）</h3>
+      <p>保留 Ant Design 组件体系，选择性引入 react-admin 最佳实践</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>方案 A：增量优化（最小改动）</h3>
+  <div class="mockup" style="margin-bottom:16px;">
+    <div class="mockup-header">当前结构 + 安全/a11y/响应式/性能补齐</div>
+    <div class="mockup-body">
+      <table style="width:100%;font-size:12px;color:var(--ds-colors-text-secondary);">
+        <tr><td style="padding:4px 8px;">✅ 改动最小</td><td style="padding:4px 8px;">仅修复已知问题，不改变用户体验</td></tr>
+        <tr><td style="padding:4px 8px;">✅ 低风险</td><td style="padding:4px 8px;">无架构变更，回归测试范围可控</td></tr>
+        <tr><td style="padding:4px 8px;">✅ 工期短</td><td style="padding:4px 8px;">约 3-5 天完成全部 P0-P2</td></tr>
+        <tr><td style="padding:4px 8px;color:var(--ds-colors-semantic-warning);">❌ 不系统</td><td style="padding:4px 8px;">补丁式改进，后续维护成本可能递增</td></tr>
+        <tr><td style="padding:4px 8px;color:var(--ds-colors-semantic-warning);">❌ 无模式提升</td><td style="padding:4px 8px;">不引入 react-admin 的数据驱动模式</td></tr>
+      </table>
+      <div style="display:flex;gap:12px;margin-top:12px;">
+        <div style="flex:1;background:var(--ds-colors-bg-cardHover);padding:8px 12px;border-radius:6px;font-size:11px;">
+          <strong>🏗 改动范围：</strong><br/>
+          1. CSP 头审计 + 输入消毒<br/>
+          2. aria 属性补全 + 焦点管理<br/>
+          3. 响应式断点统一<br/>
+          4. 图片懒加载 + 代码分割<br/>
+          5. 测试覆盖率提升
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>方案 B：React-Admin 风格重构（最大改动）</h3>
+  <div class="mockup" style="margin-bottom:16px;">
+    <div class="mockup-header">仿 react-admin 核心架构 + Ant Design 组件</div>
+    <div class="mockup-body">
+      <div style="display:flex; gap:0; min-height:300px; background:#09090F; border-radius:8px; overflow:hidden;">
+        <!-- Menu as overlay drawer -->
+        <div style="width:240px; background:linear-gradient(180deg,#0d0d24,#12122a); padding:16px 12px; flex-shrink:0;">
+          <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(139,92,246,0.1);">
+            <span style="color:white;font-size:14px;font-weight:700;">AstralFox</span>
+            <div style="font-size:10px;color:#78716c;margin-top:2px;">Admin Panel</div>
+          </div>
+          <div style="font-size:12px;color:#5e5e7a;margin-bottom:8px;">MAIN</div>
+          <div class="mock-nav" style="flex-direction:column;gap:2px;font-size:11px;background:none;border:none;margin-bottom:0;">
+            <div style="padding:6px 8px;border-radius:4px;background:rgba(109,93,240,0.15);color:#a78bfa;">📊 仪表盘</div>
+            <div style="padding:6px 8px;">👤 头像</div>
+            <div style="padding:6px 8px;">📁 资源</div>
+            <div style="padding:6px 8px;">🛒 市场</div>
+          </div>
+          <div style="font-size:12px;color:#5e5e7a;margin:12px 0 8px;">TOOLS</div>
+          <div class="mock-nav" style="flex-direction:column;gap:2px;font-size:11px;background:none;border:none;margin-bottom:0;">
+            <div style="padding:6px 8px;">🦊 桌宠管理</div>
+            <div style="padding:6px 8px;">📋 审核</div>
+            <div style="padding:6px 8px;">📊 分析</div>
+          </div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;">
+          <!-- AppBar with actions -->
+          <div style="height:56px;background:rgba(9,9,15,0.9);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid rgba(139,92,246,0.1);">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <span style="color:white;font-weight:600;font-size:14px;">👤 头像管理</span>
+              <span style="font-size:10px;color:#5e5e7a;background:rgba(139,92,246,0.1);padding:2px 6px;border-radius:4px;">List View</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="color:white;font-size:11px;background:#6d5df0;padding:4px 10px;border-radius:6px;">+ 创建</div>
+              <span style="color:#aaa;">🔔</span>
+              <div style="width:28px;height:28px;background:#6d5df0;border-radius:50%;"></div>
+            </div>
+          </div>
+          <!-- Filters + Actions bar -->
+          <div style="padding:12px 20px;background:rgba(9,9,15,0.4);border-bottom:1px solid rgba(139,92,246,0.05);display:flex;align-items:center;gap:12px;font-size:11px;color:#78716c;">
+            <span>🔍 搜索</span>
+            <span style="color:#5e5e7a;">|</span>
+            <span>🎨 风格: 全部 ▾</span>
+            <span>📋 状态: 全部 ▾</span>
+            <span style="margin-left:auto;">排序: 更新时间 ▾</span>
+            <span>⬆⬇</span>
+          </div>
+          <!-- Data grid content -->
+          <div style="flex:1;padding:20px;">
+            <div style="background:rgba(18,18,42,0.6);border-radius:8px;overflow:hidden;">
+              <table style="width:100%;font-size:11px;color:#a8a29e;border-collapse:collapse;">
+                <thead><tr style="background:rgba(18,18,42,0.8);color:#78716c;text-align:left;">
+                  <th style="padding:8px 12px;">□</th>
+                  <th style="padding:8px 12px;">名称</th>
+                  <th style="padding:8px 12px;">风格</th>
+                  <th style="padding:8px 12px;">状态</th>
+                  <th style="padding:8px 12px;">更新</th>
+                </tr></thead>
+                <tbody>
+                  <tr style="border-bottom:1px solid rgba(139,92,246,0.05);"><td style="padding:8px 12px;">□</td><td style="padding:8px 12px;color:white;">夏日狐</td><td style="padding:8px 12px;">二次元</td><td style="padding:8px 12px;color:#16a34a;">已发布</td><td style="padding:8px 12px;">2h前</td></tr>
+                  <tr style="border-bottom:1px solid rgba(139,92,246,0.05);"><td style="padding:8px 12px;">□</td><td style="padding:8px 12px;color:white;">机甲猫</td><td style="padding:8px 12px;">科幻</td><td style="padding:8px 12px;color:#d97706;">草稿</td><td style="padding:8px 12px;">1d前</td></tr>
+                  <tr><td style="padding:8px 12px;">□</td><td style="padding:8px 12px;color:white;">古风兔</td><td style="padding:8px 12px;">古风</td><td style="padding:8px 12px;color:#dc2626;">审核中</td><td style="padding:8px 12px;">3d前</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;font-size:10px;color:#5e5e7a;">
+              <span>共 42 条 | 已选 0</span>
+              <span>◀ 1 2 3 ... 5 ▶</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <table style="width:100%;font-size:12px;color:var(--ds-colors-text-secondary);margin-top:12px;">
+        <tr><td style="padding:4px 8px;">✅ 系统化</td><td style="padding:4px 8px;">统一的数据驱动模式、主题引擎、完整 a11y</td></tr>
+        <tr><td style="padding:4px 8px;">✅ 可扩展</td><td style="padding:4px 8px;">新页面可复用 List/Edit/Create 模式</td></tr>
+        <tr><td style="padding:4px 8px;color:var(--ds-colors-semantic-warning);">❌ 工期长</td><td style="padding:4px 8px;">约 10-15 天，涉及大量组件重写</td></tr>
+        <tr><td style="padding:4px 8px;color:var(--ds-colors-semantic-warning);">❌ 高风险</td><td style="padding:4px 8px;">破坏性变更可能导致回归 bug</td></tr>
+        <tr><td style="padding:4px 8px;color:var(--ds-colors-semantic-warning);">❌ 过度工程</td><td style="padding:4px 8px;">react-admin 为纯管理后台设计，非市场/社区场景</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>方案 C：混合渐进方案（⭐ 推荐）</h3>
+  <div class="mockup">
+    <div class="mockup-header">核心原则：保留 Ant Design 组件，引入 react-admin 模式精华</div>
+    <div class="mockup-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12px;">
+        <div style="background:rgba(22,163,74,0.08);padding:12px;border-radius:6px;">
+          <strong style="color:var(--ds-colors-semantic-success);">保留不动</strong>
+          <ul style="color:var(--ds-colors-text-secondary);margin:8px 0 0;padding-left:18px;">
+            <li>Ant Design 组件体系（Layout/Menu/Table/Card）</li>
+            <li>Next.js App Router 路由结构</li>
+            <li>Zustand 状态管理 + SWR 数据获取</li>
+            <li>Sidebar + Header + Content 布局结构</li>
+            <li>Tailwind CSS + Design Tokens 主题变量</li>
+          </ul>
+        </div>
+        <div style="background:rgba(37,99,235,0.08);padding:12px;border-radius:6px;">
+          <strong style="color:var(--ds-colors-semantic-info);">借鉴 react-admin</strong>
+          <ul style="color:var(--ds-colors-text-secondary);margin:8px 0 0;padding-left:18px;">
+            <li>List/Edit/Create/Show 统一页面模式（作为约定而非组件）</li>
+            <li>筛选器 + 排序器组件抽象（`<FilterBar />`）</li>
+            <li>批量操作工具栏（BulkActionBar）</li>
+            <li>主题切换引擎（浅色/深色/系统）</li>
+            <li>通知 + 撤销模式（乐观更新的回滚UI）</li>
+            <li>仪表盘小部件系统</li>
+            <li>焦点管理 + 键盘导航规范</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>推荐方案 C 核心改动清单</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>优点</h4>
+      <ul>
+        <li>低风险：不改变现有架构，仅增强模式</li>
+        <li>可逆：每个改动独立，可单独回滚</li>
+        <li>实用：精准借鉴 react-admin 最有价值的模式</li>
+        <li>工期适中：约 5-7 天分阶段交付</li>
+        <li>不破坏：非管理后台功能（市场、社区、桌宠）不受影响</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>代价</h4>
+      <ul>
+        <li>不如方案 B 系统化</li>
+        <li>需要刻意维护模式一致性</li>
+        <li>部分模式需自行实现（非开箱即用）</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px;">👆 点击选项（可多选偏好），然后回到终端告诉我你的选择或疑问。</p>

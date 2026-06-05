@@ -1,0 +1,68 @@
+{
+  "title": "Avatar Web — Database",
+  "uid": "avatar-web-db",
+  "tags": ["avatar-web", "database", "postgresql"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1, "title": "Query Rate by Operation", "type": "graph",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_db_queries_total[1m])) by (operation)",
+          "legendFormat": "{{operation}}"
+        }
+      ],
+      "yaxes": [{ "format": "ops" }],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 2, "title": "P95 Query Duration", "type": "graph",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(avatar_db_query_duration_seconds_bucket[1m])) by (le, operation, model))",
+          "legendFormat": "{{model}}.{{operation}}"
+        }
+      ],
+      "yaxes": [{ "format": "s" }],
+      "thresholds": [{ "value": 0.5, "color": "red", "op": "gt" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 3, "title": "Query Count by Model", "type": "barchart",
+      "gridPos": { "x": 0, "y": 8, "w": 8, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_db_queries_total[5m])) by (model)",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    },
+    {
+      "id": 4, "title": "Slow Query Rate (>500ms)", "type": "stat",
+      "gridPos": { "x": 8, "y": 8, "w": 4, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_db_query_duration_seconds_bucket{le=\"+Inf\"}[5m])) - sum(rate(avatar_db_query_duration_seconds_bucket{le=\"0.5\"}[5m]))",
+          "legendFormat": "slow"
+        }
+      ],
+      "fieldConfig": { "defaults": { "thresholds": { "steps": [{ "value": 0, "color": "green" }, { "value": 1, "color": "yellow" }, { "value": 10, "color": "red" }] } } }
+    },
+    {
+      "id": 5, "title": "Average Query Duration (P50)", "type": "graph",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(avatar_db_query_duration_seconds_bucket[1m])) by (le, model))",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "yaxes": [{ "format": "s" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    }
+  ]
+}

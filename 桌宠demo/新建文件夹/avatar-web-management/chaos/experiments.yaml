@@ -1,0 +1,134 @@
+# Chaos Mesh experiments — resilience validation
+# Requires Chaos Mesh installed in the cluster
+# Apply: kubectl apply -f chaos/experiments.yaml
+# Run:    kubectl apply -f chaos/experiment-pod-kill.yaml  (individual experiments)
+---
+# =============================================================================
+# Experiment 1: Pod Kill — validates pod restart and health recovery
+# =============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: avatar-web-pod-kill
+  namespace: production
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app.kubernetes.io/name: avatar-web
+  scheduler:
+    cron: "@every 30m"  # run every 30 minutes
+  duration: "30s"
+  gracePeriod: 30
+
+---
+# =============================================================================
+# Experiment 2: Network Delay — simulates degraded Redis/DB connectivity
+# =============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: avatar-web-network-delay
+  namespace: production
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app.kubernetes.io/name: avatar-web
+  delay:
+    latency: "200ms"
+    jitter: "50ms"
+    correlation: "50"
+  duration: "60s"
+  scheduler:
+    cron: "@every 2h"
+
+---
+# =============================================================================
+# Experiment 3: CPU Stress — validates HPA scaling and throttling behavior
+# =============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: avatar-web-cpu-stress
+  namespace: production
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app.kubernetes.io/name: avatar-web
+  stressors:
+    cpu:
+      workers: 2
+      load: 80  # 80% CPU load on 2 workers
+  duration: "120s"
+  scheduler:
+    cron: "@every 6h"
+
+---
+# =============================================================================
+# Experiment 4: DNS Failure — validates resilience to DNS resolution failures
+# =============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: DNSChaos
+metadata:
+  name: avatar-web-dns-failure
+  namespace: production
+spec:
+  action: error
+  mode: all
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app.kubernetes.io/name: avatar-web
+  patterns:
+    - "redis.*"   # Redis DNS failure → rate limiter should fail-open
+  duration: "30s"
+  scheduler:
+    cron: "@every 4h"
+
+---
+# =============================================================================
+# PrometheusRule: Alert if chaos experiments cause sustained issues
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: avatar-web-chaos-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: avatar-web-chaos
+      rules:
+        - alert: ChaosExperimentCausingSustainedErrorRate
+          expr: |
+            avg_over_time(
+              sum(rate(avatar_http_requests_total{status_code=~"5.."}[1m]))[5m:]
+            ) > 0.01
+          for: 3m
+          labels:
+            severity: warning
+            chaos: "active"
+          annotations:
+            summary: "Sustained error rate during chaos experiment"
+            description: "5-minute avg error rate > 1% — verify resilience mechanisms"
+
+        - alert: ChaosExperimentHealthCheckRecoverySlow
+          expr: |
+            probe_success{service="avatar-web", probe_type="health"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            chaos: "active"
+          annotations:
+            summary: "Health check not recovering after chaos experiment"
+            description: "Pod kill or network delay lasting > 2min — possible startup/connectivity issue"

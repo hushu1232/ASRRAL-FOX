@@ -1,0 +1,119 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "avatar-web.fullname" . }}-db-backup
+  labels:
+    {{- include "avatar-web.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  # Default: daily at 03:00 UTC
+  schedule: {{ .Values.backup.schedule | default "0 3 * * *" | quote }}
+  # Keep last 7 successful backups
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: {{ include "avatar-web.serviceAccountName" . }}
+          restartPolicy: Never
+          containers:
+            - name: pg-dump
+              image: postgres:16-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  TIMESTAMP=$(date -u +%Y%m%d_%H%M%S)
+                  BACKUP_FILE="/tmp/backup_${TIMESTAMP}.sql.gz"
+                  echo "[$(date)] Starting backup..."
+
+                  pg_dump \
+                    --host=$PGHOST \
+                    --port=$PGPORT \
+                    --username=$PGUSER \
+                    --dbname=$PGDATABASE \
+                    --no-owner \
+                    --no-acl \
+                    --compress=gzip \
+                    --file="$BACKUP_FILE"
+
+                  echo "[$(date)] Backup complete: $(ls -lh $BACKUP_FILE | awk '{print $5}')"
+
+                  {{- if .Values.backup.s3Endpoint }}
+                  # Upload to S3/MinIO
+                  S3_PATH="s3://{{ .Values.backup.s3Bucket }}/backups/$(date -u +%Y/%m)/backup_${TIMESTAMP}.sql.gz"
+                  aws s3 cp "$BACKUP_FILE" "$S3_PATH" \
+                    --endpoint-url {{ .Values.backup.s3Endpoint }} \
+                    --region {{ .Values.backup.s3Region | default "us-east-1" }}
+                  echo "[$(date)] Uploaded to $S3_PATH"
+
+                  # Cleanup backups older than retention period
+                  aws s3 ls "s3://{{ .Values.backup.s3Bucket }}/backups/" --recursive \
+                    --endpoint-url {{ .Values.backup.s3Endpoint }} | \
+                    awk -v cutoff="$(date -u -d '-{{ .Values.backup.retentionDays | default 30 }} days' +%Y-%m-%d)" \
+                    '$1 < cutoff {print $4}' | \
+                    while read -r old; do
+                      aws s3 rm "s3://{{ .Values.backup.s3Bucket }}/$old" \
+                        --endpoint-url {{ .Values.backup.s3Endpoint }}
+                      echo "[$(date)] Purged old backup: $old"
+                    done
+                  {{- else }}
+                  echo "[$(date)] No S3 endpoint configured — backup left in pod (will be lost on termination)"
+                  {{- end }}
+
+                  echo "[$(date)] Backup job finished."
+              env:
+                - name: PGHOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "avatar-web.fullname" . }}-db
+                      key: host
+                - name: PGPORT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "avatar-web.fullname" . }}-db
+                      key: port
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "avatar-web.fullname" . }}-db
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "avatar-web.fullname" . }}-db
+                      key: password
+                - name: PGDATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "avatar-web.fullname" . }}-db
+                      key: database
+                {{- if .Values.backup.s3Endpoint }}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backup.s3SecretName | default (printf "%s-backup-s3" (include "avatar-web.fullname" .)) }}
+                      key: accessKey
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backup.s3SecretName | default (printf "%s-backup-s3" (include "avatar-web.fullname" .)) }}
+                      key: secretKey
+                {{- end }}
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                readOnlyRootFilesystem: false  # need /tmp writable
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 70  # postgres user
+{{- end }}

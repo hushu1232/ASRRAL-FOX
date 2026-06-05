@@ -1,0 +1,82 @@
+# AstralFox Rigging Pipeline Configuration
+
+server:
+  host: "0.0.0.0"
+  port: 8001
+  debug: true
+  cors_origins:
+    - "http://localhost:3000"   # Next.js dev
+    - "http://localhost:3001"
+
+# AI Models
+models:
+  rembg:
+    model_path: "models/u2net.onnx"    # local .onnx file path; leave empty to auto-download
+  mobilesam:
+    checkpoint: "models/mobile_sam.pt" # MobileSAM checkpoint (38.8MB)
+  sam2:
+    model_size: "vit_h"         # vit_h / vit_l / vit_b
+    checkpoint: "models/sam2_vit_h/sam2_vit_h.pt"
+    device: "cuda"              # cuda / cpu
+  controlnet:
+    checkpoint: "models/controlnet_openpose/"
+    device: "cuda"
+  ip_adapter:
+    checkpoint: "models/ip_adapter/"
+    device: "cuda"
+  bone_predictor:
+    checkpoint: "models/bone_predictor/best.pt"
+    device: "cuda"
+
+# Layer Separation
+separation:
+  target_layers:
+    - "hair_back"
+    - "body"
+    - "hair_front"
+    - "face"
+    - "eye_L"
+    - "eye_R"
+    - "eyebrow_L"
+    - "eyebrow_R"
+    - "mouth"
+    - "accessory"
+  min_mask_area: 100            # pixels
+  edge_refine_method: "vitmatte" # vitmatte / guided_filter
+
+# Cubism Export
+cubism:
+  canvas_width: 3000
+  canvas_height: 4000
+  mesh_density: "medium"        # low / medium / high
+  texture_size: 2048            # 1024 / 2048 / 4096
+  format_version: "Cubism4_2"
+
+# AstralFox Deploy
+astralfox:
+  unity_project_path: ""        # Set to your Unity project path
+  models_dir: "Assets/StreamingAssets/AstralFox/Models"
+  websocket_url: "ws://localhost:8080"
+  auto_reload: false  # Set to true when Unity WebSocket is available
+
+# Physics Presets
+physics:
+  hair_stiffness: 0.5
+  hair_damping: 0.3
+  hair_mass: 1.0
+  tail_stiffness: 0.3
+  tail_damping: 0.5
+  tail_mass: 1.5
+  ear_stiffness: 0.6
+  ear_damping: 0.4
+  ear_mass: 0.8
+
+# Output
+output:
+  dir: "output/"
+  keep_intermediates: true
+
+# ComfyUI Configuration
+comfyui:
+  base_url: "http://127.0.0.1:8188"
+  timeout: 120                     # seconds

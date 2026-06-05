@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>星尘 · Live2D 模型预览</title>
+<link rel="stylesheet" href="dist/waifu.css">
+<style>
+/* ── Design Tokens ── */
+:root {
+  --bg-deep: #09090F;
+  --bg-panel: #12122A;
+  --border-subtle: rgba(124,111,240,0.10);
+  --accent: #5c8de3;
+  --accent-soft: #7C6FF0;
+  --accent-glow: rgba(92,141,227,0.18);
+  --text: #E8E8F0;
+  --text-muted: #8A8DA8;
+  --text-dim: #5E6080;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --font-stack: 'Segoe UI','Noto Sans SC','Microsoft YaHei',system-ui,sans-serif;
+}
+
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+
+body {
+  font-family: var(--font-stack);
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(92,141,227,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 85% 80%, rgba(124,111,240,0.04) 0%, transparent 50%),
+    var(--bg-deep);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Floating Sidebar ── */
+.sidebar {
+  position: fixed; left: 0; top: 0; bottom: 0;
+  width: 240px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column;
+  z-index: 100;
+  overflow: hidden;
+}
+.side-header {
+  padding: 16px 14px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.side-header h2 { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 7px; }
+.side-header h2 .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+.side-header .sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+.model-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.model-group { border-bottom: 1px solid rgba(255,255,255,0.03); }
+.group-label { font-size: 9px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; padding: 7px 14px 2px; }
+
+.model-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px;
+  cursor: pointer; transition: background .12s;
+  border-left: 2px solid transparent;
+  font-size: 11px; color: var(--text-muted);
+}
+.model-item:hover { background: rgba(255,255,255,0.03); color: var(--text); }
+.model-item.active { background: rgba(92,141,227,0.08); border-left-color: var(--accent); color: var(--text); }
+.model-item .dot-indicator {
+  width: 7px; height: 7px; border-radius: 50%;
+  border: 2px solid var(--text-dim); flex-shrink: 0;
+  transition: all .2s;
+}
+.model-item.active .dot-indicator { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+
+.meta-panel {
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.meta-row { display: flex; justify-content: space-between; padding: 2px 0; }
+.meta-label { color: var(--text-dim); }
+.meta-value { color: var(--text-muted); font-weight: 500; }
+
+/* ── Adjust waifu widget position (leave room for sidebar) ── */
+#waifu { left: 240px !important; }
+#waifu-toggle { left: 240px !important; }
+
+/* Bigger canvas */
+#live2d { width: 380px !important; height: 380px !important; }
+
+/* ── Scrollbar ── */
+.model-list::-webkit-scrollbar { width: 4px; }
+.model-list::-webkit-scrollbar-track { background: transparent; }
+.model-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 2px; }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; top: 16px; right: 16px; z-index: 999;
+  padding: 8px 16px; border-radius: var(--radius-sm);
+  font-size: 11px; font-weight: 600; font-family: var(--font-stack);
+  opacity: 0; transform: translateY(-8px);
+  transition: opacity .25s, transform .25s;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.ok { background: #166534; color: #BBF7D0; border: 1px solid rgba(34,197,94,0.3); }
+.toast.err { background: #7F1D1D; color: #FECACA; border: 1px solid rgba(239,68,68,0.3); }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="side-header">
+    <h2><span class="dot"></span>模型预览</h2>
+    <p class="sub">22 个 Live2D 模型 · 点击切换</p>
+  </div>
+  <div class="model-list" id="modelList"></div>
+  <div class="meta-panel">
+    <div class="meta-row"><span class="meta-label">模型</span><span class="meta-value" id="metaName">—</span></div>
+    <div class="meta-row"><span class="meta-label">Cubism</span><span class="meta-value" id="metaVersion">—</span></div>
+  </div>
+</aside>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* ── Model catalog ── */
+const CDN = 'https://fastly.jsdelivr.net/gh/fghrsh/live2d_api/';
+const HIYORI_URL = 'https://fastly.jsdelivr.net/gh/Live2D/CubismWebSamples/Samples/Resources/Hiyori/Hiyori.model3.json';
+
+const CATALOG = [
+  { group: 'Potion Maker', models: [
+    { key: 'Potion-Maker/Pio', name: 'Pio', widgetModel: 0, widgetTex: 0 },
+    { key: 'Potion-Maker/Tia', name: 'Tia', widgetModel: 1, widgetTex: 0 },
+  ]},
+  { group: 'Live2D 官方', models: [
+    { key: '__hiyori__', name: 'Hiyori (Cubism 5)', widgetModel: 2, widgetTex: 0 },
+  ]},
+  { group: '海王星 · Neptune', models: [
+    { key: 'HyperdimensionNeptunia/neptune_classic', name: 'Neptune Classic', widgetModel: 3, widgetTex: 0 },
+    { key: 'HyperdimensionNeptunia/nepnep', name: 'NepNep', widgetModel: 3, widgetTex: 1 },
+    { key: 'HyperdimensionNeptunia/neptune_santa', name: 'Neptune Santa', widgetModel: 3, widgetTex: 2 },
+    { key: 'HyperdimensionNeptunia/nepmaid', name: 'Neptune Maid', widgetModel: 3, widgetTex: 3 },
+    { key: 'HyperdimensionNeptunia/nepswim', name: 'Neptune Swim', widgetModel: 3, widgetTex: 4 },
+  ]},
+  { group: '海王星 · Noire', models: [
+    { key: 'HyperdimensionNeptunia/noir_classic', name: 'Noire Classic', widgetModel: 3, widgetTex: 5 },
+    { key: 'HyperdimensionNeptunia/noir', name: 'Noire', widgetModel: 3, widgetTex: 6 },
+    { key: 'HyperdimensionNeptunia/noir_santa', name: 'Noire Santa', widgetModel: 3, widgetTex: 7 },
+    { key: 'HyperdimensionNeptunia/noireswim', name: 'Noire Swim', widgetModel: 3, widgetTex: 8 },
+  ]},
+  { group: '海王星 · Blanc', models: [
+    { key: 'HyperdimensionNeptunia/blanc_classic', name: 'Blanc Classic', widgetModel: 3, widgetTex: 9 },
+    { key: 'HyperdimensionNeptunia/blanc_normal', name: 'Blanc', widgetModel: 3, widgetTex: 10 },
+    { key: 'HyperdimensionNeptunia/blanc_swimwear', name: 'Blanc Swim', widgetModel: 3, widgetTex: 11 },
+  ]},
+  { group: '海王星 · Vert', models: [
+    { key: 'HyperdimensionNeptunia/vert_classic', name: 'Vert Classic', widgetModel: 3, widgetTex: 12 },
+    { key: 'HyperdimensionNeptunia/vert_normal', name: 'Vert', widgetModel: 3, widgetTex: 13 },
+    { key: 'HyperdimensionNeptunia/vert_swimwear', name: 'Vert Swim', widgetModel: 3, widgetTex: 14 },
+  ]},
+  { group: '海王星 · Nepgear', models: [
+    { key: 'HyperdimensionNeptunia/nepgear', name: 'Nepgear', widgetModel: 3, widgetTex: 15 },
+    { key: 'HyperdimensionNeptunia/nepgear_extra', name: 'Nepgear Extra', widgetModel: 3, widgetTex: 16 },
+    { key: 'HyperdimensionNeptunia/nepgearswim', name: 'Nepgear Swim', widgetModel: 3, widgetTex: 17 },
+  ]},
+  { group: '海王星 · 其他', models: [
+    { key: 'HyperdimensionNeptunia/histoire', name: 'Histoire', widgetModel: 3, widgetTex: 18 },
+    { key: 'HyperdimensionNeptunia/histoirenohover', name: 'Histoire NoHover', widgetModel: 3, widgetTex: 19 },
+  ]},
+];
+
+const FLAT = [];
+CATALOG.forEach(g => g.models.forEach(m => FLAT.push(m)));
+
+/* ── Build widget-compatible model list ── */
+const WIDGET_MODELS = [
+  { name: 'Potion-Maker/Pio', paths: [CDN + 'model/Potion-Maker/Pio/index.json'], message: 'Pio ~' },
+  { name: 'Potion-Maker/Tia', paths: [CDN + 'model/Potion-Maker/Tia/index.json'], message: 'Tia ~' },
+  { name: 'Hiyori', paths: [HIYORI_URL], message: 'Hiyori ~' },
+  {
+    name: 'HyperdimensionNeptunia',
+    paths: FLAT.filter(m => m.widgetModel === 3).map(m => CDN + 'model/' + m.key + '/index.json'),
+    message: 'Nep! Nep! 超次元游戏：海王星'
+  },
+];
+
+let currentIdx = 4; // NepNep
+let initDone = false;
+
+/* ── Render ── */
+function renderSidebar() {
+  const list = document.getElementById('modelList');
+  let html = '', i = 0;
+  CATALOG.forEach(g => {
+    html += `<div class="model-group"><div class="group-label">${g.group}</div>`;
+    g.models.forEach(m => {
+      html += `<div class="model-item${i === currentIdx ? ' active' : ''}" onclick="switchModel(${i})">
+        <span class="dot-indicator"></span>${m.name}</div>`;
+      i++;
+    });
+    html += '</div>';
+  });
+  list.innerHTML = html;
+}
+
+function updateMeta() {
+  const m = FLAT[currentIdx];
+  document.getElementById('metaName').textContent = m ? m.name : '—';
+  document.getElementById('metaVersion').textContent = m && m.key === '__hiyori__' ? 'Cubism 5' : 'Cubism 2';
+}
+
+function toast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast ' + type + ' show';
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+/* ── Switch model via localStorage (widget reads from here) ── */
+function switchModel(idx) {
+  if (!initDone) return;
+  const m = FLAT[idx];
+  if (!m) return;
+
+  currentIdx = idx;
+  renderSidebar();
+  updateMeta();
+
+  // The widget stores/reads modelId and modelTexturesId in localStorage
+  localStorage.setItem('modelId', String(m.widgetModel));
+  localStorage.setItem('modelTexturesId', String(m.widgetTex));
+
+  // Force widget to reload by simulating toolbar button
+  // Trigger the widget's internal loadNextModel or loadModel
+  // We do this by dispatching click on the switch-model toolbar button
+  const switchBtn = document.getElementById('waifu-tool-switch-model');
+  if (switchBtn) {
+    // First set modelId/texturesId, then use loadNextModel approach
+    // Actually, the simplest way: just reload the page with new IDs
+    // Or better: we can access the internal loader through the DOM
+  }
+
+  // Fallback: reload the page (widget caches modelId in localStorage)
+  location.reload();
+}
+
+/* ── Poll to detect toolbar model changes and sync sidebar ── */
+setInterval(() => {
+  if (!initDone) return;
+  const modelId = parseInt(localStorage.getItem('modelId'), 10);
+  const texId = parseInt(localStorage.getItem('modelTexturesId'), 10);
+  if (isNaN(modelId)) return;
+
+  const newIdx = FLAT.findIndex(m => m.widgetModel === modelId && m.widgetTex === (isNaN(texId) ? 0 : texId));
+  if (newIdx >= 0 && newIdx !== currentIdx) {
+    currentIdx = newIdx;
+    renderSidebar();
+    updateMeta();
+  }
+}, 500);
+
+/* ── Boot ── */
+(async () => {
+  // Load waifu-tips module
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.type = 'module';
+    s.src = 'dist/waifu-tips.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Failed to load waifu-tips.js'));
+    document.head.appendChild(s);
+  });
+
+  // Small delay for module init
+  await new Promise(r => setTimeout(r, 200));
+
+  // Clear stale widget state that could prevent loading
+  localStorage.removeItem('waifu-disabled');
+  localStorage.removeItem('waifu-display');
+  sessionStorage.removeItem('waifu-message-priority');
+
+  // Set initial model
+  const startModel = FLAT[4]; // NepNep
+  localStorage.setItem('modelId', String(startModel.widgetModel));
+  localStorage.setItem('modelTexturesId', String(startModel.widgetTex));
+
+  // Init widget with CDN mode for proper Cubism 2 texture loading
+  window.initWidget({
+    waifuPath: 'dist/waifu-tips.json',
+    cdnPath: CDN,
+    cubism2Path: 'dist/live2d.min.js',
+    cubism5Path: 'https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js',
+    models: WIDGET_MODELS,
+    modelId: startModel.widgetModel,
+    tools: ['switch-model', 'switch-texture', 'photo'],
+    logLevel: 'warn',
+    drag: false,
+    showToggleAfterQuit: false,
+  });
+
+  // Wait for widget DOM to appear
+  await new Promise(r => {
+    let tries = 0;
+    const iv = setInterval(() => {
+      tries++;
+      if (document.getElementById('live2d')) { clearInterval(iv); r(); }
+      if (tries > 80) { clearInterval(iv); r(); }
+    }, 250);
+  });
+
+  initDone = true;
+  renderSidebar();
+  updateMeta();
+  toast('就绪 · 点击左侧模型名称切换', 'ok');
+})();
+</script>
+</body>
+</html>

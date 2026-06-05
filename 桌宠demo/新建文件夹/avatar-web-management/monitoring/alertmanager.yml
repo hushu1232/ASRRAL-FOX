@@ -1,0 +1,132 @@
+# Alertmanager configuration for avatar-web-management
+# Integrates with Prometheus metrics exposed at /api/metrics
+
+global:
+  resolve_timeout: 5m
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      continue: true
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+    - match_re:
+        severity: 'critical|warning|info'
+      receiver: 'feishu-alerts'
+
+receivers:
+  - name: 'default'
+    webhook_configs:
+      - url: '${ALERTMANAGER_WEBHOOK_URL}'
+        send_resolved: true
+
+  - name: 'critical-alerts'
+    slack_configs:
+      - channel: '#avatar-alerts'
+        title: '{{ .GroupLabels.alertname }} — CRITICAL'
+        text: >-
+          *Severity:* {{ .CommonLabels.severity | toUpper }}
+          *Component:* {{ .CommonLabels.component }}
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+          {{ end }}
+        send_resolved: true
+        color: '{{ if eq .Status "resolved" }}good{{ else }}danger{{ end }}'
+    email_configs:
+      - to: 'oncall@avatar.internal'
+        from: 'alertmanager@avatar.internal'
+        smarthost: '${SMTP_HOST}:587'
+        auth_username: '${SMTP_USER}'
+        auth_password: '${SMTP_PASSWORD}'
+        headers:
+          Subject: '[CRITICAL] {{ .GroupLabels.alertname }} — avatar-web'
+        html: >-
+          <h2>{{ .GroupLabels.alertname }}</h2>
+          <p><strong>Severity:</strong> {{ .CommonLabels.severity }}</p>
+          <p><strong>Component:</strong> {{ .CommonLabels.component }}</p>
+          <ul>
+          {{ range .Alerts }}
+          <li><strong>{{ .Annotations.summary }}</strong><br/>{{ .Annotations.description }}</li>
+          {{ end }}
+          </ul>
+        send_resolved: true
+
+  - name: 'warning-alerts'
+    slack_configs:
+      - channel: '#avatar-alerts'
+        title: '{{ .GroupLabels.alertname }} — WARNING'
+        text: >-
+          *Severity:* {{ .CommonLabels.severity | toUpper }}
+          *Component:* {{ .CommonLabels.component }}
+          {{ range .Alerts }}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+          {{ end }}
+        send_resolved: true
+        color: 'warning'
+    email_configs:
+      - to: 'oncall@avatar.internal'
+        from: 'alertmanager@avatar.internal'
+        smarthost: '${SMTP_HOST}:587'
+        auth_username: '${SMTP_USER}'
+        auth_password: '${SMTP_PASSWORD}'
+        headers:
+          Subject: '[WARNING] {{ .GroupLabels.alertname }} — avatar-web'
+        html: >-
+          <h2>{{ .GroupLabels.alertname }}</h2>
+          <p><strong>Severity:</strong> {{ .CommonLabels.severity }}</p>
+          <p><strong>Component:</strong> {{ .CommonLabels.component }}</p>
+          <ul>
+          {{ range .Alerts }}
+          <li><strong>{{ .Annotations.summary }}</strong><br/>{{ .Annotations.description }}</li>
+          {{ end }}
+          </ul>
+        send_resolved: true
+
+  - name: 'feishu-alerts'
+    webhook_configs:
+      - url: '${FEISHU_WEBHOOK_URL}'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: 'application/json'
+        message: |
+          {
+            "msg_type": "interactive",
+            "card": {
+              "header": {
+                "title": {
+                  "tag": "plain_text",
+                  "content": "{{ .GroupLabels.alertname }} — {{ .CommonLabels.severity | toUpper }}"
+                },
+                "template": "{{ if eq .Status \"resolved\" }}green{{ else }}red{{ end }}"
+              },
+              "elements": [
+                {
+                  "tag": "div",
+                  "text": {
+                    "tag": "lark_md",
+                    "content": "**Component:** {{ .CommonLabels.component }}\n{{ range .Alerts }}**{{ .Annotations.summary }}**\n{{ .Annotations.description }}\n{{ end }}"
+                  }
+                }
+              ]
+            }
+          }
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname']

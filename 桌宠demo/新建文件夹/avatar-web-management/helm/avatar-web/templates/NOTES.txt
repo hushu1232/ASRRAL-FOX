@@ -1,0 +1,26 @@
+虚拟形象 Web 管理平台已部署！
+
+{{- if .Values.ingress.enabled }}
+访问地址: https://{{ .Values.ingress.host }}
+{{- else }}
+查看服务:
+  kubectl port-forward svc/{{ include "avatar-web.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  访问: http://localhost:{{ .Values.service.port }}
+{{- end }}
+
+健康检查: /api/health
+指标端点: /api/metrics
+API 文档: /api-docs
+OAuth 发现: /.well-known/openid-configuration
+
+{{- if .Values.autoscaling.enabled }}
+自动伸缩: {{ .Values.autoscaling.minReplicas }}-{{ .Values.autoscaling.maxReplicas }} 副本
+{{- else }}
+副本数: {{ .Values.replicaCount }}
+{{- end }}
+
+数据库迁移:
+  kubectl exec deploy/{{ include "avatar-web.fullname" . }} -- npx prisma migrate deploy
+
+数据库备份:
+  node scripts/backup.mjs --output ./backups --retain 7 --compress

@@ -1,0 +1,68 @@
+{
+  "title": "Avatar Web — Log Analytics",
+  "uid": "avatar-web-logs",
+  "tags": ["avatar-web", "logs", "loki"],
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Log Volume by Level (5m rate)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum by (level) (rate({service=\"avatar-web\"} | json [5m]))",
+          "legendFormat": "{{ level }}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error Logs by Route",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "topk(5, sum by (route) (rate({service=\"avatar-web\", level=\"error\"} | json [5m])))",
+          "legendFormat": "{{ route }}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Top 10 Error Messages",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (msg) (count_over_time({service=\"avatar-web\", level=\"error\"} | json | line_format \"{{.msg}}\" [1h])))",
+          "legendFormat": ""
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "4xx vs 5xx by Route",
+      "type": "barchart",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (route, statusCode) (count_over_time({service=\"avatar-web\"} | json | statusCode =~ \"[45]..\" [1h]))",
+          "legendFormat": "{{ route }} {{ statusCode }}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Recent Error Logs",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 12 },
+      "targets": [
+        {
+          "expr": "{service=\"avatar-web\", level=\"error\"}",
+          "maxLines": 100
+        }
+      ]
+    }
+  ]
+}

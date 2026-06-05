@@ -1,0 +1,34 @@
+# Grafana Loki datasource — provision via Grafana's datasource provisioning
+# Place in grafana/datasources/ or apply as ConfigMap with label
+#   kubectl create configmap grafana-datasource-loki --from-file=loki-datasource.yaml
+#   kubectl label configmap grafana-datasource-loki grafana_datasource=1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-loki
+  labels:
+    grafana_datasource: "1"
+data:
+  loki.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki (avatar-web)
+        type: loki
+        uid: avatar-web-loki
+        access: proxy
+        url: http://loki.monitoring.svc.cluster.local:3100
+        isDefault: false
+        jsonData:
+          maxLines: 5000
+          derivedFields:
+            # Link traceId in logs to Tempo/Jaeger traces
+            - datasourceUid: avatar-web-traces
+              matcherRegex: '"traceId":"([^"]+)"'
+              name: traceId
+              url: '$${__value.raw}'
+            # Link requestId in logs to log search
+            - datasourceUid: avatar-web-loki
+              matcherRegex: '"requestId":"([^"]+)"'
+              name: requestId
+              url: '$${__value.raw}'

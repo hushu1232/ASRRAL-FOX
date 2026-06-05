@@ -1,0 +1,19 @@
+{{- if .Values.canary.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "avatar-web.fullname" . }}-canary
+  labels:
+    {{- include "avatar-web.labels" . | nindent 4 }}
+    app.kubernetes.io/component: canary
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "avatar-web.selectorLabels" . | nindent 4 }}
+    track: canary
+{{- end }}

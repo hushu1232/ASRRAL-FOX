@@ -1,0 +1,55 @@
+# PostgreSQL HA reference configuration — NOT bundled as Helm dependency by default.
+#
+# This file documents the recommended HA setup for production.
+# To use: add these values to a separate Helm installation or merge into Chart.yaml dependencies.
+#
+# Option A: Cloud SQL (AWS RDS Multi-AZ) — see terraform/main.tf
+# Option B: Self-managed Patroni + pgBouncer on Kubernetes
+#   helm repo add bitnami https://charts.bitnami.com/bitnami
+#   helm install postgresql-ha bitnami/postgresql-ha \
+#     -f helm/avatar-web/charts/postgresql-ha.yaml
+
+# --- Patroni PostgreSQL HA cluster ---
+postgresql:
+  username: avatar
+  password: ""  # set via --set or sealed-secrets
+  database: avatar_management
+  replication:
+    enabled: true
+    user: replicator
+    password: ""  # set via --set
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: gp3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 8Gi
+
+# 3-node Patroni cluster (1 leader + 2 replicas)
+pgpool:
+  enabled: true
+  replicaCount: 2
+  adminUsername: admin
+  adminPassword: ""  # set via --set
+  childLifeTime: 300
+  childMaxConnections: 50
+  numInitChildren: 10
+  maxPool: 4
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+persistence:
+  enabled: true
+  size: 20Gi
+
+# --- Connection string for avatar-web ---
+# DATABASE_URL=postgresql://avatar:<password>@postgresql-ha-pgpool:5432/avatar_management
+# PG_POOL_MAX=30
+# PG_POOL_IDLE_TIMEOUT=30000

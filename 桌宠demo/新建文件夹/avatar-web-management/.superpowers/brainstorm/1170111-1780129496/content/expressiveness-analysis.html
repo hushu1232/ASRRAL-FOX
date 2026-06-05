@@ -1,0 +1,150 @@
+<h2>Unity-AIChat 表现力层深度解析</h2>
+<p class="subtitle">基于源码级分析 (38 个 C# 文件) — 仅关注用户可见/可听/可交互层面</p>
+
+<div class="section">
+  <h3>1. 角色视觉呈现</h3>
+  <div class="mockup">
+    <div class="mockup-header">做了什么</div>
+    <div class="mockup-body" style="font-size:12px;">
+      <table style="width:100%;">
+        <tr><td style="width:120px;font-weight:600;">模型类型</td><td>⚠️ <strong>3D 模型</strong> (SkinnedMeshRenderer)，非 Live2D。自带 Genshin 胡桃 .mesh 文件 (12 个材质)</td></tr>
+        <tr><td style="font-weight:600;">窗口形态</td><td>⛔ <strong>无透明窗口</strong> — 标准 Unity Windows 窗口，角色在灰色背景的 3D 场景中，无桌面融合</td></tr>
+        <tr><td style="font-weight:600;">渲染质量</td><td>一般 — 使用 Unity 内置管线 + 简单材质。无后处理、无抗锯齿设置</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="mockup" style="margin-top:8px;">
+    <div class="mockup-header">怎么做的</div>
+    <div class="mockup-body" style="font-size:11px;font-family:monospace;">
+      <pre style="margin:0;">Mesh: Assets/AIChatTookit/Mesh/胡桃/ (12 个 .mat 材质文件)
+Shader: Built-in Standard, 无自定义 Shader
+Camera: 默认 Main Camera, 无 RenderTexture 或透明通道</pre>
+    </div>
+  </div>
+  <p style="margin:8px 0 0;font-size:11px;">
+    <strong>效果评价：差。</strong>完全没有桌面宠物应有的透明窗口和桌面融合感。这更接近一个 "3D 角色查看器" 而非桌宠。<br/>
+    <strong style="color:#16a34a;">对星尘狐借鉴：不值得参考。</strong>我们已有 Live2D + Unity 透明窗口，领先于此项目。
+  </p>
+</div>
+
+<div class="section">
+  <h3>2. 动画与表情系统</h3>
+
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:var(--ds-colors-bg-cardHover);text-align:left;">
+      <th>维度</th><th>有/无</th><th>实现方式</th><th>效果</th><th>借鉴</th>
+    </tr></thead>
+    <tbody>
+      <tr><td style="font-weight:600;">眨眼</td><td style="color:#16a34a;">✅</td><td>BlinkController.cs: SkinnedMeshRenderer.SetBlendShapeWeight, 每 3s 触发, 0.2s 动画, Lerp 插值</td><td>一般 — 频率固定, 无随机变化, 像机械定时器</td><td style="color:#d97706;">需改进后复用</td></tr>
+      <tr><td style="font-weight:600;">口型同步</td><td style="color:#16a34a;">✅</td><td>AudioMouthController.cs: AudioSource.GetOutputData(512样本) → 均方根振幅 → SmoothDamp → BlendShape</td><td>一般 — 响度驱动, 不是音素驱动。嘴巴只是"开合"</td><td style="color:#d97706;">可参考, 但应升级为音素级</td></tr>
+      <tr><td style="font-weight:600;">待机动画</td><td style="color:#dc2626;">❌</td><td>无 — 角色完全静止, 无呼吸/微动/随机动作</td><td>差 — 像雕塑</td><td>⛔ 不必参考</td></tr>
+      <tr><td style="font-weight:600;">情绪表情</td><td style="color:#dc2626;">❌</td><td>无 — 仅 Animator.SetInteger("state", 0/1/2) 切换三个状态</td><td>差 — 仅 idle/thinking/speaking 三种</td><td>⛔ 不必参考</td></tr>
+      <tr><td style="font-weight:600;">LLM 动作指令</td><td style="color:#dc2626;">❌</td><td>未实现 — LLM 回复纯文本, 无 [wave]/[nod] 等标记解析</td><td>不存在</td><td>⛔ 不必参考</td></tr>
+      <tr><td style="font-weight:600;">移动动画</td><td style="color:#dc2626;">❌</td><td>未实现 — 角色不可移动, 无路径寻找</td><td>不存在</td><td>⛔ 不必参考</td></tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top:8px;font-size:11px;">
+    <strong>关键发现：Animator 状态机 (0=idle, 1=thinking, 2=speaking)</strong> 是项目中唯一可借鉴的动画管理方式。但 AstralFox 的 Live2D 有更丰富的参数系统。
+  </p>
+</div>
+
+<div class="section">
+  <h3>3. 语音交互体验</h3>
+
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:var(--ds-colors-bg-cardHover);text-align:left;">
+      <th>维度</th><th>有/无</th><th>实现方式</th><th>效果</th><th>借鉴</th>
+    </tr></thead>
+    <tbody>
+      <tr><td style="font-weight:600;">语音输入</td><td style="color:#16a34a;">✅</td><td>VoiceInputs.cs: Microphone.Start() 录制 (5s, 16kHz) → WAV 字节数组 → HTTP POST 到 Whisper API</td><td>基本可用 — 需手动按住按钮录音, 不支持自动断句</td><td style="color:#d97706;">UI 交互模式可参考</td></tr>
+      <tr><td style="font-weight:600;">倾听反馈</td><td>⚠️ 仅文字</td><td>按钮文字变化: 按下→"正在录音...", 松开→"正在识别..."</td><td>简陋 — 无动画/波形/气泡</td><td>⛔ 需完全重做</td></tr>
+      <tr><td style="font-weight:600;">TTS 合成</td><td style="color:#16a34a;">✅</td><td>GPTSoVITSTextToSpeech.cs: 参考音频 base64 + 文本 → HTTP POST → 返回 WAV 路径 → UnityWebRequest 加载播放</td><td>可用 — 支持参考音色克隆, 但每次 HTTP 往返有延迟</td><td style="color:#d97706;">API 调用范式可参考</td></tr>
+      <tr><td style="font-weight:600;">状态指示</td><td>⚠️ 仅文字</td><td>Text 组件显示 "正在思考..." → Animator.SetInteger("state",1)</td><td>简陋 — 用户感知不清晰</td><td>⛔ 需完全重做</td></tr>
+      <tr><td style="font-weight:600;">语音打断</td><td style="color:#dc2626;">❌</td><td>未实现</td><td>不存在</td><td>⛔ 需自行实现</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h3>4. 物理交互反馈</h3>
+
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:var(--ds-colors-bg-cardHover);text-align:left;">
+      <th>维度</th><th>有/无</th><th>说明</th><th>借鉴</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>点击角色</td><td style="color:#dc2626;">❌</td><td>无 Raycast 检测, 无点击反馈 — 所有交互通过 UGUI 按钮</td><td>⛔</td></tr>
+      <tr><td>拖拽角色</td><td style="color:#dc2626;">❌</td><td>未实现 — 窗口不可拖动角色</td><td>⛔</td></tr>
+      <tr><td>鼠标追踪</td><td style="color:#dc2626;">❌</td><td>无视线跟随/身体转向</td><td>⛔</td></tr>
+      <tr><td>碰撞检测</td><td style="color:#dc2626;">❌</td><td>无物理/碰撞体</td><td>⛔</td></tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top:8px;font-size:11px;">
+    <strong style="color:#dc2626;">表现力维度全部缺失。</strong>Unity-AIChat 是一个纯功能导向的项目，完全没有物理交互层的表现力设计。
+  </p>
+</div>
+
+<div class="section">
+  <h3>5. UI 与视觉元素</h3>
+
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:var(--ds-colors-bg-cardHover);text-align:left;">
+      <th>维度</th><th>有/无</th><th>实现</th><th>效果</th><th>借鉴</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>对话气泡</td><td style="color:#dc2626;">❌</td><td>使用 Unity UGUI Text 组件 + ScrollRect 面板, 非桌面气泡</td><td>像聊天软件, 不像桌宠</td><td>⛔</td></tr>
+      <tr><td>打字机效果</td><td style="color:#16a34a;">✅</td><td>ChatSample.StartTypeWords(): IEnumerator 逐字显示, 0.2s/字, 可中断</td><td>可用 — 简单的逐字动画</td><td style="color:#16a34a;">值得借鉴</td></tr>
+      <tr><td>粒子特效</td><td style="color:#dc2626;">❌</td><td>无 — 项目无任何 ParticleSystem 引用</td><td>不存在</td><td>⛔</td></tr>
+      <tr><td>设置界面</td><td style="color:#16a34a;">✅</td><td>UGUI InputField + Dropdown, 用于配置 API URL 和参数</td><td>功能可用但不美观</td><td>⛔</td></tr>
+      <tr><td>聊天历史</td><td style="color:#16a34a;">✅</td><td>List&lt;string&gt; → ChatPrefab 实例化显示, 左(用户)/右(AI)布局, ScrollRect 自动滚到底部</td><td>基本可用</td><td>⛔ 已有 Web 版</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h3>6. 音效设计</h3>
+
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="background:var(--ds-colors-bg-cardHover);text-align:left;">
+      <th>维度</th><th>有/无</th><th>说明</th><th>借鉴</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>系统音效</td><td style="color:#dc2626;">❌</td><td>启动/关闭/休眠无音效</td><td>⛔</td></tr>
+      <tr><td>交互音效</td><td style="color:#dc2626;">❌</td><td>点击/拖拽/消息无音效</td><td>⛔</td></tr>
+      <tr><td>TTS 播放</td><td style="color:#16a34a;">✅</td><td>AudioSource.Play() 播放合成音频, PlayVoice() 回调</td><td style="color:#16a34a;">基本模式可参考</td></tr>
+      <tr><td>环境音</td><td style="color:#dc2626;">❌</td><td>无背景音/心跳/呼吸</td><td>⛔</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h3>📊 表现力总评</h3>
+
+  <table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <thead><tr style="background:var(--ds-colors-bg-cardHover);">
+      <th style="padding:10px;text-align:left;">维度</th>
+      <th style="padding:10px;">评级</th>
+      <th style="padding:10px;">可借鉴项</th>
+      <th style="padding:10px;">对星尘狐价值</th>
+    </tr></thead>
+    <tbody>
+      <tr style="background:rgba(220,38,38,0.05);"><td>角色视觉</td><td style="text-align:center;">1/10</td><td>无</td><td>我们领先 10 倍</td></tr>
+      <tr style="background:rgba(217,119,6,0.05);"><td>动画表情</td><td style="text-align:center;">3/10</td><td>BlinkController + AudioMouthController 代码结构</td><td>可参考 C# 写法</td></tr>
+      <tr style="background:rgba(217,119,6,0.05);"><td>语音交互</td><td style="text-align:center;">4/10</td><td>按压录音 UI 模式 + API 调用链</td><td>基本模式参考</td></tr>
+      <tr style="background:rgba(220,38,38,0.05);"><td>物理交互</td><td style="text-align:center;">0/10</td><td>无</td><td>完全无价值</td></tr>
+      <tr style="background:rgba(217,119,6,0.05);"><td>UI 元素</td><td style="text-align:center;">4/10</td><td>打字机效果 (IEnumerator 逐字)</td><td style="color:#16a34a;">值得直接复用</td></tr>
+      <tr style="background:rgba(220,38,38,0.05);"><td>音效设计</td><td style="text-align:center;">1/10</td><td>无</td><td>我们领先</td></tr>
+      <tr style="background:rgba(220,38,38,0.08);"><td style="font-weight:700;">综合</td><td style="text-align:center;font-weight:700;">2.2/10</td><td colspan="2">Unity-AIChat 是纯功能项目，表现力极度薄弱。仅有 2 项可借鉴</td></tr>
+    </tbody>
+  </table>
+
+  <div style="margin-top:12px;padding:12px;background:var(--ds-colors-bg-card);border:1px solid var(--border-subtle);border-radius:8px;">
+    <strong style="color:var(--ds-colors-accent-primary);">结论：</strong>
+    Unity-AIChat 在<strong>表现力层面几乎无借鉴价值</strong>。它的价值在于 LLM/TTS/STT 的<strong>插件化架构设计</strong>（策略模式 + ScriptableObject），而非用户可见的表现力。AstralFox 在 Live2D 渲染、透明窗口、角色动画方面已大幅领先。<br/><br/>
+    <strong>唯一值得直接借鉴的：打字机效果 (IEnumerator 逐字显示)</strong> — 代码结构清晰，可直接移植到 Unity 客户端。
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px;">分析来源：Unity-AIChat Toolkit v1.0 (gitee.com/JerrryWong/unity-AI-Chat-Toolkit)，38 个 C# 源文件完整源码解析。2026-05-30。</p>

@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.gitignore
+*.md
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+tests
+coverage
+.claude
+temp
+tmp

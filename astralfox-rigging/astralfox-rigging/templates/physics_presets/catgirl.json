@@ -1,0 +1,37 @@
+{
+  "hair": {
+    "stiffness": 0.4,
+    "damping": 0.35,
+    "mass": 0.9,
+    "pendulum_length": 1.3,
+    "comment": "Tuned for catgirl twin-tails - light bouncy motion"
+  },
+  "tail": {
+    "stiffness": 0.25,
+    "damping": 0.45,
+    "mass": 1.2,
+    "pendulum_length": 1.8,
+    "comment": "Cat tail - smooth s-curve sway with high range"
+  },
+  "ear": {
+    "stiffness": 0.7,
+    "damping": 0.3,
+    "mass": 0.6,
+    "pendulum_length": 0.4,
+    "comment": "Cat ears - quick twitch response, minimal overshoot"
+  },
+  "ribbon": {
+    "stiffness": 0.15,
+    "damping": 0.55,
+    "mass": 0.4,
+    "pendulum_length": 1.2,
+    "comment": "Decorative ribbons - fluid, trailing motion"
+  },
+  "skirt": {
+    "stiffness": 0.5,
+    "damping": 0.4,
+    "mass": 1.8,
+    "pendulum_length": 0.9,
+    "comment": "Skirt/dress - broad pendulum with weight"
+  }
+}

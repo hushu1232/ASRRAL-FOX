@@ -1,0 +1,37 @@
+{
+  "hair": {
+    "stiffness": 0.55,
+    "damping": 0.3,
+    "mass": 1.0,
+    "pendulum_length": 1.1,
+    "comment": "Long straight anime hair - moderate stiffness, clean flow"
+  },
+  "hair_front": {
+    "stiffness": 0.65,
+    "damping": 0.25,
+    "mass": 0.7,
+    "pendulum_length": 0.7,
+    "comment": "Front bangs - stiffer, shorter arcs, frame the face"
+  },
+  "hair_back": {
+    "stiffness": 0.45,
+    "damping": 0.35,
+    "mass": 1.3,
+    "pendulum_length": 1.4,
+    "comment": "Back hair - heavier, longer pendulum with wider sweeps"
+  },
+  "ahoge": {
+    "stiffness": 0.8,
+    "damping": 0.15,
+    "mass": 0.3,
+    "pendulum_length": 0.3,
+    "comment": "Antenna hair - very stiff, rapid wobble, signature anime trope"
+  },
+  "ribbon": {
+    "stiffness": 0.2,
+    "damping": 0.5,
+    "mass": 0.5,
+    "pendulum_length": 1.0,
+    "comment": "Hair ribbon - soft, trailing"
+  }
+}

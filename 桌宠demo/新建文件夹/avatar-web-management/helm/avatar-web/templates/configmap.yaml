@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "avatar-web.fullname" . }}
+  labels:
+    {{- include "avatar-web.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.environment | quote }}
+  PORT: {{ .Values.service.targetPort | quote }}
+  {{- with .Values.config }}
+  NEXT_PUBLIC_APP_URL: {{ .publicUrl | quote }}
+  NEXT_PUBLIC_WS_PORT: {{ .wsPort | default "3001" | quote }}
+  PG_POOL_MAX: {{ .pgPoolMax | default "20" | quote }}
+  PG_POOL_IDLE_TIMEOUT: {{ .pgPoolIdleTimeout | default "30000" | quote }}
+  PG_CONNECTION_TIMEOUT: {{ .pgConnectionTimeout | default "5000" | quote }}
+  {{- if .corsOrigins }}
+  CORS_ORIGINS: {{ .corsOrigins | quote }}
+  {{- end }}
+  {{- if .redisHost }}
+  REDIS_HOST: {{ .redisHost | quote }}
+  REDIS_PORT: {{ .redisPort | default "6379" | quote }}
+  REDIS_DB: {{ .redisDb | default "0" | quote }}
+  REDIS_KEY_PREFIX: {{ .redisKeyPrefix | default "avatar:" | quote }}
+  {{- end }}
+  {{- if .otelEndpoint }}
+  OTEL_SERVICE_NAME: {{ .appName | default "avatar-web" | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .otelEndpoint | quote }}
+  OTEL_TRACES_SAMPLER: {{ .otelSampler | default "parentbased_always_on" | quote }}
+  {{- end }}
+  {{- if .sentryDsn }}
+  SENTRY_DSN: {{ .sentryDsn | quote }}
+  {{- end }}
+  {{- if .storageDriver }}
+  STORAGE_DRIVER: {{ .storageDriver | quote }}
+  STORAGE_ENDPOINT: {{ .storageEndpoint | quote }}
+  STORAGE_PORT: {{ .storagePort | default "9000" | quote }}
+  STORAGE_USE_SSL: {{ .storageUseSsl | default "false" | quote }}
+  STORAGE_BUCKET: {{ .storageBucket | default "avatar-assets" | quote }}
+  {{- end }}
+  {{- end }}

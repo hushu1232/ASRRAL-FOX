@@ -1,0 +1,301 @@
+{
+  "title": "Avatar Web — Business Metrics",
+  "uid": "avatar-web-business",
+  "tags": ["avatar-web", "business"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "5m",
+  "panels": [
+    {
+      "id": 1, "title": "HTTP Request Volume (24h)", "type": "graph",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total[5m]))",
+          "legendFormat": "total rps"
+        }
+      ],
+      "yaxes": [{ "format": "reqps" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 2, "title": "Top API Routes by Traffic", "type": "barchart",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "topk(10, sum(rate(avatar_http_requests_total[1h])) by (route))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 3, "title": "User Activity (Authenticated Requests)", "type": "stat",
+      "gridPos": { "x": 12, "y": 6, "w": 4, "h": 3 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/(dashboard|avatars|assets|admin|settings|marketplace).*\"}[5m]))",
+          "legendFormat": "user pages"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 4, "title": "API vs Page Traffic Split", "type": "piechart",
+      "gridPos": { "x": 16, "y": 6, "w": 8, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/api/.*\"}[1h]))",
+          "legendFormat": "API"
+        },
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route!~\"/api/.*\"}[1h]))",
+          "legendFormat": "Pages"
+        }
+      ]
+    },
+    {
+      "id": 5, "title": "Rate Limit Triggers (24h)", "type": "graph",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_rate_limit_hits_total[5m])) by (route)",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 6, "title": "5xx Error Trend (7d)", "type": "graph",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total{status_code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx errors"
+        }
+      ],
+      "thresholds": [{ "value": 1, "color": "red", "op": "gt" }]
+    },
+    {
+      "id": 7, "title": "Error Budget Remaining (30d)", "type": "gauge",
+      "gridPos": { "x": 0, "y": 18, "w": 8, "h": 6 },
+      "targets": [
+        {
+          "expr": "clamp_min(clamp_max(slo:error_budget:remaining_pct, 100), 0)",
+          "legendFormat": "budget %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0, "max": 100,
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "red" },
+              { "value": 25, "color": "orange" },
+              { "value": 50, "color": "yellow" },
+              { "value": 80, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 8, "title": "SLO Burn Rate", "type": "graph",
+      "gridPos": { "x": 8, "y": 18, "w": 16, "h": 6 },
+      "targets": [
+        {
+          "expr": "slo:burn_rate:ratio5m",
+          "legendFormat": "burn rate"
+        }
+      ],
+      "yaxes": [{ "format": "short", "label": "× allowed error rate" }],
+      "thresholds": [
+        { "value": 1, "color": "yellow", "op": "gt" },
+        { "value": 6, "color": "orange", "op": "gt" },
+        { "value": 14.4, "color": "red", "op": "gt" }
+      ]
+    },
+    {
+      "id": 9, "title": "SLO Status — Pet Endpoints", "type": "stat",
+      "gridPos": { "x": 0, "y": 24, "w": 6, "h": 3 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/api/pet/.*\", status_code!~\"5..\"}[30d])) / sum(rate(avatar_http_requests_total{route=~\"/api/pet/.*\"}[30d]))",
+          "legendFormat": "pet SLI"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "red" },
+              { "value": 0.99, "color": "yellow" },
+              { "value": 0.999, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 10, "title": "SLO Status — Assets Endpoints", "type": "stat",
+      "gridPos": { "x": 6, "y": 24, "w": 6, "h": 3 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/api/assets/.*\", status_code!~\"5..\"}[30d])) / sum(rate(avatar_http_requests_total{route=~\"/api/assets/.*\"}[30d]))",
+          "legendFormat": "assets SLI"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "red" },
+              { "value": 0.99, "color": "yellow" },
+              { "value": 0.999, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 11, "title": "SLO Status — Avatars Endpoints", "type": "stat",
+      "gridPos": { "x": 12, "y": 24, "w": 6, "h": 3 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/api/avatars/.*\", status_code!~\"5..\"}[30d])) / sum(rate(avatar_http_requests_total{route=~\"/api/avatars/.*\"}[30d]))",
+          "legendFormat": "avatars SLI"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "red" },
+              { "value": 0.99, "color": "yellow" },
+              { "value": 0.999, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 13, "title": "Error Logs (last 1h)", "type": "logs",
+      "gridPos": { "x": 0, "y": 27, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "avatar-web-loki" },
+      "targets": [
+        {
+          "expr": "{app=\"avatar-web\"} | json | level=\"error\" | line_format \"{{.msg}}\"",
+          "legendFormat": "errors"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 14, "title": "Slow Requests (≥500ms, last 1h)", "type": "logs",
+      "gridPos": { "x": 12, "y": 27, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "avatar-web-loki" },
+      "targets": [
+        {
+          "expr": "{app=\"avatar-web\"} | json | response_time_ms >= 500 | line_format \"[{{.method}}] {{.url}} — {{.response_time_ms}}ms [{{.status_code}}]\"",
+          "legendFormat": "slow requests"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 15, "title": "Pet Audit Trail (last 24h)", "type": "logs",
+      "gridPos": { "x": 0, "y": 35, "w": 24, "h": 8 },
+      "datasource": { "type": "loki", "uid": "avatar-web-loki" },
+      "targets": [
+        {
+          "expr": "{app=\"avatar-web\",route=~\"/api/pet/.*\"} | json | line_format \"[{{.method}}] {{.msg}} — user={{.user_id}}\"",
+          "legendFormat": "pet operations"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 12, "title": "SLO Status — Admin Endpoints", "type": "stat",
+      "gridPos": { "x": 18, "y": 24, "w": 6, "h": 3 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/api/admin/.*\", status_code!~\"5..\"}[30d])) / sum(rate(avatar_http_requests_total{route=~\"/api/admin/.*\"}[30d]))",
+          "legendFormat": "admin SLI"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "red" },
+              { "value": 0.99, "color": "yellow" },
+              { "value": 0.999, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 16, "title": "SLI Overview (30d rolling)", "type": "table",
+      "gridPos": { "x": 0, "y": 43, "w": 24, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/api/pet/.*\",status_code!~\"5..\"}[30d])) / sum(rate(avatar_http_requests_total{route=~\"/api/pet/.*\"}[30d]))",
+          "legendFormat": "Pet API"
+        },
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/api/avatars/.*\",status_code!~\"5..\"}[30d])) / sum(rate(avatar_http_requests_total{route=~\"/api/avatars/.*\"}[30d]))",
+          "legendFormat": "Avatars API"
+        },
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/api/assets/.*\",status_code!~\"5..\"}[30d])) / sum(rate(avatar_http_requests_total{route=~\"/api/assets/.*\"}[30d]))",
+          "legendFormat": "Assets API"
+        },
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/api/admin/.*\",status_code!~\"5..\"}[30d])) / sum(rate(avatar_http_requests_total{route=~\"/api/admin/.*\"}[30d]))",
+          "legendFormat": "Admin API"
+        },
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route=~\"/api/auth/.*\",status_code!~\"5..\"}[30d])) / sum(rate(avatar_http_requests_total{route=~\"/api/auth/.*\"}[30d]))",
+          "legendFormat": "Auth API"
+        },
+        {
+          "expr": "sum(rate(avatar_http_requests_total{route!~\"/api/.*\",status_code!~\"5..\"}[30d])) / sum(rate(avatar_http_requests_total{route!~\"/api/.*\"}[30d]))",
+          "legendFormat": "Pages"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0.99,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              { "value": 0, "color": "red" },
+              { "value": 0.99, "color": "yellow" },
+              { "value": 0.999, "color": "green" }
+            ]
+          }
+        }
+      },
+      "transformations": [
+        { "id": "merge", "options": {} }
+      ]
+    }
+  ]
+}

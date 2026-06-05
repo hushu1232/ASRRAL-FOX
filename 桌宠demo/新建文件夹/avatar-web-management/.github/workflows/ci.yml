@@ -1,0 +1,377 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks — secret scanning
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  lint-typecheck-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test (enforce coverage)
+        run: npm run test:ci:unit -- --coverage
+
+      - name: Audit dependencies (block on critical)
+        run: npm audit --production --audit-level=critical
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint-typecheck-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      - name: Run E2E tests
+        run: npm run test:ci:e2e:api
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint-typecheck-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run Lighthouse CI
+        run: npx lhci autorun
+
+      - name: Upload Lighthouse report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: .lighthouseci/
+          retention-days: 7
+
+  docker-build-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint-typecheck-test
+    if: github.event_name == 'push'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build image (no push yet)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy — container vulnerability scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: 1
+          timeout: 10m
+
+      - name: Upload Trivy results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Generate SBOM (syft)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom-${{ github.run_id }}.spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.run_id }}.spdx.json
+          path: sbom.spdx.json
+          retention-days: 90
+
+      - name: Push image to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: docker-build-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: vars
+        run: |
+          echo "IMAGE_TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          echo "FULL_IMAGE=ghcr.io/${{ github.repository }}:sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.30.x
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.x
+
+      - name: Deploy with Helm
+        id: deploy
+        run: |
+          set -e
+          echo "Deploying ${{ steps.vars.outputs.FULL_IMAGE }} to production..."
+
+          helm upgrade avatar-web ./helm/avatar-web \
+            --namespace production \
+            --create-namespace \
+            -f ./helm/avatar-web/values.yaml \
+            -f ./helm/avatar-web/values-production.yaml \
+            --set image.tag="${{ steps.vars.outputs.IMAGE_TAG }}" \
+            --set canary.tag="${{ steps.vars.outputs.IMAGE_TAG }}" \
+            --wait \
+            --timeout 10m \
+            --atomic
+
+          echo "Helm upgrade complete. Waiting for rollout stabilization..."
+          kubectl rollout status deployment/avatar-web -n production --timeout=5m
+        env:
+          KUBECONFIG: ${{ secrets.KUBECONFIG }}
+
+      - name: Auto-rollback on failure
+        if: failure() && steps.deploy.outcome == 'failure'
+        run: |
+          echo "Deploy failed. Rolling back to previous revision..."
+          PREV_REV=$(helm history avatar-web -n production --max 2 -o json | jq -r '.[0].revision')
+          helm rollback avatar-web -n production --wait --timeout 5m
+          kubectl rollout status deployment/avatar-web -n production --timeout=5m
+          echo "Rolled back to revision $PREV_REV"
+        env:
+          KUBECONFIG: ${{ secrets.KUBECONFIG }}
+
+      - name: Slack — deploy success
+        if: success()
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "channel": "#avatar-deploys",
+              "text": ":white_check_mark: Deploy success: avatar-web `${{ steps.vars.outputs.IMAGE_TAG }}` → production\nBranch: `${{ github.ref_name }}`\nCommit: <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\nTriggered by: ${{ github.actor }}"
+            }
+
+      - name: Slack — deploy failure
+        if: failure()
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "channel": "#avatar-alerts",
+              "text": ":x: Deploy FAILED: avatar-web `${{ steps.vars.outputs.IMAGE_TAG }}`\nBranch: `${{ github.ref_name }}`\nCommit: <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\nWorkflow: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Run ${{ github.run_id }}>"
+            }
+
+      - name: Feishu — deploy success
+        if: success()
+        run: |
+          curl -s -X POST "${{ secrets.FEISHU_DEPLOY_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d "$(cat <<'PAYLOAD'
+          {
+            "msg_type": "interactive",
+            "card": {
+              "header": {
+                "title": {"tag": "plain_text", "content": "Deploy Success — avatar-web"},
+                "template": "green"
+              },
+              "elements": [{
+                "tag": "div",
+                "text": {
+                  "tag": "lark_md",
+                  "content": "**Image:** avatar-web `${{ steps.vars.outputs.IMAGE_TAG }}`\n**Branch:** `${{ github.ref_name }}`\n**Commit:** ${{ github.sha }}\n**Triggered by:** ${{ github.actor }}"
+                }
+              }]
+            }
+          }
+          PAYLOAD
+          )"
+
+      - name: Feishu — deploy failure
+        if: failure()
+        run: |
+          curl -s -X POST "${{ secrets.FEISHU_DEPLOY_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d "$(cat <<'PAYLOAD'
+          {
+            "msg_type": "interactive",
+            "card": {
+              "header": {
+                "title": {"tag": "plain_text", "content": "Deploy FAILED — avatar-web"},
+                "template": "red"
+              },
+              "elements": [{
+                "tag": "div",
+                "text": {
+                  "tag": "lark_md",
+                  "content": "**Image:** avatar-web `${{ steps.vars.outputs.IMAGE_TAG }}`\n**Branch:** `${{ github.ref_name }}`\n**Commit:** ${{ github.sha }}\n**Workflow:** <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Run ${{ github.run_id }}>"
+                }
+              }]
+            }
+          }
+          PAYLOAD
+          )"
+
+  update-helm-values:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tag
+        id: vars
+        run: echo "IMAGE_TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Update values-production.yaml image tag
+        run: |
+          TAG="${{ steps.vars.outputs.IMAGE_TAG }}"
+          sed -i "s/^  tag: \".*\"/  tag: \"${TAG}\"/" helm/avatar-web/values-production.yaml
+          echo "Updated image.tag to ${TAG}"
+          git diff helm/avatar-web/values-production.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add helm/avatar-web/values-production.yaml
+          git commit -m "chore: bump image tag to ${{ steps.vars.outputs.IMAGE_TAG }}" || echo "No changes to commit"
+          git push origin main

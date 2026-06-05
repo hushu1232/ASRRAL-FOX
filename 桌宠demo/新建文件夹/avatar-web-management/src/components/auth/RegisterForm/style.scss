@@ -1,0 +1,5 @@
+@use '@/components/auth/auth-form' as *;
+
+.register-form {
+  @include auth-form-base;
+}

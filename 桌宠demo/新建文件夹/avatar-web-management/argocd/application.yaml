@@ -1,0 +1,62 @@
+# ArgoCD Application — GitOps delivery for avatar-web
+# Apply: kubectl apply -f argocd/application.yaml
+# Or use the ArgoCD UI / CLI: argocd app create avatar-web --file argocd/application.yaml
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: avatar-web
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/avatar-system/avatar-web.git
+    targetRevision: main
+    path: helm/avatar-web
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-production.yaml
+      # Allow overriding image tag via ArgoCD parameter (for canary/promotion)
+      parameters:
+        - name: image.tag
+          value: latest
+        - name: canary.tag
+          value: ""
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true        # Clean up resources removed from git
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+    automated:
+      prune: true             # Delete resources not in git
+      selfHeal: true          # Revert manual changes to match git
+      allowEmpty: false       # Require at least one value file
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+  # Health checks for custom resources
+  ignoreDifferences:
+    # Helm checksum annotations change every deploy — ignore them in diff
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/template/metadata/annotations/checksum~1config
+        - /spec/template/metadata/annotations/checksum~1secret
+    # HPA replicas are managed by the autoscaler, not git
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/minReplicas
+        - /spec/maxReplicas
+  # Sync wave ordering: secrets → config → deployments → canary → tests
+  syncWave: 0

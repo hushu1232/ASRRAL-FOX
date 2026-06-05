@@ -1,0 +1,144 @@
+# =============================================================================
+# Shannon AI Pentest — Scan Configuration for avatar-web-management
+# =============================================================================
+# Usage:
+#   1. npx @keygraph/shannon setup          (configure API key once)
+#   2. npx @keygraph/shannon start \
+#        --url http://localhost:3000 \
+#        --repo . \
+#        --config security/shannon/config.yaml \
+#        -w avatar-web-pentest \
+#        -o security/shannon/reports
+#   3. Monitor: http://localhost:8233
+#
+# Documentation: https://github.com/KeygraphHQ/shannon#readme
+# =============================================================================
+
+# ----- Target application -----
+target:
+  # The running instance to attack (local dev or staging — NEVER production)
+  base_url: "http://localhost:3000"
+  # Alternative: staging environment
+  # base_url: "https://avatar-web-staging.internal"
+
+# ----- Source code -----
+# These paths are relative to --repo (the repository root).
+# Shannon reads source code to identify attack vectors, then validates with live exploits.
+source:
+  include:
+    - "src/"              # Application code
+    - "prisma/"           # Database schema (SQLi vector analysis)
+    - "helm/"             # Infrastructure config (misconfigurations)
+    - "e2e/"              # Test auth flows help agents understand login
+  exclude:
+    - "node_modules/"
+    - ".next/"
+    - "coverage/"
+    - "tests/"
+    - "storybook-static/"
+    - "**/*.test.ts"
+    - "**/*.test.tsx"
+    - "**/*.stories.tsx"
+    - "**/__mocks__/"
+    - "**/__image_snapshots__/"
+
+# ----- Authentication (for authenticated endpoint testing) -----
+# Shannon handles login flows automatically, but you can pre-seed credentials
+# to speed up the Auth/Authz agents.
+auth:
+  # Login endpoint the agent should use
+  login_url: "/api/auth/login"
+  # Test credentials (use dedicated pentest account, NOT real accounts)
+  credentials:
+    email: "pentest@avatar-web.internal"
+    password: "ShannonPentest2026!"
+  # OAuth/SSO endpoints to test separately
+  oauth:
+    enabled: true
+    authorize_url: "/api/oauth/authorize"
+    token_url: "/api/oauth/token"
+  # Session indicator — Shannon verifies login succeeded
+  success_indicator:
+    type: "api_response"
+    field: "success"
+    value: true
+
+# ----- Scan scope -----
+scope:
+  # API endpoints to focus on (Shannon auto-discovers others from code)
+  focus_endpoints:
+    - "/api/auth/**"
+    - "/api/admin/**"
+    - "/api/avatars/**"
+    - "/api/assets/**"
+    - "/api/oauth/**"
+    - "/api/pet/**"
+    - "/api/export/**"
+  # Endpoints to skip
+  skip_endpoints:
+    - "/api/health"
+    - "/api/metrics"
+    - "/api/internal/**"
+
+# ----- Vulnerability classes -----
+# Shannon runs 5 parallel agents. Use this to enable/disable specific checks.
+checks:
+  injection:
+    enabled: true          # SQLi, NoSQLi, command injection, LDAP
+    include_blind: true    # Blind injection variants (time-based, out-of-band)
+  xss:
+    enabled: true          # Reflected, stored, DOM-based
+    include_mutation: true # mXSS (mutation XSS) testing
+  ssrf:
+    enabled: true          # Server-side request forgery
+    internal_port_scan: true
+    cloud_metadata: true   # AWS/GCP/Azure metadata endpoint probes
+  authentication:
+    enabled: true          # Broken auth, session fixation, JWT attacks
+    jwt_attacks:
+      - "none_algorithm"
+      - "weak_secret"
+      - "kid_injection"
+      - "expired_token"
+    session_attacks: true
+  authorization:
+    enabled: true          # IDOR, privilege escalation, missing access control
+    role_matrix:
+      - role: "anonymous"
+        description: "Unauthenticated access attempts"
+      - role: "user"
+        description: "Standard user privilege boundary tests"
+      - role: "admin"
+        description: "Admin-only endpoint access from user context"
+
+# ----- Rate limiting (protect the target from being overwhelmed) -----
+rate_limit:
+  max_requests_per_second: 10
+  burst: 20
+  delay_between_tests_ms: 100
+
+# ----- Custom headers (injected into every request) -----
+headers:
+  custom:
+    X-Pentest-ID: "shannon-${WORKSPACE}"
+    X-Pentest-Source: "keygraph-shannon"
+
+# ----- Browser automation -----
+browser:
+  # Shannon uses Playwright for browser-based exploits (XSS, CSRF)
+  headless: true
+  viewport:
+    width: 1440
+    height: 900
+
+# ----- Output -----
+output:
+  format: ["json", "html", "pdf"]
+  include_poc: true       # Reproducible proof-of-concept code
+  include_remediation: true
+  severity_threshold: "low"  # Report all: low, medium, high, critical
+
+# ----- CI/CD integration (Shannon Pro only, but config is forward-compatible) -----
+ci:
+  fail_on: "critical"     # Exit code 1 if critical vuln with PoC found
+  max_duration_minutes: 90

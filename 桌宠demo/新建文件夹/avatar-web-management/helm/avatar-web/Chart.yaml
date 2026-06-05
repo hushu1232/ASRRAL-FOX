@@ -1,0 +1,14 @@
+apiVersion: v2
+name: avatar-web
+description: 虚拟形象 Web 管理平台 — Helm Chart
+type: application
+version: 0.1.0
+appVersion: "1.0.0-beta"
+keywords:
+  - avatar
+  - virtual-character
+  - nextjs
+  - threejs
+maintainers:
+  - name: avatar-team
+home: https://github.com/avatar-system/avatar-web-management

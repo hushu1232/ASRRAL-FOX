@@ -1,0 +1,25 @@
+// ─── BEM Foundation — supplementary to globals.css ────────────────
+// globals.css (imported first in layout.tsx) provides:
+//   - Tailwind utilities (@import "tailwindcss")
+//   - Design tokens (:root --ds-* + legacy aliases: --accent, --bg-card, etc.)
+//   - Ant Design overrides (.ant-btn-primary, .ant-input, etc.)
+//   - Chat login animations & text-selection prevention
+// This file adds ONLY the BEM-specific extras that don't conflict.
+//
+// Migration TODO: consolidate globals.css + global.scss into one file
+// after all components are BEM-migrated and Tailwind is removed.
+
+@use 'reset';
+
+// ── BEM-Only Design Tokens (SCSS compile-time, not CSS variables) ──
+// Colors come from globals.css :root; do NOT redefine --accent etc. here.
+
+// ── Global BEM Overrides (minimal) ──
+body {
+  // font-family already set by globals.css via --ds-typography-fontFamily
+  // color/background already set by globals.css
+  line-height: 1.6;
+}
+
+// ── Scrollbar (dark variant — overridden by globals.css for light theme) ──
+// globals.css already defines scrollbar styles; keep only if dark theme is active.

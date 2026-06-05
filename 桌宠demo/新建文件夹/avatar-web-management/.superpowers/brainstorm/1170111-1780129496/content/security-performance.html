@@ -1,0 +1,158 @@
+<h2>方案 C 设计（第 2/4 层：安全 + 性能 + 响应式）</h2>
+<p class="subtitle">安全加固、性能优化、响应式增强 —— 三个横向贯穿的改造维度</p>
+
+<div class="section">
+  <h3>1. 安全加固（P0 — 全面优化前提）</h3>
+  <div class="split">
+    <div class="mockup" style="flex:1;">
+      <div class="mockup-header">🔒 前端安全增强</div>
+      <div class="mockup-body" style="font-size:12px;color:var(--ds-colors-text-secondary);line-height:1.6;">
+        <strong>输入消毒统一层</strong><br/>
+        • 创建 <code>src/lib/sanitize.ts</code> — DOMPurify 封装<br/>
+        • 所有用户输入（搜索、评论、表单）统一消毒<br/>
+        • stripHtml 增强 → 白名单标签 + 属性过滤<br/>
+        <br/>
+        <strong>CSP 头审计</strong><br/>
+        • 审查 next.config.ts CSP 规则<br/>
+        • 添加 Trusted Types 策略<br/>
+        • script-src 收紧（移除 unsafe-inline 依赖）<br/>
+        <br/>
+        <strong>XSRF 防护增强</strong><br/>
+        • 所有状态变更 API 验证 X-CSRF-Token<br/>
+        • SameSite=Strict 所有 cookie<br/>
+        • Fetch API 封装自动附带 CSRF token
+      </div>
+    </div>
+    <div class="mockup" style="flex:1;">
+      <div class="mockup-header">🔒 现有安全架构（保留）</div>
+      <div class="mockup-body" style="font-size:12px;color:var(--ds-colors-text-secondary);line-height:1.6;">
+        ✅ Bot 检测 — middleware.ts 13 种 UA<br/>
+        ✅ CORS 动态白名单<br/>
+        ✅ CSRF Double Submit Cookie<br/>
+        ✅ 速率限制 — Upstash + 内存降级<br/>
+        ✅ JWT RS256 + HS256 fallback<br/>
+        ✅ RBAC — 5 级角色层级<br/>
+        ✅ argon2id 密码哈希<br/>
+        ✅ TOTP 2FA<br/>
+        ✅ OAuth2.0 + PKCE<br/>
+        ✅ gitleaks CI 密钥扫描<br/>
+        <br/>
+        <span style="color:var(--ds-colors-accent-primary);">→ 前端改动主要为输入消毒 + CSP 收紧</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>2. 性能优化（P1 — 速度感知）</h3>
+  <div class="mockup">
+    <div class="mockup-header">React-Admin 启发的性能模式 + 现有 Web Vitals 监控</div>
+    <div class="mockup-body">
+
+    <table style="width:100%;border-collapse:collapse;font-size:12px;color:var(--ds-colors-text-primary);">
+      <thead><tr style="background:var(--ds-colors-bg-cardHover);text-align:left;">
+        <th style="padding:8px 12px;">模式</th>
+        <th style="padding:8px 12px;">react-admin 做法</th>
+        <th style="padding:8px 12px;">本项目适配</th>
+        <th style="padding:8px 12px;">预期收益</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;">乐观更新</td>
+          <td style="padding:8px 12px;">useMutation + undoable</td>
+          <td style="padding:8px 12px;">SWR optimisticData + Toast 撤销</td>
+          <td style="padding:8px 12px;color:var(--ds-colors-semantic-success);">感知延迟 → 0ms</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;">路由预取</td>
+          <td style="padding:8px 12px;">&lt;link prefetch&gt;</td>
+          <td style="padding:8px 12px;">已有 router.prefetch (hover+visible)</td>
+          <td style="padding:8px 12px;color:var(--ds-colors-semantic-success);">导航延迟 → &lt;100ms</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;">代码分割</td>
+          <td style="padding:8px 12px;">lazy + Suspense per route</td>
+          <td style="padding:8px 12px;">next/dynamic (图表、3D、编辑器)</td>
+          <td style="padding:8px 12px;color:var(--ds-colors-semantic-success);">首屏 JS -30%</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;">图片优化</td>
+          <td style="padding:8px 12px;">&lt;Image /&gt; lazy</td>
+          <td style="padding:8px 12px;">next/image + 缩略图 + blurDataURL</td>
+          <td style="padding:8px 12px;color:var(--ds-colors-semantic-success);">LCP -40%</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;">数据缓存</td>
+          <td style="padding:8px 12px;">react-query cache</td>
+          <td style="padding:8px 12px;">SWR dedup + Redis 服务端缓存</td>
+          <td style="padding:8px 12px;color:var(--ds-colors-semantic-success);">重复请求 → 0</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;">虚拟列表</td>
+          <td style="padding:8px 12px;">&lt;Datagrid rowClick&gt;</td>
+          <td style="padding:8px 12px;">大数据集（>100条）使用虚拟滚动</td>
+          <td style="padding:8px 12px;color:var(--ds-colors-semantic-success);">列表渲染 FPS 稳定</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;">SSR 优先</td>
+          <td style="padding:8px 12px;">SSR + hydration</td>
+          <td style="padding:8px 12px;">关键页面 RSC + Stream + Suspense</td>
+          <td style="padding:8px 12px;color:var(--ds-colors-semantic-success);">FCP -50%</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="margin-top:16px;padding:12px;background:rgba(37,99,235,0.08);border-radius:6px;font-size:12px;color:var(--ds-colors-text-secondary);">
+      <strong style="color:var(--ds-colors-semantic-info);">📊 Web Vitals 监控（已有）</strong><br/>
+      PerformanceMonitor 已收集 LCP/CLS/INP/FCP，通过 web-vitals → /api/metrics → Prometheus → Grafana。<br/>
+      优化前基线：LCP ~2.8s, CLS ~0.12, INP ~180ms。目标：LCP &lt; 1.5s, CLS &lt; 0.05, INP &lt; 100ms。
+    </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>3. 响应式增强（P1 — 全设备体验）</h3>
+  <div class="mockup">
+    <div class="mockup-header">从 "支持移动端" 到 "移动端优先" 的渐进改造</div>
+    <div class="mockup-body">
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;">
+      <div style="text-align:center;padding:8px;background:rgba(139,92,246,0.08);border-radius:6px;">
+        <div style="font-weight:700;color:#a78bfa;font-size:18px;">📱</div>
+        <div style="font-size:11px;color:var(--ds-colors-text-secondary);">&lt; 640px<br/><strong>Mobile</strong><br/>单栏 + Drawer</div>
+      </div>
+      <div style="text-align:center;padding:8px;background:rgba(139,92,246,0.08);border-radius:6px;">
+        <div style="font-weight:700;color:#a78bfa;font-size:18px;">📲</div>
+        <div style="font-size:11px;color:var(--ds-colors-text-secondary);">640-1024px<br/><strong>Tablet</strong><br/>双栏 + 折叠侧栏</div>
+      </div>
+      <div style="text-align:center;padding:8px;background:rgba(139,92,246,0.08);border-radius:6px;">
+        <div style="font-weight:700;color:#a78bfa;font-size:18px;">💻</div>
+        <div style="font-size:11px;color:var(--ds-colors-text-secondary);">1024-1440px<br/><strong>Desktop</strong><br/>完整侧栏 + 多列</div>
+      </div>
+      <div style="text-align:center;padding:8px;background:rgba(139,92,246,0.08);border-radius:6px;">
+        <div style="font-weight:700;color:#a78bfa;font-size:18px;">🖥</div>
+        <div style="font-size:11px;color:var(--ds-colors-text-secondary);">&gt; 1440px<br/><strong>Wide</strong><br/>最大宽度约束</div>
+      </div>
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;font-size:12px;color:var(--ds-colors-text-primary);">
+      <thead><tr style="background:var(--ds-colors-bg-cardHover);text-align:left;">
+        <th style="padding:8px;">组件</th><th style="padding:8px;">移动端 (&lt;640)</th><th style="padding:8px;">平板 (640-1024)</th><th style="padding:8px;">桌面 (&gt;1024)</th>
+      </tr></thead>
+      <tbody>
+        <tr><td style="padding:8px;">Sidebar</td><td style="padding:8px;">全屏 Drawer (swipe)</td><td style="padding:8px;">折叠 64px + hover展开</td><td style="padding:8px;">完整 220px</td></tr>
+        <tr><td style="padding:8px;">Header</td><td style="padding:8px;">汉堡菜单 + 标题</td><td style="padding:8px;">搜索 + 通知 + 头像</td><td style="padding:8px;">面包屑 + 搜索 + 全部</td></tr>
+        <tr><td style="padding:8px;">FilterBar</td><td style="padding:8px;">底部 Drawer 展开</td><td style="padding:8px;">顶部折叠行</td><td style="padding:8px;">顶部完整行</td></tr>
+        <tr><td style="padding:8px;">数据表格</td><td style="padding:8px;">卡片视图堆叠</td><td style="padding:8px;">关键列 + 横向滚动</td><td style="padding:8px;">完整表格</td></tr>
+        <tr><td style="padding:8px;">Dashboard</td><td style="padding:8px;">KPI 竖排 + 单图</td><td style="padding:8px;">KPI 2×2 + 单图</td><td style="padding:8px;">KPI 横排 + 双图</td></tr>
+        <tr><td style="padding:8px;">ChatPanel</td><td style="padding:8px;">全屏底部 Sheet</td><td style="padding:8px;">右侧 320px 面板</td><td style="padding:8px;">右侧 400px 面板</td></tr>
+      </tbody>
+    </table>
+
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px;">👆 安全、性能、响应式三层的设计。接下来展示可测试性 + 实施计划。这部分是否符合预期？</p>
