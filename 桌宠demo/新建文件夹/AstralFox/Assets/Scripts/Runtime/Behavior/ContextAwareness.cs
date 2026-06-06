@@ -150,7 +150,9 @@ namespace AstralFox.Behavior
             var lii = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
             if (!GetLastInputInfo(ref lii)) return;
 
-            _idleSeconds = (Environment.TickCount - (int)lii.dwTime) / 1000f;
+            // uint subtraction wraps correctly on TickCount overflow (~every 24.9 days)
+            uint tickNow = (uint)Environment.TickCount;
+            _idleSeconds = (tickNow - lii.dwTime) / 1000f;
 
             bool wasIdle = _isIdle;
             bool wasLongIdle = _isLongIdle;

@@ -41,7 +41,7 @@ namespace AstralFox.Editor
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = new Color(1f, 0f, 1f, 1f);
             cam.orthographic = true;
-            cam.orthographicSize = 5f;
+            cam.orthographicSize = 10f; // wide enough for full character in any aspect ratio
             cam.nearClipPlane = 0.1f;
             cam.farClipPlane = 100f;
             cam.depth = -1;
@@ -190,12 +190,12 @@ namespace AstralFox.Editor
             // --- FoxPlaceholder (container for model children) ---
             GameObject foxGo = CreateOrGet("FoxPlaceholder");
             foxGo.transform.SetParent(root.transform, false);
-            foxGo.transform.localPosition = new Vector3(0f, -3f, 0f);
+            foxGo.transform.localPosition = new Vector3(0f, 0f, 0f);
 
             // --- Create model child GameObject ---
             GameObject live2DGo = CreateOrGetChild(foxGo, "Live2D_Model");
             live2DGo.transform.localPosition = Vector3.zero;
-            live2DGo.transform.localScale = Vector3.one;
+            live2DGo.transform.localScale = Vector3.one * 0.5f; // scale down to fit camera
             live2DGo.SetActive(false); // hidden until PetAnimationManager activates it
 
             bool usingCubismModel = false;
@@ -240,20 +240,26 @@ namespace AstralFox.Editor
 #endif
             if (!usingCubismModel)
             {
-                // Fallback: procedural sprite on FoxPlaceholder directly
+                // Fallback: character portrait sprite
                 SpriteRenderer sr = foxGo.GetComponent<SpriteRenderer>();
                 if (sr == null) sr = foxGo.AddComponent<SpriteRenderer>();
                 sr.sortingOrder = 1;
 
                 if (sr.sprite == null)
                 {
-                    sr.sprite = CreatePlaceholderSprite();
-                    if (sr.sprite == null)
+                    // Load character portrait (acceptable white bg for demo)
+                    var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                        "Assets/Textures/character_portrait.jpg");
+                    if (tex != null)
                     {
-                        sr.sprite = Sprite.Create(
-                            Texture2D.whiteTexture,
-                            new Rect(0, 0, 4, 4),
-                            new Vector2(0.5f, 0.5f));
+                        sr.sprite = Sprite.Create(tex,
+                            new Rect(0, 0, tex.width, tex.height),
+                            new Vector2(0.5f, 0.5f), 300f);
+                        Debug.Log("[AstralFox] Using character portrait.");
+                    }
+                    else
+                    {
+                        sr.sprite = CreatePlaceholderSprite();
                     }
                 }
 
@@ -277,8 +283,11 @@ namespace AstralFox.Editor
             // --- Configure Player Settings ---
             ConfigurePlayerSettings();
 
-            // --- Mark scene dirty ---
-            EditorSceneManager.MarkSceneDirty(activeScene);
+            // --- Mark scene dirty (Edit Mode only) ---
+            if (!EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                EditorSceneManager.MarkSceneDirty(activeScene);
+            }
 
             string animStatus = (ctrl != null)
                 ? "Animator Controller: assigned"

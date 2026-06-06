@@ -11,10 +11,10 @@ namespace AstralFox
     {
         [Header("Camera Setup")]
         [SerializeField]
-        private Color _chromaKeyColor = new Color(0f, 1f, 0f, 1f);  // Pure green
+        private Color _chromaKeyColor = new Color(1f, 0f, 1f, 1f);  // Magenta for chroma key
 
         [SerializeField, Range(1f, 20f)]
-        private float _orthoSize = 5f;
+        private float _orthoSize = 10f; // full character view
 
         [SerializeField]
         private bool _autoConfigure = true;

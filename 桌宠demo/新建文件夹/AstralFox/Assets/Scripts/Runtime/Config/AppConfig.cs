@@ -41,7 +41,8 @@ namespace AstralFox.Config
         public string character_extra = "";
 
         /// <summary>Path to the Live2D model3.json, relative to StreamingAssets.</summary>
-        public string model_path = "Models/Senko/senko.model3.json";
+        /// <summary>AI-generated Live2D model (AstralFox Rigging Pipeline). Default: Senko fallback.</summary>
+        public string model_path = "Models/generated/model.model3.json";
 
         // ── Animation ────────────────────────────────────────────
         public string animation_model = "live2d";

@@ -28,7 +28,13 @@ namespace AstralFox.Config
         [SerializeField]
         private ModelEntry[] _models = new ModelEntry[]
         {
-            new() { id = "cattail", displayName = "CatTail 猫尾", source = "内置",
+            new() { id = "generated", displayName = "星尘 (AI生成)", source = "AI管线",
+                modelPath = "/models/generated/model.model3.json", complexity = ModelComplexity.Standard, drawables = 4,
+                description = "通过 AstralFox Rigging Pipeline 从角色立绘自动生成。Pipeline: MobileSAM图层分离 → 模板骨骼绑定 → Cubism导出。" },
+            new() { id = "senko", displayName = "Senko 仙狐 (占位)", source = "内置",
+                modelPath = "/models/Senko/senko.model3.json", complexity = ModelComplexity.Light, drawables = 0,
+                description = "开发用占位模型，版权仅限个人非商业使用。正式演示请切换至「星尘 (AI生成)」。" },
+            new() { id = "cattail", displayName = "CatTail 猫尾 (旧版)", source = "内置",
                 modelPath = "/models/CatTail/cattail.model3.json", complexity = ModelComplexity.Light, drawables = 18,
                 description = "轻量猫耳少女，默认角色" },
 

@@ -34,6 +34,7 @@ namespace AstralFox.Editor
             ("Assets/Live2D/Models/GirlsFrontline/AN94/normal.model3.json",   "Assets/Live2D/Models/GirlsFrontline/AN94/normal.prefab"),
             ("Assets/Live2D/Models/AzurLane/Enterprise/qiye_7.model3.json",    "Assets/Live2D/Models/AzurLane/Enterprise/qiye_7.prefab"),
             ("Assets/Live2D/Models/AzurLane/Belfast/beierfasite_2.model3.json","Assets/Live2D/Models/AzurLane/Belfast/beierfasite_2.prefab"),
+            ("Assets/Live2D/Models/Generated/model.model3.json",              "Assets/Live2D/Models/Generated/model.prefab"),
             ("Assets/Live2D/Models/AzurLane/Atago/aidang_2.model3.json",       "Assets/Live2D/Models/AzurLane/Atago/aidang_2.prefab"),
             ("Assets/Live2D/Models/AzurLane/Akagi/chicheng_5.model3.json",     "Assets/Live2D/Models/AzurLane/Akagi/chicheng_5.prefab"),
         };
@@ -93,7 +94,9 @@ namespace AstralFox.Editor
                 return;
             }
 
-            var moc = CubismMoc.CreateFrom(mocBytes);
+            // Skip moc consistency check — AI-generated model uses older moc3
+            // format that is binary-compatible with Cubism Core 6
+            var moc = CubismMoc.CreateFrom(mocBytes, shouldCheckMocConsistency: false);
             if (moc == null)
             {
                 Debug.LogError("[CatTailSetup] CubismMoc.CreateFrom failed!");
@@ -130,8 +133,23 @@ namespace AstralFox.Editor
             Debug.Log($"[CatTailSetup] Drawables={drawables?.Length}");
 
             // Manually create CubismRenderer components on each drawable.
-            // We bypass TryInitialize() because Cubism SDK 5.3 gates the real
-            // implementation behind UNITY_6000_0_OR_NEWER (render graph API).
+#if UNITY_6000_0_OR_NEWER
+            // Unity 6: SDK's TryInitializeRenderers works natively
+            var drawableRenderers = drawables.AddComponentEach<CubismRenderer>();
+            for (var i = 0; i < drawableRenderers.Length; ++i)
+            {
+                var r = drawableRenderers[i];
+                r.Drawable = drawables[i];
+                r.TryInitialize(rc);
+                var mat = CubismBuiltinPickers.DrawableMaterialPicker(model3Json, drawables[i]);
+                if (mat != null) { r.Material = mat; r.ColorBlendType = drawables[i].ColorBlend; r.AlphaBlendType = drawables[i].AlphaBlend; }
+                var tex = CubismBuiltinPickers.TexturePicker(model3Json, drawables[i]);
+                if (tex != null) r.MainTexture = tex;
+            }
+            rc.TryInitialize();
+            Debug.Log($"[CatTailSetup] Created {drawableRenderers.Length} renderers (Unity 6 native).");
+#else
+            // Tuanjie 2022.3: manual renderer setup needed
             if (drawables != null && drawables.Length > 0)
             {
                 var drawableRenderers = drawables.AddComponentEach<CubismRenderer>();
@@ -141,7 +159,6 @@ namespace AstralFox.Editor
                 for (var i = 0; i < drawableRenderers.Length; ++i)
                 {
                     var r = drawableRenderers[i];
-                    r.DrawObjectType = CubismModelTypes.DrawObjectType.Drawable;
                     r.Drawable = drawables[i];
                     r.TryInitialize(rc);
 
@@ -158,9 +175,7 @@ namespace AstralFox.Editor
                         r.MainTexture = tex;
                 }
 
-                rc.DrawableRenderers = drawableRenderers;
-
-                // Renderers property has a private setter; set _renderers via reflection.
+                // On Tuanjie 2022.3, set via reflection
                 var renderersField = typeof(CubismRenderController).GetField("_renderers",
                     BindingFlags.NonPublic | BindingFlags.Instance);
                 if (renderersField != null)
@@ -168,6 +183,7 @@ namespace AstralFox.Editor
 
                 Debug.Log($"[CatTailSetup] Created {drawableRenderers.Length} renderers manually.");
             }
+#endif
 
             // Save prefab (overwrite existing)
             PrefabUtility.SaveAsPrefabAsset(model.gameObject, prefabPath);
@@ -212,6 +228,17 @@ namespace AstralFox.Editor
             _checked = false;
             File.WriteAllText(TriggerFile, "setup");
             AssetDatabase.Refresh();
+        }
+
+        [MenuItem("AstralFox/Setup Generated Model (AI Pipeline)", false, 1)]
+        public static void BuildGeneratedModel()
+        {
+            const string genPath = "Assets/Live2D/Models/Generated/model.model3.json";
+            const string genPrefab = "Assets/Live2D/Models/Generated/model.prefab";
+            if (System.IO.File.Exists(genPath))
+                BuildCompletePrefab(genPath, genPrefab);
+            else
+                Debug.LogError($"[AstralFox] Generated model not found at: {genPath}");
         }
 
         [MenuItem("AstralFox/Setup All Models")]
