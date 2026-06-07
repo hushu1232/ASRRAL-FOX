@@ -1,3 +1,4 @@
+using AstralFox.AI.Context;
 using System;
 using UnityEngine;
 
@@ -56,7 +57,7 @@ namespace AstralFox.Animation
 
         [Header("Debug")]
         [SerializeField]
-        private bool _logEmotionChanges = true;
+        private bool _logEmotionChanges = false;
 
         #endregion
 
@@ -116,7 +117,24 @@ namespace AstralFox.Animation
         public string EmotionLabel => PADToLabel(_smoothP, _smoothA, _smoothD);
 
         /// <summary>Mapped to FoxEmotion enum for animation.</summary>
-        public PetEmotion CurrentEmotion => PADToEmotion(_smoothP, _smoothA, _smoothD);
+        public PetEmotion CurrentEmotion
+        {
+            get
+            {
+                // Cache: only recalculate when PAD values actually change
+                const float epsilon = 0.005f;
+                if (Mathf.Abs(_smoothP - _lastRawP) > epsilon ||
+                    Mathf.Abs(_smoothA - _lastRawA) > epsilon ||
+                    Mathf.Abs(_smoothD - _lastRawD) > epsilon)
+                {
+                    _cachedEmotion = PADToEmotion(_smoothP, _smoothA, _smoothD);
+                    _lastRawP = _smoothP;
+                    _lastRawA = _smoothA;
+                    _lastRawD = _smoothD;
+                }
+                return _cachedEmotion;
+            }
+        }
 
         #endregion
 
@@ -139,12 +157,23 @@ namespace AstralFox.Animation
 
         private float _saveTimer;
 
+        // ── Per-frame optimization: cache slow-changing values ──
+        private float _lastAffectionCheckTime;
+        private float _cachedAffectionScale = 1f;
+        private IPetAnimator _cachedAnimator;
+        private PetEmotion _cachedEmotion;
+        private float _lastRawP = float.NaN, _lastRawA, _lastRawD;
+        private const float AffectionCheckInterval = 2f;
+
         #endregion
 
         #region Unity Lifecycle
 
         private void Awake()
         {
+            // Cache frequently accessed references
+            _cachedAnimator = PetAnimationManager.Instance?.CurrentAnimator;
+
             // Load saved emotion or use initial values
             var saved = Data.DataStore.Instance.LoadCurrentEmotion();
             if (Mathf.Approximately(saved.p, 0f) && Mathf.Approximately(saved.a, 0f) && Mathf.Approximately(saved.d, 0f))
@@ -196,10 +225,15 @@ namespace AstralFox.Animation
             // Affection-based decay scaling:
             // High affection → slower decay (the fox is happier to see you)
             // Low affection → normal decay
-            float affection = Data.DataStore.Instance.GetAffection().affectionLevel;
-            float affectionScale = Mathf.Clamp01(1f - affection / 200f); // 0.5 at 100, 1.0 at 0
+            // Throttled: affection changes rarely, check every N seconds instead of every frame
+            if (Time.unscaledTime - _lastAffectionCheckTime > AffectionCheckInterval)
+            {
+                float affection = Data.DataStore.Instance.GetAffection().affectionLevel;
+                _cachedAffectionScale = Mathf.Clamp01(1f - affection / 200f);
+                _lastAffectionCheckTime = Time.unscaledTime;
+            }
 
-            _rawP = MoveToward(_rawP, _pleasureBaseline, _pleasureDecayRate * _decayMultP * dt * affectionScale);
+            _rawP = MoveToward(_rawP, _pleasureBaseline, _pleasureDecayRate * _decayMultP * dt * _cachedAffectionScale);
             _rawA = MoveToward(_rawA, _arousalBaseline, _arousalDecayRate * _decayMultA * dt);
             _rawD = MoveToward(_rawD, _dominanceBaseline, _dominanceDecayRate * _decayMultD * dt);
 
@@ -231,8 +265,10 @@ namespace AstralFox.Animation
 
         private void UpdateEmotionOutput()
         {
-            var animator = PetAnimationManager.Instance?.CurrentAnimator;
-            if (animator == null) return;
+            // Refresh cached animator reference if null (lazy init / model switch)
+            if (_cachedAnimator == null)
+                _cachedAnimator = PetAnimationManager.Instance?.CurrentAnimator;
+            if (_cachedAnimator == null) return;
 
             var emotion = CurrentEmotion;
 
@@ -241,7 +277,7 @@ namespace AstralFox.Animation
             {
                 if (Time.unscaledTime - _lastEmotionSwitchTime > 2f)
                 {
-                    animator.SetEmotion(emotion);
+                    _cachedAnimator.SetEmotion(emotion);
                     _lastEmittedEmotion = emotion;
                     _lastEmotionSwitchTime = Time.unscaledTime;
 

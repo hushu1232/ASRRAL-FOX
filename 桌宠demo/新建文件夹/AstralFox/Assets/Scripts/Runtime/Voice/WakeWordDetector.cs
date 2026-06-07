@@ -318,14 +318,7 @@ namespace AstralFox.Voice
 
         private static byte[] ConvertToPCM16(float[] samples)
         {
-            byte[] pcm = new byte[samples.Length * 2];
-            for (int i = 0; i < samples.Length; i++)
-            {
-                short s = (short)(Mathf.Clamp(samples[i], -1f, 1f) * 32767f);
-                pcm[i * 2] = (byte)(s & 0xFF);
-                pcm[i * 2 + 1] = (byte)((s >> 8) & 0xFF);
-            }
-            return pcm;
+            return AudioUtility.ConvertToPCM16(samples);
         }
 
         #endregion

@@ -42,21 +42,27 @@ namespace AstralFox.Editor
 
         static CatTailImporterSetup()
         {
-            EditorApplication.update += CheckTrigger;
+            // Use delayCall instead of update — runs once after compilation, not every frame
+            EditorApplication.delayCall += DelayedCheck;
         }
 
-        private static void CheckTrigger()
+        private static void DelayedCheck()
         {
             if (_checked) return;
 
             // Wait until compilation is fully done before processing.
-            // Otherwise stale cached assemblies may run before recompilation.
+            // delayCall is deferred until after compilation completes naturally,
+            // but defend against re-entrancy.
             if (EditorApplication.isCompiling)
+            {
+                EditorApplication.delayCall += DelayedCheck;
                 return;
+            }
+
+            _checked = true;
 
             if (File.Exists(TriggerFile))
             {
-                _checked = true;
                 Debug.Log("[CatTailSetup] Trigger detected.");
                 File.Delete(TriggerFile);
 
@@ -94,8 +100,6 @@ namespace AstralFox.Editor
                 return;
             }
 
-            // Skip moc consistency check — AI-generated model uses older moc3
-            // format that is binary-compatible with Cubism Core 6
             var moc = CubismMoc.CreateFrom(mocBytes, shouldCheckMocConsistency: false);
             if (moc == null)
             {
@@ -114,17 +118,19 @@ namespace AstralFox.Editor
             var modelName = Path.GetFileName(assetPath);
             model.name = modelName;
 
-            // Delete old asset if exists
-            var oldMoc = AssetDatabase.LoadAssetAtPath<CubismMoc>($"{assetPath}.asset");
+            // Delete old asset if exists (standalone asset, not sub-asset)
+            var existingAssetPath = $"{assetPath}.asset";
+            var oldMoc = AssetDatabase.LoadAssetAtPath<CubismMoc>(existingAssetPath);
             if (oldMoc != null)
             {
-                AssetDatabase.RemoveObjectFromAsset(oldMoc);
+                AssetDatabase.DeleteAsset(existingAssetPath);
+                Debug.Log($"[CatTailSetup] Deleted old moc asset: {existingAssetPath}");
             }
 
             // Create moc asset
             var mocAsset = model.Moc;
             mocAsset.name = modelName;
-            AssetDatabase.CreateAsset(mocAsset, $"{assetPath}.asset");
+            AssetDatabase.CreateAsset(mocAsset, existingAssetPath);
 
             // Add CubismRenderController
             var rc = model.gameObject.AddComponent<CubismRenderController>();
@@ -230,6 +236,17 @@ namespace AstralFox.Editor
             AssetDatabase.Refresh();
         }
 
+        [MenuItem("AstralFox/Setup YouXiaoMiao Model (v5 Core 6)", false, 0)]
+        public static void BuildYouXiaoMiao()
+        {
+            const string mp = "Assets/Live2D/Models/YouXiaoMiao/悠小喵.model3.json";
+            const string pp = "Assets/Live2D/Models/YouXiaoMiao/悠小喵.prefab";
+            if (System.IO.File.Exists(mp))
+                BuildCompletePrefab(mp, pp);
+            else
+                Debug.LogError($"[AstralFox] YouXiaoMiao not found at: {mp}");
+        }
+
         [MenuItem("AstralFox/Setup Generated Model (AI Pipeline)", false, 1)]
         public static void BuildGeneratedModel()
         {
@@ -239,6 +256,31 @@ namespace AstralFox.Editor
                 BuildCompletePrefab(genPath, genPrefab);
             else
                 Debug.LogError($"[AstralFox] Generated model not found at: {genPath}");
+        }
+
+        [MenuItem("AstralFox/Setup TaoHua Model (Navi-Studio)", false, 3)]
+        public static void BuildTaoHuaModel()
+        {
+            const string ep = "Assets/Live2D/Models/TaoHua/TaoHua.model3.json";
+            const string pp = "Assets/Live2D/Models/TaoHua/TaoHua.prefab";
+            // TaoHua has a pre-built prefab — just verify it exists
+            if (System.IO.File.Exists(pp))
+                Debug.Log("[AstralFox] TaoHua prefab already exists — ready for scene setup.");
+            else if (System.IO.File.Exists(ep))
+                BuildCompletePrefab(ep, pp);
+            else
+                Debug.LogError($"[AstralFox] TaoHua model not found at: {ep}");
+        }
+
+        [MenuItem("AstralFox/Setup Editor Export Model (v6)", false, 2)]
+        public static void BuildEditorExportModel()
+        {
+            const string ep = "Assets/Live2D/Models/EditorExport/model.model3.json";
+            const string pp = "Assets/Live2D/Models/EditorExport/model.prefab";
+            if (System.IO.File.Exists(ep))
+                BuildCompletePrefab(ep, pp);
+            else
+                Debug.LogError($"[AstralFox] Editor export not found at: {ep}");
         }
 
         [MenuItem("AstralFox/Setup All Models")]

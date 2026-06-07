@@ -30,7 +30,7 @@ from api.schemas import BoneNode
 # ── Constants ──────────────────────────────────────────────────────
 
 MOC3_MAGIC = b"MOC3"
-MOC3_VERSION = 3
+MOC3_VERSION = 6  # Cubism Core 6 (06.00.0001) compatible
 
 # Section IDs
 SECTION_PARTS = 0x00
@@ -62,26 +62,40 @@ SECTION_IDS = [
 
 @dataclass
 class StringTable:
-    """Manages the string table for all IDs in the .moc3 file."""
-    _strings: list[bytes] = field(default_factory=list)
+    """Manages the string table for all IDs in the .moc3 file.
+
+    Cubism Core 6 format: strings stored in 64-byte aligned slots
+    with null termination and zero padding.
+    """
+    SLOT_SIZE = 64
+    _strings: list[tuple[int, bytes]] = field(default_factory=list)  # (slot_start, data)
     _offsets: dict[str, int] = field(default_factory=dict)
-    _current_offset: int = 0
+    _current_slot: int = 0
 
     def add(self, s: str) -> tuple[int, int]:
-        """Add a string and return (offset, length)."""
+        """Add a string and return (offset, length). Offset = slot start."""
         if s in self._offsets:
-            idx = self._offsets[s]
-            return idx, len(s.encode("utf-8"))
+            return self._offsets[s], len(s.encode("utf-8"))
 
-        encoded = s.encode("utf-8")
-        offset = self._current_offset
-        self._strings.append(encoded)
-        self._offsets[s] = offset
-        self._current_offset += len(encoded)
-        return offset, len(encoded)
+        encoded = s.encode("utf-8") + b"\x00"  # null-terminated
+        # Calculate required slots (round up to 64-byte boundary)
+        slots_needed = (len(encoded) + self.SLOT_SIZE - 1) // self.SLOT_SIZE
+        if slots_needed == 0:
+            slots_needed = 1
+
+        slot_start = self._current_slot
+        self._strings.append((slot_start, encoded))
+        self._offsets[s] = slot_start
+        self._current_slot += slots_needed * self.SLOT_SIZE
+        return slot_start, len(encoded) - 1  # length excludes null
 
     def to_bytes(self) -> bytes:
-        return b"".join(self._strings)
+        """Encode string table with 64-byte slot alignment."""
+        total_size = self._current_slot
+        buf = bytearray(total_size)
+        for slot_start, data in self._strings:
+            buf[slot_start:slot_start + len(data)] = data
+        return bytes(buf)
 
 
 class MOC3Encoder:
@@ -174,206 +188,250 @@ class MOC3Encoder:
         parts: list[dict],
         drawables: list[dict],
     ) -> bytes:
-        """Build the complete .moc3 binary.
+        """Build the complete .moc3 binary in Cubism Core 6 format.
 
-        Layout follows Cubism SDK's Structure-of-Arrays (SoA) format:
-        - Section data stores all values of one field contiguously
-        - Then all values of the next field, etc.
+        V6 layout (reverse-engineered from SDK reference Ren.moc3):
+            Header (64 bytes): magic(4) + version(4) + zeros(56)
+            Offset Table: N x uint32 flat offsets (4 bytes each)
+            Section Data: 12+ sections in fixed order
+               [0] Parts
+               [1] Canvas info (floats)
+               [2] Padding (zeros)
+               [3] Part IDs — 64-byte aligned string slots
+               [4] Parameters
+               [5-8] Config/index sections
+               [9] Sentinel (0xFFFFFFFF)
+               [10] Padding
+               [11] Warp deformers
+            String Table: 64-byte aligned, null-terminated strings
         """
-        buf = bytearray()
+        # ── String table (shared across sections) ──────────
         str_table = StringTable()
+        all_sections: list[bytearray] = []
 
-        # ── Reserve space for header (64 bytes) ─────────────────────
-        header_buf = bytearray(64)
+        # ── Build 12 sections matching v6 reference layout ──
 
-        # ── Build section data ──────────────────────────────────────
-        section_data: dict[int, bytearray] = {}
-
-        # Parts section (SoA)
+        # [0] Parts: count(uint32) + N x (id_offset:uint16, padding:uint16) + padding
+        # Part ID strings are stored in section [3] in 64-byte slots
+        # id_offset is a byte offset into the Part ID table (section [3])
+        p_count = len(parts)
         parts_buf = bytearray()
-        parts_buf.extend(struct.pack("<I", len(parts)))
-        for p in parts:
-            name = p.get("Id", "")
-            off, length = str_table.add(name)
-            parts_buf.extend(struct.pack("<II", off, length))
-        section_data[SECTION_PARTS] = parts_buf
+        parts_buf.extend(struct.pack("<I", p_count))
+        for i in range(p_count):
+            parts_buf.extend(struct.pack("<HH", i * 64, 0))  # 64-byte slot offset + padding
+        all_sections.append(parts_buf)
 
-        # Parameters section (SoA)
+        # [1] Canvas metadata: 8 floats (w, h, ox, oy, ppu, ?, ?, ?)
+        canvas_buf = bytearray()
+        canvas_buf.extend(struct.pack("<f", canvas_w))
+        canvas_buf.extend(struct.pack("<f", canvas_h))
+        canvas_buf.extend(struct.pack("<f", 0.0))  # origin X
+        canvas_buf.extend(struct.pack("<f", 0.0))  # origin Y
+        canvas_buf.extend(struct.pack("<f", 1.0))  # pixels per unit
+        canvas_buf.extend(struct.pack("<f", canvas_w))  # repeat w
+        canvas_buf.extend(struct.pack("<f", canvas_h))  # repeat h
+        canvas_buf.extend(struct.pack("<f", 0.0))  # reserved
+        all_sections.append(canvas_buf)
+
+        # [2] Padding (>= 64 bytes of zeros)
+        pad_buf = bytearray(128)
+        all_sections.append(pad_buf)
+
+        # [3] Part ID string table (64-byte slots, same as str_table format)
+        partid_buf = bytearray()
+        for p in parts:
+            name = p.get("Id", "Part")
+            encoded = name.encode("utf-8") + b"\x00"
+            slot_start = len(partid_buf)
+            slots = (len(encoded) + 63) // 64
+            partid_buf.extend(encoded)
+            partid_buf.extend(b"\x00" * (slots * 64 - len(encoded)))
+        # Pad to at least 256 bytes
+        while len(partid_buf) < 256:
+            partid_buf.extend(b"\x00" * 64)
+        all_sections.append(partid_buf)
+
+        # [4] Parameters: count(N) + N x entry(24 bytes each: id_off, id_len, min, max, default, keycount, keyoffset)
+        param_count = len(parameters)
         params_buf = bytearray()
-        params_buf.extend(struct.pack("<I", len(parameters)))
+        params_buf.extend(struct.pack("<I", param_count))
         for p in parameters:
-            name = p.get("Id", "")
-            off, length = str_table.add(name)
+            off, length = str_table.add(p.get("Id", "Param"))
             min_val = float(p.get("Min", 0))
             max_val = float(p.get("Max", 1))
             default = float(p.get("Default", 0))
-            key_values = p.get("KeyValues", [default])
-            kv_offset = 0  # simplified: inline key values
-            params_buf.extend(struct.pack("<IIfffII", off, length, min_val, max_val, default, len(key_values), kv_offset))
-        section_data[SECTION_PARAMETERS] = params_buf
+            params_buf.extend(struct.pack("<IIfffII", off, length, min_val, max_val, default, 0, 0))
+        # Pad to 256 bytes
+        while len(params_buf) < 256:
+            params_buf.extend(b"\x00")
+        all_sections.append(params_buf)
 
-        # Deformers section (from cmo3 data if available)
-        deformers_buf = bytearray()
-        deformers_buf.extend(struct.pack("<I", 0))  # placeholder: no deformers in basic encoding
-        section_data[SECTION_DEFORMERS] = deformers_buf
+        # [5] Index mapping: count(N) + N x uint32 (sequential indices)
+        idx_buf = bytearray()
+        idx_buf.extend(struct.pack("<I", max(p_count, param_count)))
+        for i in range(max(p_count, param_count)):
+            idx_buf.extend(struct.pack("<I", i))
+        all_sections.append(idx_buf)
 
-        # ── ArtMeshes / Drawables section (SoA layout) ──────────────
-        # The Cubism SDK reads drawable data in SoA order:
-        # 1. Count
-        # 2. For each drawable: ID (string table ref)
-        # 3. For each drawable: ConstantFlags
-        # 4. For each drawable: TextureIndex
-        # 5. For each drawable: DrawOrder (initial)
-        # 6. For each drawable: Opacity (initial)
-        # 7. For each drawable: DrawOrderIndex
-        # 8. For each drawable: PartIndex
-        # 9. For each drawable: IsInvertedMask
-        # 10. For each drawable: MaskCount
-        # 11. For each drawable: MaskIndices (offset)
-        # 12. For each drawable: VertexCount
-        # 13. For ALL drawables' vertices: positions (x,y pairs)
-        # 14. For ALL drawables' vertices: uvs (u,v pairs)
-        # 15. For each drawable: TriangleIndexCount
-        # 16. For ALL drawables' indices: triangle indices
-        # 17. For each drawable: DynamicFlags
+        # [6] Config A: count + N x uint32 (flat values)
+        cfg_a = bytearray()
+        cfg_a.extend(struct.pack("<I", 2))
+        cfg_a.extend(struct.pack("<I", 1))
+        cfg_a.extend(struct.pack("<I", 1))
+        cfg_a.extend(b"\x00" * 64)  # pad
+        all_sections.append(cfg_a)
 
+        # [7] Config B: count + N x uint32
+        cfg_b = bytearray()
+        cfg_b.extend(struct.pack("<I", 1))
+        cfg_b.extend(struct.pack("<I", 1))
+        cfg_b.extend(b"\x00" * 64)
+        all_sections.append(cfg_b)
+
+        # [8] Config C: count + N x uint32
+        cfg_c = bytearray()
+        cfg_c.extend(struct.pack("<I", 1))
+        cfg_c.extend(struct.pack("<I", 1))
+        cfg_c.extend(b"\x00" * 64)
+        all_sections.append(cfg_c)
+
+        # [9] Sentinel: 0xFFFFFFFF
+        sentinel_buf = bytearray()
+        sentinel_buf.extend(struct.pack("<I", 0xFFFFFFFF))
+        sentinel_buf.extend(b"\x00" * 64)
+        all_sections.append(sentinel_buf)
+
+        # [10] Padding (>= 64 bytes)
+        pad2 = bytearray(256)
+        all_sections.append(pad2)
+
+        # [11] Warp deformers: "Warp" marker + zeros
+        warp_buf = bytearray()
+        warp_buf.extend(b"Warp")
+        warp_buf.extend(b"\x00" * 4)
+        warp_buf.extend(b"\x00" * 192)
+        all_sections.append(warp_buf)
+
+        # ── Now add ArtMesh data after section [11] ─────────
+        # Drawables: SoA layout as additional sections
         d_count = len(drawables)
-        meshes_buf = bytearray()
-        meshes_buf.extend(struct.pack("<I", d_count))
+        if d_count > 0:
+            # Drawable count section
+            dm_count_buf = bytearray()
+            dm_count_buf.extend(struct.pack("<I", d_count))
+            all_sections.append(dm_count_buf)
 
-        # Collect all vertex/index data across all drawables
-        all_positions = []
-        all_uvs = []
-        all_indices = []
+            # Drawable IDs
+            for d in drawables:
+                dm_id = bytearray()
+                off, length = str_table.add(d.get("Id", "ArtMesh"))
+                dm_id.extend(struct.pack("<II", off, length))
+                all_sections.append(dm_id)
 
-        # Per-drawable metadata (SoA fields 2-12)
-        for d in drawables:
-            name = d.get("Id", "")
-            off, length = str_table.add(name)
-            meshes_buf.extend(struct.pack("<II", off, length))
+            # ConstantFlags (all 0)
+            dm_flags = bytearray()
+            for d in drawables:
+                dm_flags.extend(struct.pack("<I", 0))
+            all_sections.append(dm_flags)
 
-        for d in drawables:
-            meshes_buf.extend(struct.pack("<I", 0))  # ConstantFlags
+            # Texture indices
+            for d in drawables:
+                dm_tex = bytearray()
+                dm_tex.extend(struct.pack("<I", d.get("TextureIndex", 0)))
+                all_sections.append(dm_tex)
 
-        for d in drawables:
-            tex_idx = d.get("TextureIndex", 0)
-            meshes_buf.extend(struct.pack("<I", tex_idx))
+            # Draw orders
+            for d in drawables:
+                dm_order = bytearray()
+                dm_order.extend(struct.pack("<I", d.get("DrawOrder", 0)))
+                all_sections.append(dm_order)
 
-        for d in drawables:
-            draw_order = d.get("DrawOrder", 0)
-            meshes_buf.extend(struct.pack("<I", draw_order))
+            # Opacities
+            for d in drawables:
+                dm_op = bytearray()
+                dm_op.extend(struct.pack("<f", float(d.get("Opacity", 1.0))))
+                all_sections.append(dm_op)
 
-        for d in drawables:
-            opacity = float(d.get("Opacity", 1.0))
-            meshes_buf.extend(struct.pack("<f", opacity))
+            # DrawOrder indices
+            for d in drawables:
+                dm_doi = bytearray()
+                dm_doi.extend(struct.pack("<I", 0))
+                all_sections.append(dm_doi)
 
-        for d in drawables:
-            meshes_buf.extend(struct.pack("<I", 0))  # DrawOrderIndex
+            # Vertex counts + collect data
+            all_positions = []
+            all_uvs = []
+            for d in drawables:
+                vc = bytearray()
+                vc.extend(struct.pack("<I", d.get("VertexCount", 0)))
+                all_sections.append(vc)
+                for v in d.get("Vertices", []):
+                    all_positions.extend([float(v[0]), float(v[1])])
+                for uv in d.get("Uvs", []):
+                    all_uvs.extend([float(uv[0]), float(uv[1])])
 
-        for d in drawables:
-            meshes_buf.extend(struct.pack("<I", 0))  # PartIndex
+            # All positions (SoA)
+            if all_positions:
+                pos_buf = bytearray()
+                for v in all_positions:
+                    pos_buf.extend(struct.pack("<f", v))
+                all_sections.append(pos_buf)
 
-        for d in drawables:
-            meshes_buf.extend(struct.pack("<I", 0))  # IsInvertedMask
+            # All UVs (SoA)
+            if all_uvs:
+                uv_buf = bytearray()
+                for uv in all_uvs:
+                    uv_buf.extend(struct.pack("<f", uv))
+                all_sections.append(uv_buf)
 
-        for d in drawables:
-            meshes_buf.extend(struct.pack("<I", 0))  # MaskCount
+            # Triangle counts + indices
+            all_indices = []
+            for d in drawables:
+                tc = bytearray()
+                tc.extend(struct.pack("<I", d.get("TriangleCount", 0)))
+                all_sections.append(tc)
+                for idx in d.get("Indices", []):
+                    all_indices.append(int(idx))
 
-        for d in drawables:
-            meshes_buf.extend(struct.pack("<I", 0))  # MaskIndices offset
+            if all_indices:
+                idx_buf2 = bytearray()
+                for idx in all_indices:
+                    idx_buf2.extend(struct.pack("<I", idx))
+                all_sections.append(idx_buf2)
 
-        for d in drawables:
-            vert_count = d.get("VertexCount", 0)
-            meshes_buf.extend(struct.pack("<I", vert_count))
-            # Collect positions and UVs
-            verts = d.get("Vertices", [])
-            uvs = d.get("Uvs", [])
-            for v in verts:
-                all_positions.extend([float(v[0]), float(v[1])])
-            for uv in uvs:
-                all_uvs.extend([float(uv[0]), float(uv[1])])
+            # DynamicFlags
+            for d in drawables:
+                df = bytearray()
+                df.extend(struct.pack("<I", 0x01))
+                all_sections.append(df)
 
-        # Vertex positions for ALL drawables (SoA: all positions, then all UVs)
-        for val in all_positions:
-            meshes_buf.extend(struct.pack("<f", val))
-
-        # Vertex UVs for ALL drawables
-        for val in all_uvs:
-            meshes_buf.extend(struct.pack("<f", val))
-
-        # Triangle indices per drawable
-        for d in drawables:
-            tri_count = d.get("TriangleCount", 0)
-            meshes_buf.extend(struct.pack("<I", tri_count))
-            indices = d.get("Indices", [])
-            for idx in indices:
-                all_indices.append(int(idx))
-
-        # All triangle indices
-        for idx in all_indices:
-            meshes_buf.extend(struct.pack("<I", idx))
-
-        # DynamicFlags per drawable
-        for d in drawables:
-            meshes_buf.extend(struct.pack("<I", 0x01))  # visible
-
-        section_data[SECTION_ART_MESHES] = meshes_buf
-
-        # Empty sections
-        for sid in [SECTION_PART_COLORS, SECTION_MASKS, SECTION_SHAPES,
-                     SECTION_LAYOUTS, SECTION_PART_OPACITIES, SECTION_USER_DATA,
-                     SECTION_PART_IDS]:
-            empty = bytearray()
-            empty.extend(struct.pack("<I", 0))
-            section_data[sid] = empty
-
-        # ── Write header ────────────────────────────────────────────
+        # ── Write v6 header (64 bytes, magic+version+zeros) ──
+        header_buf = bytearray(64)
         struct.pack_into("<4sI", header_buf, 0, MOC3_MAGIC, MOC3_VERSION)
-        struct.pack_into("<I", header_buf, 8, 0)  # endianness (little)
-        struct.pack_into("<I", header_buf, 12, 0)  # consistency flags
-        # FileSize at offset 16 — will patch later
-        struct.pack_into("<f", header_buf, 20, canvas_w)
-        struct.pack_into("<f", header_buf, 24, canvas_h)
-        struct.pack_into("<f", header_buf, 28, 0.0)  # canvas origin X
-        struct.pack_into("<f", header_buf, 32, 0.0)  # canvas origin Y
-        struct.pack_into("<f", header_buf, 36, 1.0)  # pixels per unit
-        struct.pack_into("<I", header_buf, 40, len(parts))
-        struct.pack_into("<I", header_buf, 44, len(parameters))
-        struct.pack_into("<I", header_buf, 48, d_count)
-        struct.pack_into("<I", header_buf, 52, d_count)  # ArtMeshCount
-        struct.pack_into("<I", header_buf, 56, 1)  # TextureCount
-        struct.pack_into("<I", header_buf, 60, 0)  # reserved
-
+        buf = bytearray()
         buf.extend(header_buf)
 
-        # ── Write section table ─────────────────────────────────────
-        section_table_start = len(buf)  # should be 64
-        section_table_size = len(SECTION_IDS) * 16
-        buf.extend(b"\x00" * section_table_size)
+        # ── Offset table (flat uint32 array) ───────────────
+        section_count = len(all_sections)
+        ot_start = len(buf)
+        buf.extend(b"\x00" * (section_count * 4))
 
-        # ── Write string table ──────────────────────────────────────
-        string_table_offset = len(buf)
+        # ── Section data ────────────────────────────────────
+        section_offsets = []
+        for data in all_sections:
+            section_offsets.append(len(buf))
+            buf.extend(data)
+
+        # ── Global string table ─────────────────────────────
         str_bytes = str_table.to_bytes()
         buf.extend(str_bytes)
 
-        # ── Write section data ──────────────────────────────────────
-        section_offsets: dict[int, int] = {}
-        for sid in SECTION_IDS:
-            section_offsets[sid] = len(buf)
-            data = section_data.get(sid, struct.pack("<I", 0))
-            buf.extend(data)
+        # ── Patch offset table ──────────────────────────────
+        for i, off in enumerate(section_offsets):
+            struct.pack_into("<I", buf, ot_start + i * 4, off)
 
-        # ── Patch section table ─────────────────────────────────────
-        for i, sid in enumerate(SECTION_IDS):
-            entry_offset = section_table_start + i * 16
-            data_offset = section_offsets[sid]
-            data_length = len(section_data.get(sid, b""))
-            struct.pack_into("<IIII", buf, entry_offset,
-                             data_offset, data_length, sid, 0)
-
-        # ── Patch file size in header ───────────────────────────────
-        total_size = len(buf)
-        struct.pack_into("<I", buf, 16, total_size)
+        # ── File size ───────────────────────────────────────
+        struct.pack_into("<I", buf, 16, len(buf))
 
         return bytes(buf)
 

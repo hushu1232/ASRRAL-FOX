@@ -1,3 +1,4 @@
+using AstralFox.Platform;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEditor.SceneManagement;
@@ -47,7 +48,7 @@ namespace AstralFox.Editor
             cam.depth = -1;
             camGo.tag = "MainCamera";
 
-            // URP camera data — only add if URP is available (Built-in RP compatibility)
+            // URP camera data
             var urpDataType = System.Type.GetType(
                 "UnityEngine.Rendering.Universal.UniversalAdditionalCameraData, Unity.RenderPipelines.Universal.Runtime");
             if (urpDataType != null)
@@ -74,7 +75,7 @@ namespace AstralFox.Editor
             var dcs = camGo.GetComponent<DesktopCameraSetup>();
             if (dcs == null) dcs = camGo.AddComponent<DesktopCameraSetup>();
 
-            // --- Directional Light (required for Built-in RP Standard shader rendering) ---
+            // --- Directional Light (used for scene illumination) ---
             var dirLightGo = GameObject.Find("Directional Light");
             if (dirLightGo == null)
             {
@@ -169,6 +170,10 @@ namespace AstralFox.Editor
             var lipSync = root.GetComponent<LipSync>();
             if (lipSync == null) lipSync = root.AddComponent<LipSync>();
 
+            // --- Audio2Face (advanced lip sync from audio amplitude) ---
+            var a2f = root.GetComponent<Audio2Face>();
+            if (a2f == null) a2f = root.AddComponent<Audio2Face>();
+
             // ========== Phase 6: PAD Emotion + Data Store ==========
 
             // --- PADEmotionEngine ---
@@ -201,7 +206,11 @@ namespace AstralFox.Editor
             bool usingCubismModel = false;
 #if CUBISM_SDK_PRESENT
             // Try to find an imported Cubism model prefab
-            var cubismPrefab = FindCubismModelPrefab();
+            // Priority: YouXiaoMiao (v5 Core 6) → any CubismModel prefab
+            var cubismPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Assets/Live2D/Models/YouXiaoMiao/悠小喵.prefab");
+            if (cubismPrefab == null)
+                cubismPrefab = FindCubismModelPrefab();
             if (cubismPrefab != null)
             {
                 // --- Clean up old 2D fallback leftover from a previous setup ---

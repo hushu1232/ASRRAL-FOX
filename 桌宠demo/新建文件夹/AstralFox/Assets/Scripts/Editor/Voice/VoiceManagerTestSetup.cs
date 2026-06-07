@@ -63,12 +63,12 @@ namespace AstralFox.Editor.Voice
             testCube.transform.localScale = new Vector3(1f, 1f, 1f);
             // Bright orange material — easy to see against dark gray bg
             var cubeRenderer = testCube.GetComponent<MeshRenderer>();
-            cubeRenderer.sharedMaterial = new Material(Shader.Find("Standard"));
+            cubeRenderer.sharedMaterial = new Material(Shader.Find("Unlit/Color"));
             cubeRenderer.sharedMaterial.color = new Color(1f, 0.5f, 0f);
             Debug.Log("[VoiceSetup] SanityCheckCube placed at (0,0,0) with bright orange material." +
                 " If this cube is not visible, the camera/lighting is broken.");
 
-            // ── Ensure directional light for Built-in RP Standard shader ──
+            // ── Ensure directional light for scene visibility ──
             var existingLight = Object.FindObjectOfType<Light>();
             if (existingLight == null || existingLight.type != LightType.Directional)
             {
@@ -78,7 +78,7 @@ namespace AstralFox.Editor.Voice
                 light.intensity = 1.5f;
                 light.transform.rotation = Quaternion.Euler(50, -30, 0);
                 light.color = Color.white;
-                Debug.Log("[VoiceSetup] Created directional light for Built-in RP rendering.");
+                Debug.Log("[VoiceSetup] Created directional light for scene visibility.");
             }
             else
             {

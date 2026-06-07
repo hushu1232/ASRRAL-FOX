@@ -62,6 +62,8 @@ namespace AstralFox.Voice
         private int _lastSamplePos;
         private float _processTimer;
         private float[] _sampleBuffer;
+        private float[] _tempBuffer;  // reusable temp for ring-buffer reads
+        private float[] _rmsWindow;   // cached for UpdateCurrentLevel
         private string _activeDevice;
         private float _recordingStartTime;
 
@@ -138,7 +140,9 @@ namespace AstralFox.Voice
             }
 
             _lastSamplePos = 0;
-            _sampleBuffer = new float[_sampleRate * _channels]; // 1 second buffer
+            _sampleBuffer = new float[_sampleRate * _channels * 2]; // 2 second buffer (covers all clip durations)
+            _tempBuffer = new float[_sampleRate * _channels * 2];   // reusable temp for ring-buffer reads
+            _rmsWindow = new float[256]; // fixed-size RMS window
             IsRecording = true;
             _recordingStartTime = Time.unscaledTime;
             OnRecordingStateChanged?.Invoke(true);
@@ -207,7 +211,10 @@ namespace AstralFox.Voice
                 samplesAvailable = _micClip.samples - _lastSamplePos;
             if (samplesAvailable <= 0) return;
 
-            float[] data = new float[samplesAvailable];
+            // Reuse pre-allocated buffer; only realloc if sample count exceeds capacity
+            if (samplesAvailable > _sampleBuffer.Length)
+                _sampleBuffer = new float[samplesAvailable];
+            float[] data = _sampleBuffer;
 
             if (currentPos > _lastSamplePos || samplesAvailable <= (_micClip.samples - _lastSamplePos))
             {
@@ -219,17 +226,17 @@ namespace AstralFox.Voice
             }
             else
             {
-                // Two-part read across ring buffer boundary
+                // Two-part read across ring buffer boundary — reuse _tempBuffer
                 int part1Len = _micClip.samples - _lastSamplePos;
                 int part2Len = samplesAvailable - part1Len;
                 if (part1Len <= 0 || part2Len <= 0) return;
                 if (_lastSamplePos + part1Len > _micClip.samples) return;
-                float[] part1 = new float[part1Len];
-                float[] part2 = new float[part2Len];
-                _micClip.GetData(part1, _lastSamplePos);
-                _micClip.GetData(part2, 0);
-                System.Array.Copy(part1, 0, data, 0, part1Len);
-                System.Array.Copy(part2, 0, data, part1Len, part2Len);
+                // Read part1 (end of clip) into temp buffer, copy relevant portion
+                _micClip.GetData(_tempBuffer, _lastSamplePos);
+                System.Array.Copy(_tempBuffer, 0, data, 0, part1Len);
+                // Read part2 (start of clip) into temp buffer, copy relevant portion
+                _micClip.GetData(_tempBuffer, 0);
+                System.Array.Copy(_tempBuffer, 0, data, part1Len, part2Len);
             }
 
             _lastSamplePos = currentPos;
@@ -244,16 +251,15 @@ namespace AstralFox.Voice
             int pos = Microphone.GetPosition(_activeDevice);
             if (pos < 0) return;
 
-            // Sample a small window for RMS
-            int windowSize = Mathf.Min(256, _micClip.samples);
+            // Sample a small window for RMS — reuse cached buffer
+            int windowSize = Mathf.Min(_rmsWindow.Length, _micClip.samples);
             int startPos = Mathf.Clamp(pos - windowSize, 0, _micClip.samples - windowSize);
             if (startPos < 0 || startPos + windowSize > _micClip.samples) return;
-            float[] window = new float[windowSize];
-            _micClip.GetData(window, startPos);
+            _micClip.GetData(_rmsWindow, startPos);
 
             float sum = 0f;
-            for (int i = 0; i < window.Length; i++)
-                sum += window[i] * window[i];
+            for (int i = 0; i < windowSize; i++)
+                sum += _rmsWindow[i] * _rmsWindow[i];
 
             float rms = Mathf.Sqrt(sum / window.Length);
             CurrentLevel = Mathf.Clamp01(rms * 5f); // amplify for visibility

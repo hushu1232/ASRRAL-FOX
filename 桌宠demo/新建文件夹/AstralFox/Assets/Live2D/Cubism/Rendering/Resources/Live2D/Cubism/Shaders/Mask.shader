@@ -20,10 +20,8 @@ Shader "Live2D Cubism/Mask"
             "Queue" = "Transparent"
             "IgnoreProjector" = "True"
             "RenderType" = "Transparent"
+            "RenderPipeline" = "UniversalPipeline"
         }
-
-
-        BindChannels{ Bind "Vertex", vertex Bind "texcoord", texcoord Bind "Color", color }
 
 
         LOD      100
@@ -35,40 +33,48 @@ Shader "Live2D Cubism/Mask"
 
         Pass
         {
-            CGPROGRAM
+            HLSLPROGRAM
             #pragma vertex   vert
             #pragma fragment frag
 
             #define CUBISM_MASK_ON
 
+            #pragma multi_compile_local _ CUBISM_INVERT_ON
 
-            #include "UnityCG.cginc"
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "CubismCG.cginc"
 
 
-            struct appdata_t
+            struct Attributes
             {
                 float4 vertex   : POSITION;
-                fixed4 color    : COLOR;
+                float4 color    : COLOR;
                 float2 texcoord : TEXCOORD0;
-
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
 
-            struct v2f
+            struct Varyings
             {
                 float4 vertex   : SV_POSITION;
-                fixed4 color    : COLOR;
+                float4 color    : COLOR;
                 float2 texcoord : TEXCOORD0;
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
 
+            CBUFFER_START(UnityPerMaterial)
+            sampler2D _MainTex;
             CUBISM_SHADER_VARIABLES
+            CBUFFER_END
 
 
-            v2f vert(appdata_t IN)
+            Varyings vert(Attributes IN)
             {
-                v2f OUT;
+                Varyings OUT;
+                UNITY_SETUP_INSTANCE_ID(IN);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(OUT);
 
 
                 CUBISM_TO_MASK_CLIP_POS(IN, OUT);
@@ -82,17 +88,14 @@ Shader "Live2D Cubism/Mask"
             }
 
 
-            sampler2D _MainTex;
-
-
-            fixed4 frag(v2f IN) : SV_Target
+            half4 frag(Varyings IN) : SV_Target
             {
                 return CUBISM_MASK_CHANNEL * tex2D(_MainTex, IN.texcoord).a;
 
             }
 
 
-            ENDCG
+            ENDHLSL
         }
     }
 }

@@ -1,3 +1,4 @@
+using AstralFox.Platform;
 using UnityEngine;
 
 namespace AstralFox
@@ -60,6 +61,7 @@ namespace AstralFox
 
         private TransparentWindow _tw;
         private Camera _mainCamera;
+        private AppLifecycle _appLifecycle;
         private Collider2D[] _foxColliders;
         private Animation.PADEmotionEngine _padEngine;
         private Audio.SoundEffectManager _sfx;
@@ -94,6 +96,7 @@ namespace AstralFox
             _foxColliders = GetComponentsInChildren<Collider2D>();
             _padEngine = GetComponent<Animation.PADEmotionEngine>();
             _sfx = GetComponent<Audio.SoundEffectManager>();
+            _appLifecycle = FindObjectOfType<AppLifecycle>();
         }
 
         private void Start()
@@ -359,7 +362,7 @@ namespace AstralFox
             // F2: open web settings
             if (Input.GetKeyDown(KeyCode.F2))
             {
-                var appLifecycle = FindObjectOfType<AppLifecycle>();
+                var appLifecycle = _appLifecycle;
                 if (appLifecycle != null)
                     appLifecycle.OpenSettingsPanel();
                 else

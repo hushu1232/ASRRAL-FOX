@@ -11,7 +11,8 @@ namespace AstralFox.Animation
 {
     /// <summary>
     /// Bridges the FoxAnimationController to a Live2D CubismModel.
-    /// Reads/writes CubismParameter values via string IDs.
+    /// Uses <see cref="FoxParam"/> enum-indexed arrays for zero-allocation
+    /// per-frame parameter access.
     ///
     /// Prerequisites:
     ///   1. Import Live2D Cubism SDK for Unity into the project
@@ -32,23 +33,28 @@ namespace AstralFox.Animation
         private float _smoothTime = 0.08f;
 
         [Header("Fallback (No SDK)")]
-        [SerializeField, Tooltip("Used when Cubism SDK is not present. Parameters stored in a dictionary.")]
+        [SerializeField, Tooltip("Used when Cubism SDK is not present. Parameters stored in arrays.")]
         private bool _useFallbackOnMissingSDK = true;
 
         #endregion
 
         #region Private Fields
 
+        private static readonly int FoxParamCount = (int)FoxParam.COUNT;
+
 #if CUBISM_SDK_PRESENT
         private CubismModel _model;
         private CubismParameterStore _paramStore;
-        private Dictionary<string, CubismParameter> _paramLookup = new Dictionary<string, CubismParameter>();
+        /// <summary>CubismParameter references indexed by FoxParam enum.</summary>
+        private CubismParameter[] _cubismParams;
 #endif
 
-        // Fallback storage (no SDK)
-        private Dictionary<string, ParameterData> _fallbackParams = new Dictionary<string, ParameterData>();
-        private Dictionary<string, float> _currentValues = new Dictionary<string, float>();
-        private Dictionary<string, float> _velocityRefs = new Dictionary<string, float>();
+        // Fallback metadata (no SDK)
+        private ParameterData[] _fallbackData;
+
+        // Per-frame state — zero-allocation array access indexed by FoxParam
+        private float[] _currentValues;
+        private float[] _velocityRefs;
 
         private bool _isReady;
         private bool _usingCubism;
@@ -65,7 +71,7 @@ namespace AstralFox.Animation
                 if (_usingCubism && _model != null)
                     return _model.Parameters.Length;
 #endif
-                return _fallbackParams.Count;
+                return _fallbackData?.Length ?? 0;
             }
         }
 
@@ -77,6 +83,13 @@ namespace AstralFox.Animation
 
         private void Awake()
         {
+            _currentValues = new float[FoxParamCount];
+            _velocityRefs = new float[FoxParamCount];
+#if CUBISM_SDK_PRESENT
+            _cubismParams = new CubismParameter[FoxParamCount];
+#endif
+            _fallbackData = new ParameterData[FoxParamCount];
+
 #if CUBISM_SDK_PRESENT
             InitializeCubism();
             if (_usingCubism) return;
@@ -121,13 +134,16 @@ namespace AstralFox.Animation
             }
 
             _paramStore = GetComponentInChildren<CubismParameterStore>();
-            _paramLookup.Clear();
 
             foreach (var param in _model.Parameters)
             {
-                _paramLookup[param.Id] = param;
-                _currentValues[param.Id] = param.DefaultValue;
-                _velocityRefs[param.Id] = 0f;
+                if (FoxParamId.StringToEnum.TryGetValue(param.Id, out var foxParam))
+                {
+                    int idx = (int)foxParam;
+                    _cubismParams[idx] = param;
+                    _currentValues[idx] = param.DefaultValue;
+                    _velocityRefs[idx] = 0f;
+                }
             }
 
             _usingCubism = true;
@@ -139,151 +155,202 @@ namespace AstralFox.Animation
         private void InitializeFallback()
         {
             // Define basic parameters for testing without a Live2D model
-            RegisterFallbackParam(FoxParamId.AngleX,         -30f, 30f, 0f);
-            RegisterFallbackParam(FoxParamId.AngleY,         -30f, 30f, 0f);
-            RegisterFallbackParam(FoxParamId.AngleZ,         -30f, 30f, 0f);
-            RegisterFallbackParam(FoxParamId.BodyAngleX,     -20f, 20f, 0f);
-            RegisterFallbackParam(FoxParamId.BodyAngleY,     -20f, 20f, 0f);
-            RegisterFallbackParam(FoxParamId.BodyAngleZ,     -20f, 20f, 0f);
-            RegisterFallbackParam(FoxParamId.EyeLOpen,        0f,  1f, 1f);
-            RegisterFallbackParam(FoxParamId.EyeROpen,        0f,  1f, 1f);
-            RegisterFallbackParam(FoxParamId.EyeBallX,       -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EyeBallY,       -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EyeSmileL,       0f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EyeSmileR,       0f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.BrowLY,         -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.BrowRY,         -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.BrowLAngle,     -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.BrowRAngle,     -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.MouthOpenY,      0f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.MouthForm,      -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EarL,           -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EarR,           -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EarLRotate,     -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EarRRotate,     -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.TailSwing,      -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.TailCurl,       -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.TailWag,         0f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.ArmL,           -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.ArmR,           -1f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.Breath,          0f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EmotionHappy,    0f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EmotionSad,      0f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EmotionShy,      0f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.EmotionAngry,    0f,  1f, 0f);
-            RegisterFallbackParam(FoxParamId.Blush,           0f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamAngleX,       -30f, 30f, 0f);
+            RegisterFallbackParam(FoxParam.ParamAngleY,       -30f, 30f, 0f);
+            RegisterFallbackParam(FoxParam.ParamAngleZ,       -30f, 30f, 0f);
+            RegisterFallbackParam(FoxParam.ParamBodyAngleX,   -20f, 20f, 0f);
+            RegisterFallbackParam(FoxParam.ParamBodyAngleY,   -20f, 20f, 0f);
+            RegisterFallbackParam(FoxParam.ParamBodyAngleZ,   -20f, 20f, 0f);
+            RegisterFallbackParam(FoxParam.ParamEyeLOpen,      0f,  1f, 1f);
+            RegisterFallbackParam(FoxParam.ParamEyeROpen,      0f,  1f, 1f);
+            RegisterFallbackParam(FoxParam.ParamEyeBallX,     -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamEyeBallY,     -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamBrowLY,       -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamBrowRY,       -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamBrowLAngle,   -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamBrowRAngle,   -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamMouthOpenY,    0f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamMouthForm,    -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamEarL,         -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamEarR,         -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamTail,         -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamBreath,        0f,  1f, 0f);
+            // Emotion params — reuse existing parameter slots with dedicated indices
+            // (Emotion values are driven through the same brow/tail params)
+            RegisterFallbackParam(FoxParam.ParamHairFront,    -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamHairSideL,    -1f,  1f, 0f);
+            RegisterFallbackParam(FoxParam.ParamHairSideR,    -1f,  1f, 0f);
 
             _usingCubism = false;
             _isReady = true;
-            Debug.Log($"[CubismParameterDriver] Fallback mode: {_fallbackParams.Count} parameters registered.");
+            Debug.Log($"[CubismParameterDriver] Fallback mode: {FoxParamCount} parameter slots.");
         }
 
-        private void RegisterFallbackParam(string id, float min, float max, float def)
+        private void RegisterFallbackParam(FoxParam param, float min, float max, float def)
         {
-            _fallbackParams[id] = new ParameterData { min = min, max = max, defaultValue = def };
-            _currentValues[id] = def;
-            _velocityRefs[id] = 0f;
+            int idx = (int)param;
+            _fallbackData[idx] = new ParameterData { min = min, max = max, defaultValue = def };
+            _currentValues[idx] = def;
+            _velocityRefs[idx] = 0f;
         }
 
         #endregion
 
-        #region IFoxParameterDriver
+        #region IFoxParameterDriver — Fast Path (FoxParam enum)
 
-        public void SetParameter(string paramId, float value)
+        /// <summary>
+        /// Sets a parameter value (smoothed). ZERO allocation — use for per-frame calls.
+        /// </summary>
+        public void SetParameter(FoxParam param, float value)
         {
             if (!_isReady) return;
-            if (!_currentValues.ContainsKey(paramId)) return;
+            int idx = (int)param;
 
 #if CUBISM_SDK_PRESENT
-            if (_usingCubism && _paramLookup.TryGetValue(paramId, out var cubismParam))
+            if (_usingCubism)
             {
+                var cubismParam = _cubismParams[idx];
+                if (cubismParam == null) return;
                 float target = Mathf.Clamp(value, cubismParam.MinimumValue, cubismParam.MaximumValue);
-                float velocity = _velocityRefs[paramId];
-                float smoothed = Mathf.SmoothDamp(_currentValues[paramId], target, ref velocity, _smoothTime);
-                _velocityRefs[paramId] = velocity;
-                _currentValues[paramId] = smoothed;
+                float velocity = _velocityRefs[idx];
+                float smoothed = Mathf.SmoothDamp(_currentValues[idx], target, ref velocity, _smoothTime);
+                _velocityRefs[idx] = velocity;
+                _currentValues[idx] = smoothed;
                 cubismParam.Value = smoothed;
                 return;
             }
 #endif
-            // Fallback
-            if (_fallbackParams.TryGetValue(paramId, out var data))
+            // Fallback: direct array access
             {
+                var data = _fallbackData[idx];
+                if (Mathf.Approximately(data.max, 0f) && Mathf.Approximately(data.min, 0f)) return; // unregistered
                 float target = Mathf.Clamp(value, data.min, data.max);
-                float velocity = _velocityRefs[paramId];
-                float smoothed = Mathf.SmoothDamp(_currentValues[paramId], target, ref velocity, _smoothTime);
-                _velocityRefs[paramId] = velocity;
-                _currentValues[paramId] = smoothed;
+                float velocity = _velocityRefs[idx];
+                float smoothed = Mathf.SmoothDamp(_currentValues[idx], target, ref velocity, _smoothTime);
+                _velocityRefs[idx] = velocity;
+                _currentValues[idx] = smoothed;
             }
         }
 
-        public void SetParameterImmediate(string paramId, float value)
+        /// <summary>
+        /// Sets a parameter immediately (no smoothing). ZERO allocation.
+        /// </summary>
+        public void SetParameterImmediate(FoxParam param, float value)
         {
             if (!_isReady) return;
+            int idx = (int)param;
 
 #if CUBISM_SDK_PRESENT
-            if (_usingCubism && _paramLookup.TryGetValue(paramId, out var cubismParam))
+            if (_usingCubism)
             {
+                var cubismParam = _cubismParams[idx];
+                if (cubismParam == null) return;
                 float clamped = Mathf.Clamp(value, cubismParam.MinimumValue, cubismParam.MaximumValue);
-                _currentValues[paramId] = clamped;
-                _velocityRefs[paramId] = 0f;
+                _currentValues[idx] = clamped;
+                _velocityRefs[idx] = 0f;
                 cubismParam.Value = clamped;
                 return;
             }
 #endif
-            if (_fallbackParams.TryGetValue(paramId, out var data))
             {
+                var data = _fallbackData[idx];
+                if (Mathf.Approximately(data.max, 0f) && Mathf.Approximately(data.min, 0f)) return;
                 float clamped = Mathf.Clamp(value, data.min, data.max);
-                _currentValues[paramId] = clamped;
-                _velocityRefs[paramId] = 0f;
+                _currentValues[idx] = clamped;
+                _velocityRefs[idx] = 0f;
             }
+        }
+
+        /// <summary>
+        /// Gets a parameter value. ZERO allocation.
+        /// </summary>
+        public float GetParameter(FoxParam param)
+        {
+            return _currentValues[(int)param];
+        }
+
+        /// <summary>
+        /// Checks if a parameter is registered.
+        /// </summary>
+        public bool HasParameter(FoxParam param)
+        {
+            int idx = (int)param;
+#if CUBISM_SDK_PRESENT
+            if (_usingCubism) return _cubismParams[idx] != null;
+#endif
+            var data = _fallbackData[idx];
+            return !(Mathf.Approximately(data.max, 0f) && Mathf.Approximately(data.min, 0f));
+        }
+
+        #endregion
+
+        #region IFoxParameterDriver — String Compatibility (bridges to enum fast path)
+
+        public void SetParameter(string paramId, float value)
+        {
+            if (FoxParamId.StringToEnum.TryGetValue(paramId, out var p))
+                SetParameter(p, value);
+        }
+
+        public void SetParameterImmediate(string paramId, float value)
+        {
+            if (FoxParamId.StringToEnum.TryGetValue(paramId, out var p))
+                SetParameterImmediate(p, value);
         }
 
         public float GetParameter(string paramId)
         {
-            if (_currentValues.TryGetValue(paramId, out float val))
-                return val;
+            if (FoxParamId.StringToEnum.TryGetValue(paramId, out var p))
+                return GetParameter(p);
             return 0f;
         }
 
         public bool HasParameter(string paramId)
         {
-#if CUBISM_SDK_PRESENT
-            if (_usingCubism) return _paramLookup.ContainsKey(paramId);
-#endif
-            return _fallbackParams.ContainsKey(paramId);
+            if (FoxParamId.StringToEnum.TryGetValue(paramId, out var p))
+                return HasParameter(p);
+            return false;
         }
 
         public float GetParameterMin(string paramId)
         {
+            if (FoxParamId.StringToEnum.TryGetValue(paramId, out var p))
+            {
+                int idx = (int)p;
 #if CUBISM_SDK_PRESENT
-            if (_usingCubism && _paramLookup.TryGetValue(paramId, out var p))
-                return p.MinimumValue;
+                if (_usingCubism && _cubismParams[idx] != null)
+                    return _cubismParams[idx].MinimumValue;
 #endif
-            if (_fallbackParams.TryGetValue(paramId, out var d))
-                return d.min;
+                return _fallbackData[idx].min;
+            }
             return 0f;
         }
 
         public float GetParameterMax(string paramId)
         {
+            if (FoxParamId.StringToEnum.TryGetValue(paramId, out var p))
+            {
+                int idx = (int)p;
 #if CUBISM_SDK_PRESENT
-            if (_usingCubism && _paramLookup.TryGetValue(paramId, out var p))
-                return p.MaximumValue;
+                if (_usingCubism && _cubismParams[idx] != null)
+                    return _cubismParams[idx].MaximumValue;
 #endif
-            if (_fallbackParams.TryGetValue(paramId, out var d))
-                return d.max;
+                return _fallbackData[idx].max;
+            }
             return 1f;
         }
 
         public float GetParameterDefault(string paramId)
         {
+            if (FoxParamId.StringToEnum.TryGetValue(paramId, out var p))
+            {
+                int idx = (int)p;
 #if CUBISM_SDK_PRESENT
-            if (_usingCubism && _paramLookup.TryGetValue(paramId, out var p))
-                return p.DefaultValue;
+                if (_usingCubism && _cubismParams[idx] != null)
+                    return _cubismParams[idx].DefaultValue;
 #endif
-            if (_fallbackParams.TryGetValue(paramId, out var d))
-                return d.defaultValue;
+                return _fallbackData[idx].defaultValue;
+            }
             return 0f;
         }
 

@@ -189,7 +189,7 @@ namespace AstralFox.Diagnostics
             Debug.Log($"[DIAG] Render Pipeline: {GraphicsSettings.currentRenderPipeline?.name ?? "Built-in"}");
             Debug.Log($"[DIAG] Quality Level: {QualitySettings.names[QualitySettings.GetQualityLevel()]}");
 
-            // 9. Check lights (Built-in RP needs lights for Standard shader)
+            // 9. Check lights
             var lights = FindObjectsOfType<Light>(includeInactive: true);
             int directionalLights = 0;
             foreach (var l in lights)
@@ -199,7 +199,7 @@ namespace AstralFox.Diagnostics
             }
             Debug.Log($"[DIAG] Lights: {lights.Length} total, {directionalLights} active directional");
             if (directionalLights == 0)
-                Debug.LogWarning("[DIAG] WARNING: No active directional light! Standard shader objects will render black.");
+                Debug.LogWarning("[DIAG] WARNING: No active directional light! Renderable objects may appear dark.");
 
             // 10. Audio diagnostic
             Debug.Log("[DIAG] Audio State: " +

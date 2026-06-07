@@ -122,7 +122,7 @@ namespace AstralFox.Voice
         private float _recordDuration;
 
         // Audio accumulator for recording
-        private List<float> _recordedAudio = new List<float>();
+        private List<float> _recordedAudio = new List<float>(capacity: 240000);
 
         // Transcript tracking (for history recording)
         private string _pendingTranscript = "";

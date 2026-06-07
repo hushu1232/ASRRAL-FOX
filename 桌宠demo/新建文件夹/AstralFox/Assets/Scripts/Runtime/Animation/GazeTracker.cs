@@ -37,6 +37,7 @@ namespace AstralFox.Animation
         private float _blinkDuration = 0.15f;
 
         private IFoxParameterDriver _driver;
+        private Camera _cachedCamera;
         private float _targetX, _targetY;
         private float _currentX, _currentY;
         private float _velocityX, _velocityY;
@@ -50,6 +51,8 @@ namespace AstralFox.Animation
             _driver = GetComponent<IFoxParameterDriver>();
             if (_driver == null)
                 _driver = GetComponentInChildren<IFoxParameterDriver>();
+
+            _cachedCamera = Camera.main;
 
             _saccadeTimer = Random.Range(0f, _saccadeInterval);
         }
@@ -66,8 +69,8 @@ namespace AstralFox.Animation
         private void UpdateGazeTarget()
         {
             // Convert cursor position to normalized screen coordinates relative to pet position
-            Vector3 petScreenPos = Camera.main != null
-                ? Camera.main.WorldToScreenPoint(transform.position)
+            Vector3 petScreenPos = _cachedCamera != null
+                ? _cachedCamera.WorldToScreenPoint(transform.position)
                 : Vector3.zero;
 
             Vector2 cursorPos = Input.mousePosition;
@@ -119,8 +122,8 @@ namespace AstralFox.Animation
 
             float blinkScale = _isBlinking ? 0.2f : 1f;
 
-            _driver.SetParameter("ParamEyeBallX", _currentX * blinkScale);
-            _driver.SetParameter("ParamEyeBallY", _currentY * blinkScale);
+            _driver.SetParameter(FoxParam.ParamEyeBallX, _currentX * blinkScale);
+            _driver.SetParameter(FoxParam.ParamEyeBallY, _currentY * blinkScale);
         }
 
         private void TriggerBlink()

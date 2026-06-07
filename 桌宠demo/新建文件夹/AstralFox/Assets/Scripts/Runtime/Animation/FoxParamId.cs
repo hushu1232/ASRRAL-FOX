@@ -1,7 +1,37 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AstralFox.Animation
 {
+    /// <summary>
+    /// Enum-based parameter index for zero-allocation parameter access.
+    /// Use <see cref="FoxParamId"/> string constants for dictionary lookups (init only).
+    /// Use <see cref="FoxParam"/> enum values for per-frame SetParameter/GetParameter calls.
+    /// </summary>
+    public enum FoxParam
+    {
+        // Head angles
+        ParamAngleX, ParamAngleY, ParamAngleZ,
+        // Body angles
+        ParamBodyAngleX, ParamBodyAngleY, ParamBodyAngleZ,
+        // Eyes
+        ParamEyeLOpen, ParamEyeROpen, ParamEyeBallX, ParamEyeBallY,
+        // Brows
+        ParamBrowLY, ParamBrowRY, ParamBrowLAngle, ParamBrowRAngle,
+        // Mouth
+        ParamMouthOpenY, ParamMouthForm,
+        // Ears
+        ParamEarL, ParamEarR,
+        // Tail
+        ParamTail,
+        // Breath
+        ParamBreath,
+        // Hair
+        ParamHairFront, ParamHairSideL, ParamHairSideR,
+
+        COUNT // ← must be last: gives array size
+    }
+
     /// <summary>
     /// Live2D parameter IDs for AI-generated models (AstralFox Rigging Pipeline).
     /// ───────────────────────────────────────────────
@@ -111,5 +141,55 @@ namespace AstralFox.Animation
             Breath,
             HairFront, HairSideL, HairSideR,
         };
+
+        // ── String → FoxParam enum lookup (built once, used per-frame) ──
+
+        /// <summary>
+        /// Maps Cubism parameter string IDs to <see cref="FoxParam"/> enum values.
+        /// Built at static init time. Used by CubismParameterDriver to convert
+        /// string lookups to O(1) array accesses.
+        /// </summary>
+        public static readonly Dictionary<string, FoxParam> StringToEnum = new()
+        {
+            { AngleX, FoxParam.ParamAngleX },
+            { AngleY, FoxParam.ParamAngleY },
+            { AngleZ, FoxParam.ParamAngleZ },
+            { ParamBodyAngleX, FoxParam.ParamBodyAngleX },
+            { ParamBodyAngleY, FoxParam.ParamBodyAngleY },
+            { ParamBodyAngleZ, FoxParam.ParamBodyAngleZ },
+            { EyeLOpen, FoxParam.ParamEyeLOpen },
+            { EyeROpen, FoxParam.ParamEyeROpen },
+            { EyeBallX, FoxParam.ParamEyeBallX },
+            { EyeBallY, FoxParam.ParamEyeBallY },
+            { BrowLY, FoxParam.ParamBrowLY },
+            { BrowRY, FoxParam.ParamBrowRY },
+            { BrowLAngle, FoxParam.ParamBrowLAngle },
+            { BrowRAngle, FoxParam.ParamBrowRAngle },
+            { MouthOpenY, FoxParam.ParamMouthOpenY },
+            { MouthForm, FoxParam.ParamMouthForm },
+            { EarL, FoxParam.ParamEarL },
+            { EarR, FoxParam.ParamEarR },
+            { "ParamTail", FoxParam.ParamTail },
+            { Breath, FoxParam.ParamBreath },
+            { HairFront, FoxParam.ParamHairFront },
+            { HairSideL, FoxParam.ParamHairSideL },
+            { HairSideR, FoxParam.ParamHairSideR },
+        };
+
+        /// <summary>
+        /// Reverse lookup: FoxParam → Cubism SDK string ID.
+        /// Built at static init time for Cubism SDK bridge.
+        /// </summary>
+        public static readonly string[] EnumToString;
+
+        static FoxParamId()
+        {
+            int count = (int)FoxParam.COUNT;
+            EnumToString = new string[count];
+            foreach (var kv in StringToEnum)
+            {
+                EnumToString[(int)kv.Value] = kv.Key;
+            }
+        }
     }
 }

@@ -157,7 +157,10 @@ namespace AstralFox.Voice
         private async void Start()
         {
             if (_autoConnect)
-                await ConnectAsync();
+            {
+                try { await ConnectAsync(); }
+                catch (System.Exception ex) { Debug.LogError($"[BackendClient] Start connect failed: {ex.Message}"); }
+            }
         }
 
         private void Update()
@@ -194,9 +197,11 @@ namespace AstralFox.Voice
             }
         }
 
-        private async void OnDestroy()
+        private void OnDestroy()
         {
-            await DisconnectAsync();
+            // Fire-and-forget disconnect — don't use async void OnDestroy
+            // (Unity may destroy the object before the async continuation runs)
+            _ = DisconnectAsync();
         }
 
         #endregion
@@ -554,14 +559,7 @@ namespace AstralFox.Voice
 
         private static byte[] ConvertToPCM16(float[] samples)
         {
-            byte[] pcm = new byte[samples.Length * 2];
-            for (int i = 0; i < samples.Length; i++)
-            {
-                short s = (short)(Mathf.Clamp(samples[i], -1f, 1f) * 32767f);
-                pcm[i * 2] = (byte)(s & 0xFF);
-                pcm[i * 2 + 1] = (byte)((s >> 8) & 0xFF);
-            }
-            return pcm;
+            return AudioUtility.ConvertToPCM16(samples);
         }
 
         #endregion

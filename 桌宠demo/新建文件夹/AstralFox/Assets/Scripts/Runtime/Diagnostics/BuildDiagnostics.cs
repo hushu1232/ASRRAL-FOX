@@ -1,3 +1,4 @@
+using AstralFox.Platform;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 

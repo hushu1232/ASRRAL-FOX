@@ -137,14 +137,22 @@ namespace AstralFox.Voice
 
         private async void Start()
         {
+            try
+            {
 #if LLMUNITY_PRESENT
-            if (!_useFallback)
-            {
-                await LoadModelAsync();
-            }
-            else
+                if (!_useFallback)
+                {
+                    await LoadModelAsync();
+                }
+                else
 #endif
+                {
+                    EnableFallback();
+                }
+            }
+            catch (System.Exception ex)
             {
+                Debug.LogError($"[LLMService] Start failed: {ex.Message}");
                 EnableFallback();
             }
         }

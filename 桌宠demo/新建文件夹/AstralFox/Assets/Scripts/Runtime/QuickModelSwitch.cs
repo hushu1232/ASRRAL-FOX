@@ -20,6 +20,7 @@ namespace AstralFox
         private Rect _menuRect;
         private int _hoveredIndex = -1;
         private FoxInteraction _interaction;
+        private Camera _cachedCamera;
 
         private static readonly List<(string name, string path, string source)> Models = new()
         {
@@ -38,6 +39,7 @@ namespace AstralFox
         private void Awake()
         {
             _interaction = GetComponent<FoxInteraction>();
+            _cachedCamera = Camera.main;
         }
 
         private void Update()
@@ -73,8 +75,8 @@ namespace AstralFox
         private bool IsNearPet(Vector2 mousePos)
         {
             if (_interaction == null) return false;
-            Vector3 petScreen = Camera.main != null
-                ? Camera.main.WorldToScreenPoint(transform.position)
+            Vector3 petScreen = _cachedCamera != null
+                ? _cachedCamera.WorldToScreenPoint(transform.position)
                 : Vector3.zero;
             return Vector2.Distance(mousePos, petScreen) < 120f;
         }

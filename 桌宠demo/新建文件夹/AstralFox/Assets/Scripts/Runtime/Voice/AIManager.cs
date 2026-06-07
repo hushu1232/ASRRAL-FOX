@@ -124,6 +124,15 @@ namespace AstralFox.Voice
         private bool _wizardShown;
         private Task _currentPipelineTask;
 
+        // Saved delegate references for proper unsubscribe in OnDestroy
+        private Action _asrReadyHandler;
+        private Action<string> _asrErrorHandler;
+        private Action _ttsReadyHandler;
+        private Action<string> _ttsErrorHandler;
+        private Action<bool> _llmReadyHandler;
+        private Action<string> _llmTokenHandler;
+        private Action<string> _llmCompleteHandler;
+
         #endregion
 
         #region Unity Lifecycle
@@ -145,7 +154,23 @@ namespace AstralFox.Voice
 
         private void OnDestroy()
         {
-            // Services are stopped by LocalServiceBase.OnDestroy
+            // Unsubscribe all service event handlers
+            if (_asrService != null)
+            {
+                if (_asrReadyHandler != null) _asrService.OnReady -= _asrReadyHandler;
+                if (_asrErrorHandler != null) _asrService.OnError -= _asrErrorHandler;
+            }
+            if (_ttsService != null)
+            {
+                if (_ttsReadyHandler != null) _ttsService.OnReady -= _ttsReadyHandler;
+                if (_ttsErrorHandler != null) _ttsService.OnError -= _ttsErrorHandler;
+            }
+            if (_llmService != null)
+            {
+                if (_llmReadyHandler != null) _llmService.OnReadyChanged -= _llmReadyHandler;
+                if (_llmTokenHandler != null) _llmService.OnTokenGenerated -= _llmTokenHandler;
+                if (_llmCompleteHandler != null) _llmService.OnResponseComplete -= _llmCompleteHandler;
+            }
         }
 
         #endregion
@@ -167,33 +192,38 @@ namespace AstralFox.Voice
 
             if (_asrService != null)
             {
-                _asrService.OnReady += () => UpdateSingleStatus(asr: ServiceTier.Ready);
-                _asrService.OnError += (err) =>
+                _asrReadyHandler = () => UpdateSingleStatus(asr: ServiceTier.Ready);
+                _asrErrorHandler = (err) =>
                 {
                     Debug.LogWarning($"[AIManager] ASR error: {err}");
                     UpdateSingleStatus(asr: ServiceTier.Degraded, message: "语音识别服务异常，使用离线降级模式");
                 };
+                _asrService.OnReady += _asrReadyHandler;
+                _asrService.OnError += _asrErrorHandler;
                 tasks.Add(_asrService.StartServiceAsync());
             }
 
             if (_ttsService != null)
             {
-                _ttsService.OnReady += () => UpdateSingleStatus(tts: ServiceTier.Ready);
-                _ttsService.OnError += (err) =>
+                _ttsReadyHandler = () => UpdateSingleStatus(tts: ServiceTier.Ready);
+                _ttsErrorHandler = (err) =>
                 {
                     Debug.LogWarning($"[AIManager] TTS error: {err}");
                     UpdateSingleStatus(tts: ServiceTier.Degraded, message: "语音合成服务异常");
                 };
+                _ttsService.OnReady += _ttsReadyHandler;
+                _ttsService.OnError += _ttsErrorHandler;
                 tasks.Add(_ttsService.StartServiceAsync());
             }
 
             // LLM is in-process, just check readiness
             if (_llmService != null)
             {
-                _llmService.OnReadyChanged += (ready) =>
+                _llmReadyHandler = (ready) =>
                 {
                     UpdateSingleStatus(llm: ready ? ServiceTier.Ready : ServiceTier.Degraded);
                 };
+                _llmService.OnReadyChanged += _llmReadyHandler;
                 UpdateSingleStatus(llm: _llmService.IsReady ? ServiceTier.Ready : ServiceTier.Degraded);
             }
 
@@ -689,14 +719,16 @@ namespace AstralFox.Voice
             // Wire LLM streaming (when LLMService provides tokens)
             if (_llmService != null)
             {
-                _llmService.OnTokenGenerated += (token) =>
+                _llmTokenHandler = (token) =>
                 {
                     _llmTokenDelegates?.Invoke(token);
                 };
-                _llmService.OnResponseComplete += (response) =>
+                _llmCompleteHandler = (response) =>
                 {
                     _llmResponseDelegates?.Invoke(response);
                 };
+                _llmService.OnTokenGenerated += _llmTokenHandler;
+                _llmService.OnResponseComplete += _llmCompleteHandler;
             }
 
             // Wire speech to TTS audio callbacks

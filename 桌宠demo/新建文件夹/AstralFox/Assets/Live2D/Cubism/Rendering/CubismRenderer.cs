@@ -249,12 +249,12 @@ namespace Live2D.Cubism.Rendering
                 }
 #endif
 
-                if (!MeshRenderer.material)
+                if (!MeshRenderer.sharedMaterial)
                 {
-                    MeshRenderer.material = SetMaterialFromPicker();
+                    MeshRenderer.sharedMaterial = SetMaterialFromPicker();
                 }
 
-                return MeshRenderer.material;
+                return MeshRenderer.sharedMaterial;
             }
             set
             {
@@ -268,7 +268,7 @@ namespace Live2D.Cubism.Rendering
                 #endif
 
 
-                MeshRenderer.material = value;
+                MeshRenderer.sharedMaterial = value;
             }
         }
 
@@ -549,12 +549,15 @@ namespace Live2D.Cubism.Rendering
         /// </remarks>
         public void SwapMeshes()
         {
+            if (Meshes == null || Meshes.Length < 2) return;
+
             // Perform internal swap.
             BackMesh = FrontMesh;
             FrontMesh = (FrontMesh == 0) ? 1 : 0;
 
             // Update colors.
-            Meshes[BackMesh].colors = VertexColors;
+            if (Meshes[BackMesh] != null)
+                Meshes[BackMesh].colors = VertexColors;
 
 
             // Update swap info.
@@ -1147,6 +1150,8 @@ namespace Live2D.Cubism.Rendering
 
             if (!RenderController.Model)
             {
+                Debug.LogWarning($"[CubismRenderer] TryInitialize skipped on '{name}': RenderController.Model is null. " +
+                    "Drawable will not render. Ensure a CubismModel is present and active.");
                 return;
             }
 

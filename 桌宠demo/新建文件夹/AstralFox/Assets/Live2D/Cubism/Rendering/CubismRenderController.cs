@@ -524,6 +524,13 @@ namespace Live2D.Cubism.Rendering
         /// </summary>
         private Color[] _newScreenColors;
 
+        /// <summary>
+        /// Lookup table: Drawable.UnmanagedIndex → renderers[] index.
+        /// Rebuilt when renderer count changes. Eliminates per-frame Array.FindIndex.
+        /// </summary>
+        private int[] _unmanagedIndexToRendererIndex;
+        private int _lastRendererCount = -1;
+
 
         /// <summary>
         /// Model has update controller component.
@@ -581,6 +588,9 @@ namespace Live2D.Cubism.Rendering
             if (_renderers == null
                 || _renderers.Length < 1)
             {
+                Debug.LogWarning($"[CubismRenderController] TryInitialize failed on '{gameObject.name}': " +
+                    "no renderers were created. Model will not render. Check that Drawables exist and " +
+                    "Cubism SDK is correctly configured.");
                 return;
             }
 
@@ -835,9 +845,11 @@ namespace Live2D.Cubism.Rendering
         /// </summary>
         private void OnEnable()
         {
-            // Fail silently.
+            // Fail silently in normal operation; log diagnostic for debugging.
             if (!Model)
             {
+                Debug.LogWarning($"[CubismRenderController] OnEnable skipped: no CubismModel on '{gameObject.name}'. " +
+                    "Model will not render. Ensure the GameObject has a CubismModel component in its children.");
                 return;
             }
 
@@ -859,12 +871,9 @@ namespace Live2D.Cubism.Rendering
             {
                 Model.ForceUpdateNow();
 
-                if (DrawableRenderers != null)
+                for (var drawableIndex = 0; drawableIndex < DrawableRenderers.Length; drawableIndex++)
                 {
-                    for (var drawableIndex = 0; drawableIndex < DrawableRenderers.Length; drawableIndex++)
-                    {
-                        DrawableRenderers[drawableIndex]?.SwapMeshes();
-                    }
+                    DrawableRenderers[drawableIndex].SwapMeshes();
                 }
             }
 #endif
@@ -913,6 +922,39 @@ namespace Live2D.Cubism.Rendering
         }
 
         /// <summary>
+        /// Rebuilds the UnmanagedIndex → renderer lookup table.
+        /// Called once per frame only when the renderer count changes.
+        /// </summary>
+        private void RebuildLookupIfNeeded()
+        {
+            var renderers = DrawableRenderers;
+            if (renderers == null) return;
+
+            if (_lastRendererCount == renderers.Length && _unmanagedIndexToRendererIndex != null)
+                return;
+
+            // Find the maximum UnmanagedIndex to size the array.
+            int maxIndex = 0;
+            foreach (var r in renderers)
+            {
+                var idx = r?.Drawable?.UnmanagedIndex ?? -1;
+                if (idx > maxIndex) maxIndex = idx;
+            }
+
+            _unmanagedIndexToRendererIndex = new int[maxIndex + 1];
+            for (int i = 0; i < _unmanagedIndexToRendererIndex.Length; i++)
+                _unmanagedIndexToRendererIndex[i] = -1;
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var idx = renderers[i]?.Drawable?.UnmanagedIndex ?? -1;
+                if (idx >= 0) _unmanagedIndexToRendererIndex[idx] = i;
+            }
+
+            _lastRendererCount = renderers.Length;
+        }
+
+        /// <summary>
         /// Called whenever new render data is available.
         /// </summary>
         /// <param name="sender">Model with new render data.</param>
@@ -923,14 +965,20 @@ namespace Live2D.Cubism.Rendering
             var drawables = sender.Drawables;
             var renderers = DrawableRenderers;
 
+            if (drawables == null || renderers == null || data == null) return;
+
+            // Rebuild lookup table when renderer count changes.
+            RebuildLookupIfNeeded();
 
             // Handle render data changes.
             for (var dataIndex = 0; dataIndex < data.Length; ++dataIndex)
             {
-                var rendererIndex = Array.FindIndex(renderers, cubismRenderer => cubismRenderer.Drawable.UnmanagedIndex == dataIndex);
+                var rendererIndex = (dataIndex < _unmanagedIndexToRendererIndex.Length)
+                    ? _unmanagedIndexToRendererIndex[dataIndex]
+                    : -1;
 
-                // Skip if no renderer found.
-                if (rendererIndex < 0) {
+                // Skip if no renderer found or out of bounds.
+                if (rendererIndex < 0 || rendererIndex >= renderers.Length) {
                     continue;
                 }
 
@@ -1021,10 +1069,12 @@ namespace Live2D.Cubism.Rendering
 
             for (var dataIndex = 0; dataIndex < data.Length; ++dataIndex)
             {
-                var rendererIndex = Array.FindIndex(renderers, cubismRenderer => cubismRenderer.Drawable.UnmanagedIndex == dataIndex);
+                var rendererIndex = (dataIndex < _unmanagedIndexToRendererIndex.Length)
+                    ? _unmanagedIndexToRendererIndex[dataIndex]
+                    : -1;
 
-                // Skip if no renderer found.
-                if (rendererIndex < 0)
+                // Skip if no renderer found or out of bounds.
+                if (rendererIndex < 0 || rendererIndex >= renderers.Length)
                 {
                     continue;
                 }
@@ -1039,15 +1089,18 @@ namespace Live2D.Cubism.Rendering
                     isMultiplyColorUpdated = true;
                 }
 
-                newMultiplyColors[rendererIndex] = renderers[rendererIndex].MultiplyColor;
+                if (rendererIndex < newMultiplyColors.Length)
+                    newMultiplyColors[rendererIndex] = renderers[rendererIndex].MultiplyColor;
             }
 
             for (var dataIndex = 0; dataIndex < data.Length; ++dataIndex)
             {
-                var rendererIndex = Array.FindIndex(renderers, cubismRenderer => cubismRenderer.Drawable.UnmanagedIndex == dataIndex);
+                var rendererIndex = (dataIndex < _unmanagedIndexToRendererIndex.Length)
+                    ? _unmanagedIndexToRendererIndex[dataIndex]
+                    : -1;
 
-                // Skip if no renderer found.
-                if (rendererIndex < 0)
+                // Skip if no renderer found or out of bounds.
+                if (rendererIndex < 0 || rendererIndex >= renderers.Length)
                 {
                     continue;
                 }
@@ -1062,7 +1115,8 @@ namespace Live2D.Cubism.Rendering
                     isScreenColorUpdated = true;
                 }
 
-                newScreenColors[rendererIndex] = renderers[rendererIndex].ScreenColor;
+                if (rendererIndex < newScreenColors.Length)
+                    newScreenColors[rendererIndex] = renderers[rendererIndex].ScreenColor;
             }
 
             // Pass blend color changes to handler (if available).

@@ -326,42 +326,17 @@ namespace AstralFox.Voice
 
         private static float[] ConvertPCM16ToFloat(byte[] pcm16)
         {
-            float[] samples = new float[pcm16.Length / 2];
-            for (int i = 0; i < samples.Length; i++)
-            {
-                short s = (short)(pcm16[i * 2] | (pcm16[i * 2 + 1] << 8));
-                samples[i] = s / 32768f;
-            }
-            return samples;
+            return AudioUtility.ConvertPCM16ToFloat(pcm16);
         }
 
         private static int FindDataChunk(byte[] wav)
         {
-            int pos = 12;
-            while (pos + 8 <= wav.Length)
-            {
-                string chunkId = System.Text.Encoding.ASCII.GetString(wav, pos, 4);
-                if (chunkId == "data") return pos;
-                int chunkSize = BitConverter.ToInt32(wav, pos + 4);
-                pos += 8 + chunkSize;
-            }
-            return -1;
+            return AudioUtility.FindDataChunk(wav);
         }
 
         private static float[] ResampleSimple(float[] input, int fromRate, int toRate)
         {
-            if (fromRate == toRate) return input;
-            float ratio = (float)fromRate / toRate;
-            int outputLen = Mathf.RoundToInt(input.Length / ratio);
-            float[] output = new float[outputLen];
-            for (int i = 0; i < outputLen; i++)
-            {
-                float srcIdx = i * ratio;
-                int idx0 = Mathf.FloorToInt(srcIdx);
-                int idx1 = Mathf.Min(idx0 + 1, input.Length - 1);
-                output[i] = Mathf.Lerp(input[idx0], input[idx1], srcIdx - idx0);
-            }
-            return output;
+            return AudioUtility.ResampleSimple(input, fromRate, toRate);
         }
 
         #endregion

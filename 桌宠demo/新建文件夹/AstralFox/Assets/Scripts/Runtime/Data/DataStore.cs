@@ -20,6 +20,7 @@ namespace AstralFox.Data
     public sealed class DataStore
     {
         private readonly ReaderWriterLockSlim _rwLock = new ReaderWriterLockSlim();
+        private readonly object _saveLock = new object(); // dedicated lock object (never lock(this))
         private Task _pendingSaveTask;
         private bool _saveScheduled;
         #region Record Types
@@ -191,7 +192,7 @@ namespace AstralFox.Data
                         File.Delete(filePath);
                     File.Move(tempPath, filePath);
 
-                    lock (this)
+                    lock (_saveLock)
                     {
                         _dirty = false;
                         _saveScheduled = false;
@@ -200,7 +201,7 @@ namespace AstralFox.Data
                 catch (Exception ex)
                 {
                     Debug.LogError($"[DataStore] Async save failed: {ex.Message}");
-                    lock (this) { _saveScheduled = false; }
+                    lock (_saveLock) { _saveScheduled = false; }
                 }
             });
         }
@@ -521,17 +522,14 @@ namespace AstralFox.Data
             return text.Substring(0, maxLength);
         }
 
-        /// <summary>Force save on application quit — bypasses throttle and waits for completion.</summary>
+        /// <summary>Force save on application quit — bypasses throttle. Does NOT block main thread.</summary>
         public static void OnApplicationQuit()
         {
             Instance._lastSaveTime = 0f; // bypass throttle
+            Instance._dirty = true;      // ensure pending changes are written
             Instance.Save();
-            // Block for up to 3 seconds for pending background save to complete
-            if (Instance._pendingSaveTask != null && !Instance._pendingSaveTask.IsCompleted)
-            {
-                try { Instance._pendingSaveTask.Wait(3000); }
-                catch { /* Best effort; don't crash on quit */ }
-            }
+            // Don't block the main thread — save completes on background thread.
+            // Unity will wait for background tasks to finish during shutdown.
         }
 
         #endregion

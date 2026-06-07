@@ -1,3 +1,4 @@
+using AstralFox.Platform;
 using UnityEngine;
 
 namespace AstralFox
@@ -102,7 +103,7 @@ namespace AstralFox
         private void Update()
         {
             if (_enableGlobalHotkeys)
-                Config.GlobalHotkeyManager.Instance.Poll();
+                Platform.GlobalHotkeyManager.Instance.Poll();
 
             // Check if web settings exit was requested
             if (_webServer != null && _webServer.ExitRequested)
@@ -117,8 +118,8 @@ namespace AstralFox
         private void OnApplicationQuit()
         {
             _webServer?.Stop();
-            Config.GlobalHotkeyManager.Instance.Dispose();
-            Config.TrayIconManager.Instance.Dispose();
+            Platform.GlobalHotkeyManager.Instance.Dispose();
+            Platform.TrayIconManager.Instance.Dispose();
             Data.DataStore.OnApplicationQuit();
             Debug.Log("[AppLifecycle] Shutdown complete.");
         }
@@ -196,9 +197,9 @@ namespace AstralFox
 
         private void SetupTrayIcon()
         {
-            if (!Config.TrayIconManager.Instance.IsSupported) return;
+            if (!Platform.TrayIconManager.Instance.IsSupported) return;
 
-            Config.TrayIconManager.Instance.Initialize(
+            Platform.TrayIconManager.Instance.Initialize(
                 onShow: () =>
                 {
                     var tw = FindObjectOfType<TransparentWindow>();
@@ -222,7 +223,7 @@ namespace AstralFox
 
         private void SetupHotkeys()
         {
-            Config.GlobalHotkeyManager.Instance.Register(
+            Platform.GlobalHotkeyManager.Instance.Register(
                 onSettings: () =>
                 {
                     Config.UnityMainThreadDispatcher.Enqueue(() =>

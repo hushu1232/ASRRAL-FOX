@@ -140,7 +140,8 @@ namespace AstralFox
             if (GUILayout.Button("← 返回", GUILayout.Height(35))) _step = WizardStep.VoiceConfig;
             if (GUILayout.Button("下一步 →", GUILayout.Height(35)))
             {
-                _config.model_path = $"/models/{ModelNames[_selectedModelIndex].Split(' ')[0]}/";
+                var modelKey = ModelNames[_selectedModelIndex].Split(' ')[0];
+                _config.model_path = $"/models/{modelKey}/{modelKey.ToLower()}.model3.json";
                 _step = WizardStep.Personality;
             }
             GUILayout.EndHorizontal();
