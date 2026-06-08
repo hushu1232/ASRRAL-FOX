@@ -793,7 +793,8 @@ namespace Live2D.Cubism.Rendering.URP
 
                     var descriptor = resourceData.activeColorTexture.GetDescriptor(renderGraph);
                     descriptor.wrapMode = TextureWrapMode.Repeat;
-                    descriptor.filterMode = FilterMode.Bilinear; // smooth sampling, not Point (pixelated)
+                    descriptor.filterMode = FilterMode.Trilinear; // smooth + mipmap blending
+                    descriptor.anisoLevel = 4; // anisotropic filtering for oblique angles
 
                     descriptor.name = "CommonTexture";
                     passData.CommonRenderingTextureHandle = renderGraph.CreateTexture(descriptor);

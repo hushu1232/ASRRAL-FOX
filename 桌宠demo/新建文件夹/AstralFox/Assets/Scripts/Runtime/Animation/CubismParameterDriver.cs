@@ -19,6 +19,7 @@ namespace AstralFox.Animation
     ///   2. Add "CUBISM_SDK_PRESENT" to PlayerSettings → Scripting Define Symbols
     ///   3. Attach this component to a GameObject with a CubismModel in its children
     /// </summary>
+    [DefaultExecutionOrder(250)] // Run before CubismExpressionController (300) so expressions override
     [RequireComponent(typeof(Animator))]
     public sealed class CubismParameterDriver : MonoBehaviour, IFoxParameterDriver
     {

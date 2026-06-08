@@ -1,3 +1,4 @@
+using AstralFox;
 using AstralFox.Platform;
 using UnityEditor;
 using UnityEditor.Animations;
@@ -8,6 +9,7 @@ using AstralFox.Animation;
 using AstralFox.Audio;
 using AstralFox.Voice;
 #if CUBISM_SDK_PRESENT
+using Live2D.Cubism.Framework.Expression;
 using Live2D.Cubism.Core;
 using Live2D.Cubism.Framework;
 using Live2D.Cubism.Framework.Raycasting;
@@ -388,6 +390,18 @@ namespace AstralFox.Editor
             // Live2DAnimator (IPetAnimator adapter)
             var live2DAnim = live2DGo.GetComponent<Live2DAnimator>();
             if (live2DAnim == null) live2DAnim = live2DGo.AddComponent<Live2DAnimator>();
+
+            // CubismExpressionController — play native .exp3.json expressions
+            var expCtrl = live2DGo.GetComponent<CubismExpressionController>();
+            if (expCtrl == null) expCtrl = live2DGo.AddComponent<CubismExpressionController>();
+            expCtrl.ExpressionsList = AssetDatabase.LoadAssetAtPath<CubismExpressionList>(
+                "Assets/Live2D/Models/YouXiaoMiao/YouXiaoMiao.expressionList.asset");
+            if (expCtrl.ExpressionsList != null)
+                Debug.Log($"[AstralFox] ExpressionController set up with {expCtrl.ExpressionsList.CubismExpressionObjects?.Length ?? 0} expressions.");
+
+            // ExpressionHotkeys — keyboard shortcuts for testing
+            if (live2DGo.GetComponent<ExpressionHotkeys>() == null)
+                live2DGo.AddComponent<ExpressionHotkeys>();
         }
 
         /// <summary>

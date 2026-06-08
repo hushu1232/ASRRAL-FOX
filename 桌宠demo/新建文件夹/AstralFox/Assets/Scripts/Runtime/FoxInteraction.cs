@@ -80,6 +80,7 @@ namespace AstralFox
         // Physics state
         private Vector2 _velocity;           // Current throw velocity (pixels/sec)
         private Vector2 _offsetFromCenter;   // Spring offset during drag
+        private Vector2 _dragVelocity;       // Damped spring velocity
         private Vector2 _throwStartPos;      // Position where throw started
         private float _squashScale = 1f;     // Current squash/stretch factor
         private float _squashVelocity;       // For smooth squash recovery
@@ -322,6 +323,8 @@ namespace AstralFox
                 _dragStartWindowPos = _tw.GetWindowScreenPosition();
                 _prevMousePos = currentMouse;
                 _velocity = Vector2.zero;
+                _dragVelocity = Vector2.zero;
+                _offsetFromCenter = Vector2.zero;
                 Animation.PetAnimationManager.Instance?.CurrentAnimator?.OnDragStart();
             }
 
@@ -338,8 +341,14 @@ namespace AstralFox
                     currentMouse.x - _dragStartMouseScreen.x,
                     currentMouse.y - _dragStartMouseScreen.y);
 
-                _offsetFromCenter = Vector2.Lerp(_offsetFromCenter, targetOffset,
-                    1f - Mathf.Exp(-_springStiffness * Time.deltaTime));
+                // Critically-damped spring: uses both stiffness AND damping
+                // stiffness controls responsiveness, damping prevents oscillation
+                float dt = Mathf.Min(Time.deltaTime, 0.05f); // cap for consistency
+                float stiffness = _springStiffness;
+                float damping = _springStiffness * _springDamping * 10f; // scale damping to stiffness
+                Vector2 springForce = (targetOffset - _offsetFromCenter) * stiffness;
+                _dragVelocity += (springForce - _dragVelocity * damping) * dt;
+                _offsetFromCenter += _dragVelocity * dt;
 
                 int newX = _dragStartWindowPos.x + (int)_offsetFromCenter.x;
                 int newY = _dragStartWindowPos.y + (int)_offsetFromCenter.y;

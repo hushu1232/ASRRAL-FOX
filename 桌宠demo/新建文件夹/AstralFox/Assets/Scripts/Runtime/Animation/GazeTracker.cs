@@ -13,8 +13,8 @@ namespace AstralFox.Animation
         [SerializeField, Range(0f, 1f)]
         private float _gazeStrength = 0.6f;
 
-        [SerializeField, Range(0.5f, 5f)]
-        private float _smoothSpeed = 3f;
+        [SerializeField, Range(0.2f, 10f)]
+        private float _smoothSpeed = 1.5f; // lower = smoother, more natural delay
 
         [SerializeField, Range(0.1f, 1f)]
         private float _maxOffset = 0.5f;
@@ -109,9 +109,11 @@ namespace AstralFox.Animation
 
         private void ApplyGaze()
         {
-            // Smooth damp to target
-            _currentX = Mathf.SmoothDamp(_currentX, _targetX + _saccadeX, ref _velocityX, 1f / _smoothSpeed);
-            _currentY = Mathf.SmoothDamp(_currentY, _targetY + _saccadeY, ref _velocityY, 1f / _smoothSpeed);
+            // Smooth damp to target — use maxDelta for frame-rate-independent feel
+            float smoothTime = 1f / _smoothSpeed;
+            float maxSpeed = 3f; // max parameter units per second
+            _currentX = Mathf.SmoothDamp(_currentX, _targetX + _saccadeX, ref _velocityX, smoothTime, maxSpeed, Time.deltaTime);
+            _currentY = Mathf.SmoothDamp(_currentY, _targetY + _saccadeY, ref _velocityY, smoothTime, maxSpeed, Time.deltaTime);
 
             // Handle blink
             if (_isBlinking)

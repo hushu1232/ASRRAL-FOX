@@ -39,9 +39,9 @@ namespace AstralFox.Platform
 
         [Header("Window Size")]
         [SerializeField, Range(200, 2000)]
-        private int _windowWidth = 800;
+        private int _windowWidth = 1400;
         [SerializeField, Range(200, 2000)]
-        private int _windowHeight = 900;
+        private int _windowHeight = 1800;
 
         [Header("Chroma Key")]
         [SerializeField]
