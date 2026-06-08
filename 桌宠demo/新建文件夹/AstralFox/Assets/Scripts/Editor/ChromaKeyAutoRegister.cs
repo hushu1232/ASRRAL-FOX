@@ -1,23 +1,20 @@
 using UnityEditor;
-using UnityEditor.Rendering.Universal;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 
 namespace AstralFox.Editor
 {
     /// <summary>
-    /// Auto-registers ChromaKeyRenderFeature into the active URP Renderer asset
-    /// on project load. Ensures the GPU chroma key is always active without
-    /// requiring manual configuration.
+    /// Auto-registers required URP RendererFeatures on project load:
+    /// - CubismRenderPassFeature (required for Live2D Cubism rendering)
+    /// - ChromaKeyRenderFeature (GPU chroma key for transparent window)
     ///
-    /// Checks both PC_Renderer and Mobile_Renderer assets.
-    /// Safe to call multiple times — skips if already registered.
+    /// Without CubismRenderPassFeature, Cubism models will NOT render at all.
     /// </summary>
     [InitializeOnLoad]
     public static class ChromaKeyAutoRegister
     {
-        private const string PcRendererPath = "Assets/Settings/PC_Renderer.asset";
-        private const string MobileRendererPath = "Assets/Settings/Mobile_Renderer.asset";
+        private const string RendererPath = "Assets/URPAsset_Renderer.asset";
 
         static ChromaKeyAutoRegister()
         {
@@ -28,75 +25,90 @@ namespace AstralFox.Editor
         {
             EditorApplication.delayCall -= RegisterOnce;
 
-            RegisterForRenderer(PcRendererPath);
-            RegisterForRenderer(MobileRendererPath);
-        }
-
-        private static void RegisterForRenderer(string assetPath)
-        {
-            var rendererData = AssetDatabase.LoadAssetAtPath<ScriptableRendererData>(assetPath);
+            var rendererData = AssetDatabase.LoadAssetAtPath<ScriptableRendererData>(RendererPath);
             if (rendererData == null)
             {
-                Debug.LogWarning($"[ChromaKey] URP Renderer not found at: {assetPath}");
+                Debug.LogWarning($"[AutoRegister] URP Renderer not found at: {RendererPath}");
                 return;
             }
 
-            // Check if already registered
-            var features = rendererData.rendererFeatures;
-            foreach (var feature in features)
+            bool cubismRegistered = false;
+            bool chromaKeyRegistered = false;
+
+            foreach (var feature in rendererData.rendererFeatures)
             {
-                if (feature is Live2D.Cubism.Rendering.URP.ChromaKeyRenderFeature existing)
+                if (feature is Live2D.Cubism.Rendering.URP.CubismRenderPassFeature)
+                    cubismRegistered = true;
+                if (feature is Live2D.Cubism.Rendering.URP.ChromaKeyRenderFeature)
+                    chromaKeyRegistered = true;
+            }
+
+            if (!cubismRegistered)
+            {
+                var cubismFeature = ScriptableObject.CreateInstance<Live2D.Cubism.Rendering.URP.CubismRenderPassFeature>();
+                cubismFeature.name = "CubismRenderPassFeature";
+                AssetDatabase.AddObjectToAsset(cubismFeature, RendererPath);
+                rendererData.rendererFeatures.Add(cubismFeature);
+                cubismRegistered = true;
+                Debug.Log("[AutoRegister] ✓ Registered CubismRenderPassFeature (required for Live2D rendering)");
+            }
+
+            if (!chromaKeyRegistered)
+            {
+                var chromaFeature = ScriptableObject.CreateInstance<Live2D.Cubism.Rendering.URP.ChromaKeyRenderFeature>();
+                if (chromaFeature == null)
                 {
-                    // Already registered — update color to green (in case it was magenta before)
-                    existing.settings.chromaColor = new Color(0f, 1f, 0f, 1f);
-                    EditorUtility.SetDirty(rendererData);
-                    return;
+                    Debug.LogError("[AutoRegister] FAILED: CreateInstance<ChromaKeyRenderFeature>() returned null!");
+                }
+                else
+                {
+                    chromaFeature.settings.chromaColor = new Color(0f, 1f, 0f, 1f);
+                    chromaFeature.settings.tolerance = 0.25f;
+                    chromaFeature.settings.softness = 0.05f;
+                    chromaFeature.name = "ChromaKeyRenderFeature";
+                    // Must add as sub-asset for serialization to persist
+                    AssetDatabase.AddObjectToAsset(chromaFeature, RendererPath);
+                    rendererData.rendererFeatures.Add(chromaFeature);
+                    chromaKeyRegistered = true;
+                    Debug.Log("[AutoRegister] ✓ Registered ChromaKeyRenderFeature");
                 }
             }
 
-            // Not found — add it
-            var chromaFeature = ScriptableObject.CreateInstance<Live2D.Cubism.Rendering.URP.ChromaKeyRenderFeature>();
-            chromaFeature.settings.chromaColor = new Color(0f, 1f, 0f, 1f); // Green
-            chromaFeature.settings.tolerance = 0.25f;
-            chromaFeature.settings.softness = 0.05f;
+            if (cubismRegistered && chromaKeyRegistered)
+            {
+                return;
+            }
 
-            // Add via ScriptableRendererData API
-            rendererData.rendererFeatures.Add(chromaFeature);
             EditorUtility.SetDirty(rendererData);
-
-            // Save the renderer data asset
-            AssetDatabase.SaveAssetIfDirty(rendererData);
-
-            Debug.Log($"[ChromaKey] ✓ Registered ChromaKeyRenderFeature in {assetPath}");
+            AssetDatabase.SaveAssets();
         }
 
-        [MenuItem("AstralFox/ChromaKey/Register in URP Renderer")]
+        [MenuItem("AstralFox/ChromaKey/Register All Renderer Features")]
         public static void RegisterManually()
         {
-            RegisterForRenderer(PcRendererPath);
-            RegisterForRenderer(MobileRendererPath);
-            Debug.Log("[ChromaKey] Manual registration complete.");
+            RegisterOnce();
+            Debug.Log("[AutoRegister] Manual registration complete.");
         }
 
         [MenuItem("AstralFox/ChromaKey/Check Registration Status")]
         public static void CheckStatus()
         {
-            foreach (var path in new[] { PcRendererPath, MobileRendererPath })
-            {
-                var rd = AssetDatabase.LoadAssetAtPath<ScriptableRendererData>(path);
-                if (rd == null) { Debug.Log($"[ChromaKey] {path}: NOT FOUND"); continue; }
+            var rd = AssetDatabase.LoadAssetAtPath<ScriptableRendererData>(RendererPath);
+            if (rd == null) { Debug.Log($"[AutoRegister] {RendererPath}: NOT FOUND"); return; }
 
-                bool found = false;
-                foreach (var f in rd.rendererFeatures)
+            bool cubism = false, chroma = false;
+            foreach (var f in rd.rendererFeatures)
+            {
+                if (f is Live2D.Cubism.Rendering.URP.CubismRenderPassFeature) cubism = true;
+                if (f is Live2D.Cubism.Rendering.URP.ChromaKeyRenderFeature ck)
                 {
-                    if (f is Live2D.Cubism.Rendering.URP.ChromaKeyRenderFeature ck)
-                    {
-                        Debug.Log($"[ChromaKey] {path}: ✓ REGISTERED (color={ck.settings.chromaColor}, tolerance={ck.settings.tolerance})");
-                        found = true; break;
-                    }
+                    chroma = true;
+                    Debug.Log($"[AutoRegister] ChromaKey: ✓ (color={ck.settings.chromaColor}, tolerance={ck.settings.tolerance})");
                 }
-                if (!found) Debug.Log($"[ChromaKey] {path}: ✗ NOT registered");
             }
+
+            Debug.Log($"[AutoRegister] CubismRenderPassFeature: {(cubism ? "✓ REGISTERED" : "✗ MISSING (Cubism models WILL NOT RENDER)")}");
+            Debug.Log($"[AutoRegister] ChromaKeyRenderFeature: {(chroma ? "✓ REGISTERED" : "✗ missing")}");
         }
     }
 }

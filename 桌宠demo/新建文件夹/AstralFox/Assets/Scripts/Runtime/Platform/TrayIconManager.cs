@@ -340,7 +340,7 @@ namespace AstralFox.Platform
 
             if (_hwnd == IntPtr.Zero)
             {
-                Debug.LogError($"[TrayIcon] CreateWindowEx failed: {Marshal.GetLastWin32Error()}");
+                Debug.LogWarning($"[TrayIcon] CreateWindowEx failed (err={Marshal.GetLastWin32Error()}). Tray icon disabled.");
                 UnregisterClass(_windowClass, module);
                 return;
             }

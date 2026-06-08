@@ -364,29 +364,15 @@ namespace AstralFox.Voice
             // LLMUnity LLMCharacter.Chat is synchronous on the calling thread,
             // but actual inference runs on LLMUnity's internal worker thread.
             // We wrap in Task.Run so the Unity main thread is not blocked.
-            var tcs = new TaskCompletionSource<string>();
-
-            try
+            return Task.Run(() =>
             {
                 ct.ThrowIfCancellationRequested();
-
                 string result = _llmCharacter.Chat(prompt, token =>
                 {
                     OnTokenGenerated?.Invoke(token);
                 });
-
-                tcs.TrySetResult(result);
-            }
-            catch (OperationCanceledException)
-            {
-                tcs.TrySetCanceled();
-            }
-            catch (Exception ex)
-            {
-                tcs.TrySetException(ex);
-            }
-
-            return tcs.Task;
+                return result;
+            }, ct);
         }
 #endif
 

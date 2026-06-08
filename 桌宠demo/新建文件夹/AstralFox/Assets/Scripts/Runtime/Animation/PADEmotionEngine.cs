@@ -157,6 +157,13 @@ namespace AstralFox.Animation
 
         private float _saveTimer;
 
+        // Pre-cached emotion event labels (avoids enum.ToString boxing)
+        private static readonly string[] EmotionEventLabels = new string[]
+        {
+            "Petted", "Ignored", "PositiveChat", "NegativeChat", "WakeUp", "FallAsleep",
+            "Dragged", "Fed", "Scared", "Complimented", "Insulted", "PlayedWith", "LongAbsence",
+        };
+
         // ── Per-frame optimization: cache slow-changing values ──
         private float _lastAffectionCheckTime;
         private float _cachedAffectionScale = 1f;
@@ -302,7 +309,7 @@ namespace AstralFox.Animation
             _rawA = Mathf.Clamp(_rawA + evt.arousalDelta, -1f, 1f);
             _rawD = Mathf.Clamp(_rawD + evt.dominanceDelta, -1f, 1f);
 
-            Data.DataStore.Instance.AddEmotionRecord(_rawP, _rawA, _rawD, evt.type.ToString());
+            Data.DataStore.Instance.AddEmotionRecord(_rawP, _rawA, _rawD, EmotionEventLabels[(int)evt.type]);
 
             if (_logEmotionChanges)
                 Debug.Log($"[PAD] Event: {evt.type} → P:{_rawP:F2} A:{_rawA:F2} D:{_rawD:F2}");

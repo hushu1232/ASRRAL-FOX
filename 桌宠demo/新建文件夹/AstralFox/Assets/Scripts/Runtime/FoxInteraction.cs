@@ -11,7 +11,8 @@ namespace AstralFox
     /// works even when WS_EX_TRANSPARENT is set.
     /// </summary>
     [RequireComponent(typeof(TransparentWindow))]
-    // Collider2D lives on FoxPlaceholder child, not on root
+    [RequireComponent(typeof(Animation.PADEmotionEngine))]
+    [RequireComponent(typeof(Audio.SoundEffectManager))]
     public sealed class FoxInteraction : MonoBehaviour
     {
         #region Inspector
@@ -175,10 +176,33 @@ namespace AstralFox
             Vector3 worldPos = _mainCamera.ScreenToWorldPoint(
                 new Vector3(unityX, unityY, 0f));
 
+            // Primary: Collider2D overlap detection
             foreach (var col in _foxColliders)
             {
                 if (col != null && col.OverlapPoint(worldPos))
                     return true;
+            }
+
+            // Fallback: when no Collider2D (e.g. Cubism models use CubismRaycastable),
+            // use the model's combined renderer bounds
+            if (_foxColliders.Length == 0)
+            {
+                var modelGo = GameObject.Find("Live2D_Model");
+                if (modelGo != null && modelGo.activeInHierarchy)
+                {
+                    var renderers = modelGo.GetComponentsInChildren<Renderer>();
+                    Bounds? combined = null;
+                    foreach (var r in renderers)
+                    {
+                        if (r is MeshRenderer || r is SkinnedMeshRenderer)
+                        {
+                            if (combined == null) combined = r.bounds;
+                            else combined.Value.Encapsulate(r.bounds);
+                        }
+                    }
+                    if (combined.HasValue && combined.Value.Contains(worldPos))
+                        return true;
+                }
             }
 
             return false;

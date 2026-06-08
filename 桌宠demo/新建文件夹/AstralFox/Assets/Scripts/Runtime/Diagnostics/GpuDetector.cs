@@ -190,9 +190,10 @@ namespace AstralFox.Diagnostics
                     RiggingGpuInfo = new GpuInfo { deviceName = "unreachable", provider = "none" };
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Service not running — silent fail, it's expected in offline mode
+                // Service not running — expected in offline mode, log once
+                Debug.Log($"[GpuDetector] Rigging GPU metrics unavailable: {ex.Message}");
             }
         }
 

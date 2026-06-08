@@ -392,7 +392,7 @@ namespace AstralFox.Data
                 return Encoding.UTF8.GetString(
                     CryptoHelper.Unprotect(Convert.FromBase64String(_data.authToken)));
             }
-            catch { return ""; }
+            catch (Exception ex) { Debug.LogWarning($"[DataStore] Failed to decrypt access token: {ex.Message}"); return ""; }
         }
 
         /// <summary>Load refresh token — transparently decrypts from DPAPI.</summary>
@@ -404,7 +404,7 @@ namespace AstralFox.Data
                 return Encoding.UTF8.GetString(
                     CryptoHelper.Unprotect(Convert.FromBase64String(_data.authRefreshToken)));
             }
-            catch { return ""; }
+            catch (Exception ex) { Debug.LogWarning($"[DataStore] Failed to decrypt refresh token: {ex.Message}"); return ""; }
         }
 
         #endregion

@@ -20,8 +20,11 @@ namespace AstralFox.Diagnostics
         private bool _overlayVisible = true;
         private GpuDetector _gpuDetector;
         private AstralFox.Voice.VoiceManager _voiceManager;
+        private AstralFox.Voice.AIManager _aiManager;  // cached for OnGUI
         private GUIStyle _labelStyle;
         private GUIStyle _boxStyle;
+        private System.Text.StringBuilder _sysInfoSb = new System.Text.StringBuilder();  // cached
+        private System.Text.StringBuilder _pipelineInfoSb = new System.Text.StringBuilder();
 
         private void Start()
         {
@@ -37,6 +40,7 @@ namespace AstralFox.Diagnostics
 
             _gpuDetector = FindObjectOfType<GpuDetector>();
             _voiceManager = FindObjectOfType<AstralFox.Voice.VoiceManager>();
+            _aiManager = FindObjectOfType<AstralFox.Voice.AIManager>();
 
             Debug.Log("[DebugOverlay] Press F3 to toggle diagnostic overlay.");
         }
@@ -96,7 +100,8 @@ namespace AstralFox.Diagnostics
             float x = 10f;
             float width = 380f;
 
-            var sysInfo = new System.Text.StringBuilder();
+            var sysInfo = _sysInfoSb;
+            sysInfo.Clear();
             sysInfo.AppendLine("=== SYSTEM ===");
             sysInfo.AppendLine($"GPU: {SystemInfo.graphicsDeviceName}");
             sysInfo.AppendLine($"API: {SystemInfo.graphicsDeviceType}");
@@ -142,20 +147,20 @@ namespace AstralFox.Diagnostics
             float x = Screen.width - 310f;
             float width = 300f;
 
-            var info = new System.Text.StringBuilder();
+            var info = _pipelineInfoSb;
+            info.Clear();
             info.AppendLine("=== AI PIPELINE ===");
             info.AppendLine($"Voice State: {_voiceManager.CurrentState}");
 
-            var aim = FindObjectOfType<AstralFox.Voice.AIManager>();
-            if (aim != null)
+            if (_aiManager != null)
             {
-                info.AppendLine($"Pipeline Stage: {aim.CurrentStage}");
-                info.AppendLine($"ASR: {StatusLabel(aim.CurrentStatus.asr)}");
-                info.AppendLine($"LLM: {StatusLabel(aim.CurrentStatus.llm)}");
-                info.AppendLine($"TTS: {StatusLabel(aim.CurrentStatus.tts)}");
-                info.AppendLine($"Offline: {(aim.IsFullyOffline ? "YES" : "no")}");
-                if (!string.IsNullOrEmpty(aim.CurrentStatus.message))
-                    info.AppendLine($"Msg: {aim.CurrentStatus.message}");
+                info.AppendLine($"Pipeline Stage: {_aiManager.CurrentStage}");
+                info.AppendLine($"ASR: {StatusLabel(_aiManager.CurrentStatus.asr)}");
+                info.AppendLine($"LLM: {StatusLabel(_aiManager.CurrentStatus.llm)}");
+                info.AppendLine($"TTS: {StatusLabel(_aiManager.CurrentStatus.tts)}");
+                info.AppendLine($"Offline: {(_aiManager.IsFullyOffline ? "YES" : "no")}");
+                if (!string.IsNullOrEmpty(_aiManager.CurrentStatus.message))
+                    info.AppendLine($"Msg: {_aiManager.CurrentStatus.message}");
             }
 
             float height = 30f + 20f * (info.ToString().Split('\n').Length);

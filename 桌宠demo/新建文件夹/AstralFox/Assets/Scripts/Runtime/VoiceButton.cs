@@ -163,5 +163,9 @@ namespace AstralFox
             tex.Apply();
             return tex;
         }
+        private void OnDestroy()
+        {
+            if (_micTexture != null) Destroy(_micTexture);
+        }
     }
 }

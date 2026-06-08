@@ -886,6 +886,7 @@ namespace Live2D.Cubism.Rendering
 
             // Register at common controller.
             CubismRenderControllerGroup.GetInstance().AddRenderController(this);
+            Debug.Log($"[CubismRenderController] Registered with group. Model='{Model?.name}', Drawables={DrawableRenderers?.Length ?? 0}, Renderers={Renderers?.Length ?? 0}");
         }
 
         /// <summary>

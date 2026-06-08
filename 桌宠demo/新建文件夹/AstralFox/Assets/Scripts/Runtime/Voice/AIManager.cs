@@ -149,7 +149,7 @@ namespace AstralFox.Voice
         private void Start()
         {
             if (_autoStartServices)
-                InitializeServices();
+                _ = InitializeServicesAsync();
         }
 
         private void OnDestroy()
@@ -178,7 +178,7 @@ namespace AstralFox.Voice
         #region Service Initialization
 
         /// <summary>Initialize all services and report status.</summary>
-        public async void InitializeServices()
+        public async System.Threading.Tasks.Task InitializeServicesAsync()
         {
             if (_servicesStarted) return;
             _servicesStarted = true;
@@ -488,7 +488,7 @@ namespace AstralFox.Voice
             _asrService?.StopService();
             _ttsService?.StopService();
             _servicesStarted = false;
-            InitializeServices();
+            _ = InitializeServicesAsync();
         }
 
         /// <summary>Cancel current pipeline processing.</summary>

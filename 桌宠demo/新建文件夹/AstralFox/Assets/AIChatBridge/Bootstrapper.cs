@@ -149,7 +149,7 @@ namespace AstralFox
 
             if (_aiManager != null)
             {
-                _aiManager.InitializeServices();
+                await _aiManager.InitializeServicesAsync();
                 await WaitForServicesAsync(_aiManager);
                 Diagnostics.CrashHandler.LogStartup($"AI services status: ASR={_aiManager.CurrentStatus.asr} LLM={_aiManager.CurrentStatus.llm} TTS={_aiManager.CurrentStatus.tts}");
             }

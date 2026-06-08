@@ -48,7 +48,7 @@ namespace AstralFox.Config
         /// On main thread: progressCallback is invoked as each test completes.
         /// On complete: doneCallback is invoked with all results.
         /// </summary>
-        public static async void RunAllTests(
+        public static async System.Threading.Tasks.Task RunAllTestsAsync(
             AppConfig config,
             Action<string, TestStatus> progressCallback,
             Action<AllResults> doneCallback)

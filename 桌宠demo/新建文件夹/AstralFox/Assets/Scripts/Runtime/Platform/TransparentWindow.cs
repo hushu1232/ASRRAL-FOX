@@ -69,6 +69,7 @@ namespace AstralFox.Platform
         // Per-pixel alpha state
         private IntPtr _overlayHandle = IntPtr.Zero;
         private RenderTexture _renderTex;
+        private Material _chromaKeyMat;    // GPU chroma key material (fallback: CPU loop)
         private Texture2D _readTex;
         private IntPtr _screenDC;
         private IntPtr _memDC;
@@ -295,6 +296,7 @@ namespace AstralFox.Platform
 
         private void OnDestroy()
         {
+            StopAllCoroutines();
             CleanupPerPixelAlpha();
 
             if (_overlayHandle != IntPtr.Zero)
@@ -434,6 +436,23 @@ namespace AstralFox.Platform
 
             _readTex = new Texture2D(_windowWidth, _windowHeight, TextureFormat.BGRA32, false);
 
+            // ── GPU chroma key material (auto-detected; falls back to CPU) ──
+            var chromaShader = Shader.Find("Hidden/AstralFox/ChromaKey");
+            if (chromaShader != null)
+            {
+                _chromaKeyMat = new Material(chromaShader);
+                _chromaKeyMat.SetColor("_ChromaColor", _chromaKeyColor);
+                _chromaKeyMat.SetFloat("_Tolerance", _chromaKeyTolerance / 255f * 1.5f);
+                _chromaKeyMat.SetFloat("_Softness", 0.05f);
+                _useGpuChromaKey = true;
+                DiagLog("[TransparentWindow] GPU chroma key enabled.");
+            }
+            else
+            {
+                _useGpuChromaKey = false;
+                DiagLog("[TransparentWindow] ChromaKey shader not found — CPU fallback.");
+            }
+
             _screenDC = NativeWindowInterop.GetDC(IntPtr.Zero);
             _memDC = NativeWindowInterop.CreateCompatibleDC(_screenDC);
             if (_memDC == IntPtr.Zero)
@@ -506,9 +525,13 @@ namespace AstralFox.Platform
 
                 if (!_ppAlphaReady || _overlayHandle == IntPtr.Zero) break;
 
+                // ── GPU chroma key pass (Blit through shader; sub-ms on GPU) ──
+                if (_useGpuChromaKey && _chromaKeyMat != null)
+                {
+                    Graphics.Blit(_renderTex, _chromaKeyMat);
+                }
+
                 // ── GPU → CPU readback ──
-                // URP ChromaKeyRenderFeature already applied chroma key to _renderTex in-pipeline.
-                // The alpha channel is pre-computed — no per-pixel CPU work needed.
                 RenderTexture.active = _renderTex;
                 _readTex.ReadPixels(new Rect(0, 0, _windowWidth, _windowHeight), 0, 0);
                 _readTex.Apply();
@@ -517,21 +540,10 @@ namespace AstralFox.Platform
                 if (colors.Length < _pixelBuffer.Length)
                     continue;
 
-                // Detect whether URP chroma key is active by sampling a few pixels.
-                // If model pixels have proper alpha, URP feature is working → fast path.
-                // If they don't, fall back to CPU chroma key and warn once.
-                if (_useGpuChromaKey || _firstFrame)
-                {
-                    _useGpuChromaKey = DetectGpuChromaKeyActive(colors);
-                    if (!_useGpuChromaKey && _firstFrame)
-                        Debug.LogWarning("[TransparentWindow] URP ChromaKey not detected on RenderTexture. " +
-                            "Falling back to CPU chroma key. Register ChromaKeyRenderFeature in PC_Renderer for GPU path.");
-                }
-
                 if (_useGpuChromaKey)
                 {
-                    // ── GPU path: URP already keyed the alpha → zero CPU work ──
-                    System.Buffer.BlockCopy(colors, 0, _pixelBuffer, 0, _pixelBuffer.Length);
+                    // ── GPU path: shader already computed alpha → copy BGRA ──
+                    colors.CopyTo(_pixelBuffer);
                 }
                 else
                 {
@@ -626,30 +638,6 @@ namespace AstralFox.Platform
         /// a few non-background pixels in the first frame's readback data.
         /// If model pixels have alpha > 0, URP already applied chroma key → GPU path.
         /// </summary>
-        private bool DetectGpuChromaKeyActive(byte[] colors)
-        {
-            byte ckR = (byte)(_chromaKeyColor.r * 255);
-            byte ckG = (byte)(_chromaKeyColor.g * 255);
-            byte ckB = (byte)(_chromaKeyColor.b * 255);
-
-            // Sample up to 200 pixels looking for a non-chroma-key pixel with proper alpha
-            int samplesChecked = 0;
-            for (int i = 0; i < colors.Length && samplesChecked < 200; i += 4, samplesChecked++)
-            {
-                byte r = colors[i + 2]; // BGRA
-                byte g = colors[i + 1];
-                byte b = colors[i];
-
-                if (!IsChromaKey(r, g, b, ckR, ckG, ckB))
-                {
-                    // This is a model pixel — if alpha is non-zero, URP did the key
-                    byte a = colors[i + 3];
-                    return a > 10; // allow small tolerance for anti-aliased edges
-                }
-            }
-            return false; // all pixels are background → assume no URP key
-        }
-
         private void CleanupPerPixelAlpha()
         {
             _ppAlphaReady = false;
@@ -663,6 +651,7 @@ namespace AstralFox.Platform
                 _renderTex = null;
             }
             if (_readTex != null) { Destroy(_readTex); _readTex = null; }
+            if (_chromaKeyMat != null) { Destroy(_chromaKeyMat); _chromaKeyMat = null; }
             if (_oldBitmap != IntPtr.Zero) { NativeWindowInterop.SelectObject(_memDC, _oldBitmap); _oldBitmap = IntPtr.Zero; }
             if (_hBitmap != IntPtr.Zero) { NativeWindowInterop.DeleteObject(_hBitmap); _hBitmap = IntPtr.Zero; }
             if (_memDC != IntPtr.Zero) { NativeWindowInterop.DeleteDC(_memDC); _memDC = IntPtr.Zero; }
@@ -717,9 +706,13 @@ namespace AstralFox.Platform
         {
             _lastPosX = x;
             _lastPosY = y;
+#if UNITY_EDITOR
+            // Editor mode: don't move the Unity IDE window. Drag position is tracked only.
+#else
             NativeWindowInterop.SetWindowPos(ActiveHandle, NativeWindowInterop.HWND_TOPMOST,
                 x, y, 0, 0,
                 NativeWindowInterop.SWP_NOSIZE | NativeWindowInterop.SWP_NOACTIVATE);
+#endif
         }
 
         public void MoveWindowDelta(int deltaX, int deltaY)
@@ -727,9 +720,13 @@ namespace AstralFox.Platform
             NativeWindowInterop.GetWindowRect(ActiveHandle, out NativeWindowInterop.RECT currentRect);
             _lastPosX = currentRect.Left + deltaX;
             _lastPosY = currentRect.Top + deltaY;
+#if UNITY_EDITOR
+            // Editor mode: don't move the Unity IDE window.
+#else
             NativeWindowInterop.SetWindowPos(ActiveHandle, NativeWindowInterop.HWND_TOPMOST,
                 _lastPosX, _lastPosY, 0, 0,
                 NativeWindowInterop.SWP_NOSIZE | NativeWindowInterop.SWP_NOACTIVATE);
+#endif
         }
 
         private (int x, int y) GetBottomRightPosition()

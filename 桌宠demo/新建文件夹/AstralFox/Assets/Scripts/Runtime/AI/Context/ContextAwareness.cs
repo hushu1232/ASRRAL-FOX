@@ -72,6 +72,7 @@ namespace AstralFox.AI.Context
 
         #region State
 
+        private System.Text.StringBuilder _windowTextSb = new System.Text.StringBuilder(256);
         private string _currentApp = "";
         private string _currentCategory = "unknown";
         private float _pollTimer;
@@ -119,9 +120,9 @@ namespace AstralFox.AI.Context
             IntPtr hwnd = GetForegroundWindow();
             if (hwnd == IntPtr.Zero) return;
 
-            var sb = new StringBuilder(256);
-            GetWindowText(hwnd, sb, sb.Capacity);
-            string title = sb.ToString();
+            _windowTextSb.Clear();
+            GetWindowText(hwnd, _windowTextSb, _windowTextSb.Capacity);
+            string title = _windowTextSb.ToString();
 
             if (string.IsNullOrEmpty(title) || title == _currentApp) return;
 

@@ -21,6 +21,7 @@ namespace AstralFox
     /// 背景采用逐像素透明（TransparentWindow + UpdateLayeredWindow），保持桌面融合效果。
     /// </summary>
     [RequireComponent(typeof(TransparentWindow))]
+    [RequireComponent(typeof(Animation.PADEmotionEngine))]
     public sealed class FoxSimpleMovement : MonoBehaviour
     {
         #region Inspector

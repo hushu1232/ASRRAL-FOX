@@ -157,5 +157,9 @@ namespace AstralFox
             tex.Apply();
             return tex;
         }
+        private void OnDestroy()
+        {
+            if (_gearTexture != null) Destroy(_gearTexture);
+        }
     }
 }

@@ -261,7 +261,7 @@ namespace AstralFox.Voice
             for (int i = 0; i < windowSize; i++)
                 sum += _rmsWindow[i] * _rmsWindow[i];
 
-            float rms = Mathf.Sqrt(sum / window.Length);
+            float rms = Mathf.Sqrt(sum / windowSize);
             CurrentLevel = Mathf.Clamp01(rms * 5f); // amplify for visibility
         }
 

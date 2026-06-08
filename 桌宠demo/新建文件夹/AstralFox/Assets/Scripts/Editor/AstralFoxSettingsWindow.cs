@@ -387,7 +387,7 @@ namespace AstralFox.Editor
             _statusMessage = "正在测试连接...";
             Repaint();
 
-            Config.ConfigValidator.RunAllTests(
+            _ = Config.ConfigValidator.RunAllTestsAsync(
                 _editingConfig,
                 (service, status) =>
                 {

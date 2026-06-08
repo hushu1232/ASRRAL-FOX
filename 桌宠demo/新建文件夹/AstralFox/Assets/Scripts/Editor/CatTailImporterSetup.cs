@@ -140,8 +140,11 @@ namespace AstralFox.Editor
 
             // Manually create CubismRenderer components on each drawable.
 #if UNITY_6000_0_OR_NEWER
-            // Unity 6: SDK's TryInitializeRenderers works natively
+            // Unity 6: manually create renderers, inject into controller, THEN initialize
             var drawableRenderers = drawables.AddComponentEach<CubismRenderer>();
+            var allRenderers = new CubismRenderer[drawableRenderers.Length];
+            System.Array.Copy(drawableRenderers, allRenderers, drawableRenderers.Length);
+
             for (var i = 0; i < drawableRenderers.Length; ++i)
             {
                 var r = drawableRenderers[i];
@@ -152,8 +155,15 @@ namespace AstralFox.Editor
                 var tex = CubismBuiltinPickers.TexturePicker(model3Json, drawables[i]);
                 if (tex != null) r.MainTexture = tex;
             }
+
+            // Inject renderers into controller to prevent TryInitialize from creating duplicates
+            var renderersField = typeof(CubismRenderController).GetField("_renderers",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (renderersField != null)
+                renderersField.SetValue(rc, allRenderers);
+
             rc.TryInitialize();
-            Debug.Log($"[CatTailSetup] Created {drawableRenderers.Length} renderers (Unity 6 native).");
+            Debug.Log($"[CatTailSetup] Created {drawableRenderers.Length} renderers (Unity 6).");
 #else
             // Tuanjie 2022.3: manual renderer setup needed
             if (drawables != null && drawables.Length > 0)

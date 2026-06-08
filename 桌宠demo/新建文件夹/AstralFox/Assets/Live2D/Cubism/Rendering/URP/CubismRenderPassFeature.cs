@@ -580,6 +580,21 @@ namespace Live2D.Cubism.Rendering.URP
                 // Check and set skip rendering flags for each renderer.
                 CheckRenderingSkip();
 
+                // Diagnostic: count renderers being drawn (once per 180 frames)
+                if (Time.frameCount % 180 == 0)
+                {
+                    int totalRenderers = 0, skippedRenderers = 0;
+                    for (var gi = 0; gi < _sortedRendererGroupDataArray?.Length; gi++)
+                    {
+                        var rg = _sortedRendererGroupDataArray[gi];
+                        if (rg.Renderers == null) continue;
+                        totalRenderers += rg.Renderers.Length;
+                        foreach (var r in rg.Renderers)
+                            if (r == null || r.SkipRendering) skippedRenderers++;
+                    }
+                    Debug.Log($"[CubismRenderPass] frame {Time.frameCount}: {totalRenderers} renderers in {_sortedRendererGroupDataArray?.Length ?? 0} groups, {skippedRenderers} skipped");
+                }
+
                 for (var groupIndex = 0; groupIndex < _sortedRendererGroupDataArray?.Length; groupIndex++)
                 {
                     var rendererGroup = _sortedRendererGroupDataArray[groupIndex];
@@ -658,17 +673,9 @@ namespace Live2D.Cubism.Rendering.URP
                     // Blit the result back to the camera texture if needed.
                     if (CubismRenderControllerGroup.GetInstance().IsCopiedToCameraTexture)
                     {
-                        _commandBuffer.SetRenderTarget(data.CameraTextureHandle, data.CameraDepthTextureHandle);
-
-                        // Draw the full-screen quad to blit the common rendering texture to the camera texture.
-                        _blitRenderTextureMaterial.SetTexture(CubismShaderVariables.MainTexture, data.CommonRenderingTextureHandle);
-
-                        // Check for reversed Z buffer.
-                        var reversedZ = SystemInfo.usesReversedZBuffer ? GEqual : LEqual;
-                        _blitRenderTextureMaterial.SetInt(CubismShaderVariables.ReversedZ, reversedZ);
-
-                        // Draw the full-screen quad.
-                        _commandBuffer.DrawMesh(_blitRenderTextureMesh, Matrix4x4.identity, _blitRenderTextureMaterial);
+                        // Direct Blit: CommonRenderingTexture → CameraTexture
+                        // (Material.SetTexture doesn't work with RenderGraph TextureHandle in Unity 6)
+                        _commandBuffer.Blit(data.CommonRenderingTextureHandle, data.CameraTextureHandle);
 
                         // Clear the common rendering texture for the next group.
                         _commandBuffer.SetRenderTarget(data.CommonRenderingTextureHandle);
@@ -707,10 +714,9 @@ namespace Live2D.Cubism.Rendering.URP
                     return;
                 }
 
-                if (_commandBuffer == null)
-                {
-                    _commandBuffer = CommandBufferHelpers.GetNativeCommandBuffer(context.cmd);
-                }
+                // Always get fresh native CommandBuffer — RenderGraph allocates a new one each pass.
+                // Caching it as static causes stale buffer writes in subsequent frames.
+                _commandBuffer = CommandBufferHelpers.GetNativeCommandBuffer(context.cmd);
 
                 if (!_blitRenderTextureMesh)
                 {
@@ -740,32 +746,12 @@ namespace Live2D.Cubism.Rendering.URP
                 // Sort the renderers by their sorting order.
                 SortingRendererGroups(data);
 
-                // Set render target with both color and depth buffers for proper depth testing
-                _commandBuffer.SetRenderTarget(data.CommonRenderingTextureHandle, data.CameraDepthTextureHandle);
-                _commandBuffer.ClearRenderTarget(false, true, Color.clear);
+                // DIAGNOSTIC: clear camera to red to verify CommandBuffer executes
+                _commandBuffer.SetRenderTarget(data.CameraTextureHandle, data.CameraDepthTextureHandle);
+                _commandBuffer.ClearRenderTarget(true, true, new Color(1f, 0f, 0f, 1f)); // RED
 
                 // Draw the objects.
                 DrawObjects(_commandBuffer, data);
-
-                // Blit the result back to the camera texture.
-                if (!CubismRenderControllerGroup.GetInstance().IsCopiedToCameraTexture)
-                {
-                    _commandBuffer.SetRenderTarget(data.CameraTextureHandle, data.CameraDepthTextureHandle);
-
-                    // Draw the full-screen quad to blit the common rendering texture to the camera texture.
-                    _blitRenderTextureMaterial.SetTexture(CubismShaderVariables.MainTexture, data.CommonRenderingTextureHandle);
-
-                    // Check for reversed Z buffer.
-                    var reversedZ = SystemInfo.usesReversedZBuffer? GEqual : LEqual;
-                    _blitRenderTextureMaterial.SetInt(CubismShaderVariables.ReversedZ, reversedZ);
-
-                    // Draw the full-screen quad.
-                    _commandBuffer.DrawMesh(_blitRenderTextureMesh, Matrix4x4.identity, _blitRenderTextureMaterial);
-                }
-
-                // Clear the common rendering texture for the next frame.
-                _commandBuffer.SetRenderTarget(data.CommonRenderingTextureHandle);
-                _commandBuffer.ClearRenderTarget(true, true, Color.clear);
             }
 
             /// <summary>
@@ -779,12 +765,14 @@ namespace Live2D.Cubism.Rendering.URP
             {
                 const string renderCustomPass = "Cubism URP Render Pass";
 
-                // Get render controllers - this should work in both play mode and edit mode
                 var renderControllers = CubismRenderControllerGroup.GetInstance().RenderControllers;
 
                 // Skip if no render controllers are available
                 if (renderControllers == null || renderControllers.Length == 0)
                 {
+                    // Log once every 180 frames (~3s) to avoid spam while still diagnosing
+                    if (Time.frameCount % 180 == 0)
+                        Debug.LogWarning($"[CubismRenderPass] No render controllers registered (frame {Time.frameCount}). Cubism model will NOT render. Check: 1) Is CubismModel present? 2) Did OnEnable register with CubismRenderControllerGroup?");
                     return;
                 }
 
@@ -822,11 +810,15 @@ namespace Live2D.Cubism.Rendering.URP
 
                     // This sets the render target of the pass to the active color texture. Change it to your own render target as needed.
                     passData.CameraTextureHandle = resourceData.activeColorTexture;
-                    builder.UseTexture(passData.CameraTextureHandle, AccessFlags.ReadWrite);
+                    builder.UseTexture(passData.CameraTextureHandle, AccessFlags.Write); // Write must be explicit for RenderGraph to not cull
 
                     // Set up depth buffer for proper depth testing with other Unity objects
                     passData.CameraDepthTextureHandle = resourceData.activeDepthTexture;
                     builder.UseTexture(passData.CameraDepthTextureHandle);
+
+                    // CRITICAL: prevent RenderGraph from culling this pass.
+                    // Without this, Unity 6 may skip the pass entirely.
+                    builder.AllowPassCulling(false);
 
                     // Assigns the ExecutePass function to the render pass delegate. This will be called by the render graph when executing the pass.
                     builder.SetRenderFunc((PassData data, UnsafeGraphContext context) => ExecutePass(data, context));

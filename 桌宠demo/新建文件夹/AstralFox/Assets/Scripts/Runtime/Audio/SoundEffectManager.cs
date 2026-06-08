@@ -102,10 +102,13 @@ namespace AstralFox.Audio
             BuildSoundMap();
         }
 
+        private List<SoundEvent> _cooldownKeys = new List<SoundEvent>(); // cached for Update
+
         private void Update()
         {
-            var keys = new List<SoundEvent>(_cooldowns.Keys);
-            foreach (var key in keys)
+            _cooldownKeys.Clear();
+            _cooldownKeys.AddRange(_cooldowns.Keys);
+            foreach (var key in _cooldownKeys)
             {
                 if (_cooldowns[key] > 0f)
                     _cooldowns[key] -= Time.unscaledDeltaTime;

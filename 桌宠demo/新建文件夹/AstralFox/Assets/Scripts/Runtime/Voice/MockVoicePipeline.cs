@@ -75,8 +75,13 @@ namespace AstralFox.Voice
             }
         }
 
+        private Coroutine _mockProcessRoutine;
+        private Coroutine _mockSpeakingRoutine;
+
         private void OnDestroy()
         {
+            if (_mockProcessRoutine != null) StopCoroutine(_mockProcessRoutine);
+            if (_mockSpeakingRoutine != null) StopCoroutine(_mockSpeakingRoutine);
             if (_voiceManager != null)
                 _voiceManager.OnStateChanged -= OnVoiceStateChanged;
         }
@@ -92,12 +97,12 @@ namespace AstralFox.Voice
             if (to == VoiceManager.VoiceState.Processing)
             {
                 // Simulate backend processing
-                StartCoroutine(MockProcessAsync());
+                _mockProcessRoutine = StartCoroutine(MockProcessAsync());
             }
             else if (to == VoiceManager.VoiceState.Speaking)
             {
                 // Simulate TTS playback
-                StartCoroutine(MockSpeakingAsync());
+                _mockSpeakingRoutine = StartCoroutine(MockSpeakingAsync());
             }
         }
 
