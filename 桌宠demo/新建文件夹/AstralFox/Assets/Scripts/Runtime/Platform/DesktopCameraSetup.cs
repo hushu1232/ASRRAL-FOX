@@ -14,7 +14,7 @@ namespace AstralFox.Platform
         private Color _chromaKeyColor = new Color(0f, 1f, 0f, 1f);  // Green — must match TransparentWindow._chromaKeyColor
 
         [SerializeField, Range(1f, 20f)]
-        private float _orthoSize = 10f; // full character view
+        private float _orthoSize = 4f;
 
         [SerializeField]
         private bool _autoConfigure = true;
@@ -61,18 +61,15 @@ namespace AstralFox.Platform
             var urpAddCamData = _cam.GetComponent(urpDataType);
             if (urpAddCamData == null) return;
 
-            // Disable post-processing for clean chroma key
+            // Configure URP camera: enable FXAA, disable shadows, minimize overhead
             try
             {
                 var renderPostProp = urpDataType.GetProperty("renderPostProcessing");
-                renderPostProp?.SetValue(urpAddCamData, false);
+                renderPostProp?.SetValue(urpAddCamData, true); // required for FXAA
 
-                var requiresColorProp = urpDataType.GetProperty("requiresColorOption");
-                var offEnum = System.Enum.ToObject(requiresColorProp.PropertyType.GetGenericArguments()[0], 1); // CameraOverrideOption.Off
-                requiresColorProp?.SetValue(urpAddCamData, offEnum);
-
-                var requiresDepthProp = urpDataType.GetProperty("requiresDepthOption");
-                requiresDepthProp?.SetValue(urpAddCamData, offEnum);
+                var antialiasingProp = urpDataType.GetProperty("antialiasing");
+                // AntialiasingMode.FastApproximateAntialiasing = 2 (FXAA)
+                antialiasingProp?.SetValue(urpAddCamData, 2);
 
                 var renderShadowsProp = urpDataType.GetProperty("renderShadows");
                 renderShadowsProp?.SetValue(urpAddCamData, false);

@@ -300,6 +300,7 @@ namespace Live2D.Cubism.Rendering
             for (var i = 0; i < renderers.Length; i++)
             {
                 var initRenderer = renderers[i];
+                if (initRenderer.Drawable == null) continue;
                 switch (initRenderer.DrawObjectType)
                 {
                     case CubismModelTypes.DrawObjectType.Drawable:

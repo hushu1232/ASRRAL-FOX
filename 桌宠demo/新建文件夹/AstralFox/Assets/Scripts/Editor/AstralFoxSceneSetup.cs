@@ -42,7 +42,7 @@ namespace AstralFox.Editor
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = new Color(1f, 0f, 1f, 1f);
             cam.orthographic = true;
-            cam.orthographicSize = 10f; // wide enough for full character in any aspect ratio
+            cam.orthographicSize = 4f;
             cam.nearClipPlane = 0.1f;
             cam.farClipPlane = 100f;
             cam.depth = -1;
@@ -200,7 +200,7 @@ namespace AstralFox.Editor
             // --- Create model child GameObject ---
             GameObject live2DGo = CreateOrGetChild(foxGo, "Live2D_Model");
             live2DGo.transform.localPosition = Vector3.zero;
-            live2DGo.transform.localScale = Vector3.one * 0.5f; // scale down to fit camera
+            live2DGo.transform.localScale = Vector3.one * 1.5f;
             live2DGo.SetActive(false); // hidden until PetAnimationManager activates it
 
             bool usingCubismModel = false;

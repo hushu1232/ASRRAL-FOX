@@ -658,8 +658,9 @@ namespace Live2D.Cubism.Rendering.URP
                         // Pre-rendering event.
                         CubismRenderingInterceptorsManager.GetInstance().OnPreRendering(args);
 
-                        // Draw the object.
-                        renderer.DrawObject(commandBuffer, data);
+                        // Draw the object — guard against native NREs in broken drawables.
+                        try { renderer.DrawObject(commandBuffer, data); }
+                        catch (System.NullReferenceException) { /* skip broken drawable */ }
 
                         // Post-rendering event.
                         CubismRenderingInterceptorsManager.GetInstance().OnPostRendering(args);
@@ -746,9 +747,8 @@ namespace Live2D.Cubism.Rendering.URP
                 // Sort the renderers by their sorting order.
                 SortingRendererGroups(data);
 
-                // DIAGNOSTIC: clear camera to red to verify CommandBuffer executes
-                _commandBuffer.SetRenderTarget(data.CameraTextureHandle, data.CameraDepthTextureHandle);
-                _commandBuffer.ClearRenderTarget(true, true, new Color(1f, 0f, 0f, 1f)); // RED
+                // Unity 6 RenderGraph: use context.cmd for camera operations, native CB for SDK draw calls
+                context.cmd.SetRenderTarget(data.CameraTextureHandle, data.CameraDepthTextureHandle);
 
                 // Draw the objects.
                 DrawObjects(_commandBuffer, data);
@@ -793,7 +793,7 @@ namespace Live2D.Cubism.Rendering.URP
 
                     var descriptor = resourceData.activeColorTexture.GetDescriptor(renderGraph);
                     descriptor.wrapMode = TextureWrapMode.Repeat;
-                    descriptor.filterMode = FilterMode.Point;
+                    descriptor.filterMode = FilterMode.Bilinear; // smooth sampling, not Point (pixelated)
 
                     descriptor.name = "CommonTexture";
                     passData.CommonRenderingTextureHandle = renderGraph.CreateTexture(descriptor);

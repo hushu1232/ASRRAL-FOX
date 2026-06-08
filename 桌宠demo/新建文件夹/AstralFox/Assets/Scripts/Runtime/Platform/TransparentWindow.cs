@@ -38,10 +38,10 @@ namespace AstralFox.Platform
         #region Inspector
 
         [Header("Window Size")]
-        [SerializeField, Range(200, 800)]
-        private int _windowWidth = 500;
-        [SerializeField, Range(200, 800)]
-        private int _windowHeight = 600;
+        [SerializeField, Range(200, 2000)]
+        private int _windowWidth = 800;
+        [SerializeField, Range(200, 2000)]
+        private int _windowHeight = 900;
 
         [Header("Chroma Key")]
         [SerializeField]

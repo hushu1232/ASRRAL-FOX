@@ -721,6 +721,7 @@ namespace Live2D.Cubism.Rendering
         /// <param name="newModelOpacity">Opacity to set.</param>
         internal void OnModelOpacityDidChange(float newModelOpacity)
         {
+            if (_meshRenderer == null) return;
             var property = PropertyBlock;
             _meshRenderer.GetPropertyBlock(property);
 
@@ -952,9 +953,9 @@ namespace Live2D.Cubism.Rendering
             }
 #endif
 
-            if (!_meshRenderer.material)
+            if (!_meshRenderer.sharedMaterial)
             {
-                _meshRenderer.material = SetMaterialFromPicker();
+                _meshRenderer.sharedMaterial = SetMaterialFromPicker();
             }
         }
 
@@ -1088,12 +1089,33 @@ namespace Live2D.Cubism.Rendering
 
             for (var i = 0; i < 2; ++i)
             {
+                // Guard against native-layer NREs (native drawable data not yet revived)
+                try
+                {
+                    if (Drawable?.VertexPositions == null || Drawable?.VertexUvs == null) continue;
+                }
+                catch (NullReferenceException)
+                {
+                    Debug.LogWarning($"[CubismRenderer] Drawable '{Drawable?.name ?? "null"}' native data unavailable. Skipping.");
+                    continue;
+                }
+
                 var mesh = new Mesh();
 
                 mesh.name = Drawable.name;
-                mesh.vertices = Drawable.VertexPositions;
-                mesh.uv = Drawable.VertexUvs;
-                mesh.triangles = Drawable.Indices;
+
+                try
+                {
+                    mesh.vertices = Drawable.VertexPositions;
+                    mesh.uv = Drawable.VertexUvs;
+                    mesh.triangles = Drawable.Indices;
+                }
+                catch (NullReferenceException)
+                {
+                    Debug.LogWarning($"[CubismRenderer] Drawable '{Drawable?.name}' native vertex data NRE. Skipping mesh.");
+                    DestroyImmediate(mesh);
+                    continue;
+                }
 
                 mesh.MarkDynamic();
                 mesh.RecalculateBounds();

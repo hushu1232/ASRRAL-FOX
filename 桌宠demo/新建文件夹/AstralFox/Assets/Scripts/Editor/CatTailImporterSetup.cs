@@ -140,30 +140,27 @@ namespace AstralFox.Editor
 
             // Manually create CubismRenderer components on each drawable.
 #if UNITY_6000_0_OR_NEWER
-            // Unity 6: manually create renderers, inject into controller, THEN initialize
-            var drawableRenderers = drawables.AddComponentEach<CubismRenderer>();
-            var allRenderers = new CubismRenderer[drawableRenderers.Length];
-            System.Array.Copy(drawableRenderers, allRenderers, drawableRenderers.Length);
+            // Unity 6: let SDK handle all renderer creation via TryInitialize.
+            // The .moc3 may have more drawables than model.Drawables (masks, offscreens).
+            // Manual injection causes mismatch — SDK knows best.
+            rc.TryInitialize();
 
-            for (var i = 0; i < drawableRenderers.Length; ++i)
+            // Set up materials and textures on all created renderers AFTER SDK init
+            var allRenderers = rc.Renderers;
+            if (allRenderers != null)
             {
-                var r = drawableRenderers[i];
-                r.Drawable = drawables[i];
-                r.TryInitialize(rc);
-                var mat = CubismBuiltinPickers.DrawableMaterialPicker(model3Json, drawables[i]);
-                if (mat != null) { r.Material = mat; r.ColorBlendType = drawables[i].ColorBlend; r.AlphaBlendType = drawables[i].AlphaBlend; }
-                var tex = CubismBuiltinPickers.TexturePicker(model3Json, drawables[i]);
-                if (tex != null) r.MainTexture = tex;
+                for (var i = 0; i < allRenderers.Length; i++)
+                {
+                    var r = allRenderers[i];
+                    if (r?.Drawable == null) continue;
+                    var mat = CubismBuiltinPickers.DrawableMaterialPicker(model3Json, r.Drawable);
+                    if (mat != null) { r.Material = mat; r.ColorBlendType = r.Drawable.ColorBlend; r.AlphaBlendType = r.Drawable.AlphaBlend; }
+                    var tex = CubismBuiltinPickers.TexturePicker(model3Json, r.Drawable);
+                    if (tex != null) r.MainTexture = tex;
+                }
             }
 
-            // Inject renderers into controller to prevent TryInitialize from creating duplicates
-            var renderersField = typeof(CubismRenderController).GetField("_renderers",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (renderersField != null)
-                renderersField.SetValue(rc, allRenderers);
-
-            rc.TryInitialize();
-            Debug.Log($"[CatTailSetup] Created {drawableRenderers.Length} renderers (Unity 6).");
+            Debug.Log($"[CatTailSetup] Created {allRenderers?.Length ?? 0} renderers (Unity 6 SDK native).");
 #else
             // Tuanjie 2022.3: manual renderer setup needed
             if (drawables != null && drawables.Length > 0)

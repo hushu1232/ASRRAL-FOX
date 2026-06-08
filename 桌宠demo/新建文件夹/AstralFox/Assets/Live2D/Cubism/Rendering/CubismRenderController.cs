@@ -597,23 +597,31 @@ namespace Live2D.Cubism.Rendering
             // Make sure renderers are initialized.
             for (var i = 0; i < Renderers.Length; ++i)
             {
-                var targetRenderer = Renderers[i];
-                targetRenderer.TryInitialize(this);
-                if (!HasRootPartOffscreen)
+                try
                 {
-                    continue;
+                    var targetRenderer = Renderers[i];
+                    targetRenderer.TryInitialize(this);
+                    if (HasRootPartOffscreen) continue;
+                    HasRootPartOffscreen = CheckHasRootPartOffscreen(targetRenderer);
                 }
-
-                HasRootPartOffscreen = CheckHasRootPartOffscreen(targetRenderer);
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[CubismRenderController] Renderer[{i}] init failed: {ex.GetType().Name} — {ex.Message}");
+                }
             }
 
-            // Initialize sorting layer.
-            // We set the backing field here directly because we pull the sorting layer directly from the renderer.
-            _sortingLayerId = Renderers[0]
-                .MeshRenderer
-                .sortingLayerID;
+            try
+            {
+                // Initialize sorting layer.
+                if (Renderers.Length > 0 && Renderers[0]?.MeshRenderer != null)
+                    _sortingLayerId = Renderers[0].MeshRenderer.sortingLayerID;
 
-            OnAfterRenderersInitialize(Renderers);
+                OnAfterRenderersInitialize(Renderers);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[CubismRenderController] Post-init failed: {ex.GetType().Name} — {ex.Message}");
+            }
 
             IsInitialized = true;
         }
@@ -663,6 +671,12 @@ namespace Live2D.Cubism.Rendering
         /// </summary>
         private void UpdateDrawableBlendColors()
         {
+            try { UpdateDrawableBlendColorsInternal(); }
+            catch (System.Exception) { /* native NRE — ignored */ }
+        }
+
+        private void UpdateDrawableBlendColorsInternal()
+        {
             if (Renderers == null
                 || !IsInitialized)
             {
@@ -684,7 +698,7 @@ namespace Live2D.Cubism.Rendering
 
             for (var i = 0; i < Renderers.Length; i++)
             {
-                if (!Renderers[i])
+                if (!Renderers[i] || Renderers[i].Drawable == null)
                 {
                     continue;
                 }
@@ -807,26 +821,17 @@ namespace Live2D.Cubism.Rendering
         /// </summary>
         public void OnLateUpdate()
         {
-            // Fail silently...
-            if (!enabled)
-            {
-                return;
-            }
+            if (!enabled) return;
+            try { OnLateUpdateInternal(); }
+            catch (System.Exception) { /* native NRE — ignored */ }
+        }
 
-            // Update opacity if necessary.
+        private void OnLateUpdateInternal()
+        {
             UpdateOpacity();
-
-            // Updates Blend Colors if necessary.
             UpdateDrawableBlendColors();
-
-            // Return early in case no camera is to be faced.
-            if (CameraToFace == null)
-            {
-                return;
-            }
-
-            // Face camera.
-            DrawablesRootTransform.rotation = (Quaternion.LookRotation(CameraToFace.transform.forward, Vector3.up));
+            if (CameraToFace == null) return;
+            DrawablesRootTransform.rotation = Quaternion.LookRotation(CameraToFace.transform.forward, Vector3.up);
         }
 
         #region Unity Event Handling
@@ -844,6 +849,18 @@ namespace Live2D.Cubism.Rendering
         /// Called by Unity. Enables listening to render data updates.
         /// </summary>
         private void OnEnable()
+        {
+            try
+            {
+                OnEnableInternal();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[CubismRenderController] OnEnable CRASHED on '{gameObject.name}': {ex.GetType().Name} — {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        private void OnEnableInternal()
         {
             // Fail silently in normal operation; log diagnostic for debugging.
             if (!Model)
@@ -867,7 +884,7 @@ namespace Live2D.Cubism.Rendering
             Model.OnDynamicDrawableData += OnDynamicDrawableData;
 
 #if UNITY_EDITOR
-            if (!Application.isPlaying)
+            if (!Application.isPlaying && DrawableRenderers != null)
             {
                 Model.ForceUpdateNow();
 
