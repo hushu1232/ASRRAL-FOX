@@ -1,0 +1,46 @@
+@page "/welcome"
+@using Alife.Components.Elements.Character
+@inject CharacterSystem CharacterSystem
+@inject ChatActivitySystem ChatActivitySystem
+@inject NavigationManager Navigation
+
+@if (!isActivating)
+{
+    <WelcomeUI/>
+}
+
+@code {
+    bool isActivating;
+    static bool hasBootstrapped;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (hasBootstrapped) return;
+        hasBootstrapped = true;
+
+        Task.Run(async () => {
+            List<Character> startingCharacters = CharacterSystem.GetAllCharacters()
+                .Where(c => c.AutoActivate && !ChatActivitySystem.IsActivated(c))
+                .ToList();
+
+            if (startingCharacters.Count > 0)
+            {
+                isActivating = true;
+                await InvokeAsync(StateHasChanged);
+            }
+
+            foreach (Character startingCharacter in startingCharacters)
+            {
+                try
+                {
+                    await ChatActivitySystem.Activate(startingCharacter);
+                }
+                catch { }
+            }
+
+            if (CharacterSystem.GetAllCharacters().Count != 0)
+                Navigation.NavigateTo("/system", replace: true);
+        });
+    }
+
+}
