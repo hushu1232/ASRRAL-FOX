@@ -3,7 +3,16 @@ const ui = {
     bubbleContainer: document.getElementById("bubble-container"),
     thinkingIndicator: document.getElementById("thinking-indicator"),
     chatInput: document.getElementById("chat-input"),
-    sendBtn: document.getElementById("send-btn")
+    sendBtn: document.getElementById("send-btn"),
+    previewPanel: document.getElementById("preview-panel"),
+    previewResetView: document.getElementById("preview-reset-view"),
+    previewBgToggle: document.getElementById("preview-bg-toggle"),
+    previewScale: document.getElementById("preview-scale"),
+    previewExpressions: document.getElementById("preview-expressions"),
+    previewMotions: document.getElementById("preview-motions"),
+    previewParams: document.getElementById("preview-params"),
+    previewDiagnostics: document.getElementById("preview-diagnostics"),
+    previewEvents: document.getElementById("preview-events")
 };
 
 const app = new PIXI.Application({
@@ -20,6 +29,10 @@ let idleCycleFrame = null;
 let idleFrame = 0;
 let lastBlinkTime = 0;
 let isBlinking = false;
+let updateModelLayout = () => {};
+let activeExpression = null;
+let activeMotion = null;
+let viewScaleMultiplier = 1;
 const idleDefaults = {
     breatheSpeed: 0.04,
     breatheAmplitude: 0.35,
@@ -32,6 +45,31 @@ let idleParams = {...idleDefaults};
 
 function postMessage(data) {
     window.chrome.webview.postMessage(data);
+}
+
+function showPreviewPanel() {
+    ui.previewPanel?.classList.add("show");
+    updateModelLayout();
+}
+
+function logPreviewEvent(text) {
+    if (!ui.previewEvents) return;
+    ui.previewEvents.innerText = text;
+}
+
+function addDiagnostic(level, message) {
+    if (!ui.previewDiagnostics) return;
+    const row = document.createElement("div");
+    row.classList.add("diagnostic-row", level);
+    row.innerText = `${level}: ${message}`;
+    ui.previewDiagnostics.appendChild(row);
+}
+
+function postRendererError(operation, error) {
+    const message = error?.message ?? String(error);
+    logPreviewEvent(`${operation}: ${message}`);
+    addDiagnostic("error", `${operation}: ${message}`);
+    postMessage({type: "renderer-error", operation, message});
 }
 
 function getCoreModel() {
@@ -83,6 +121,113 @@ function getParameterMetadata() {
         };
     }
     return parameters;
+}
+
+function renderParameterInspector() {
+    if (!ui.previewParams) return;
+
+    const parameters = getParameterMetadata();
+    ui.previewParams.replaceChildren();
+
+    for (const [id, info] of Object.entries(parameters)) {
+        const row = document.createElement("div");
+        row.classList.add("param-row");
+        row.dataset.paramId = id;
+
+        const label = document.createElement("label");
+        label.classList.add("param-name");
+        label.textContent = id;
+
+        const slider = document.createElement("input");
+        slider.type = "range";
+        slider.min = String(info.min);
+        slider.max = String(info.max);
+        slider.step = "0.01";
+        slider.value = String(info.value);
+
+        const valueLabel = document.createElement("span");
+        valueLabel.classList.add("param-value");
+        valueLabel.textContent = Number(info.value).toFixed(2);
+
+        slider.oninput = event => {
+            const value = Number(event.target.value);
+            setParameterValue(id, value);
+            valueLabel.textContent = value.toFixed(2);
+        };
+
+        row.append(label, slider, valueLabel);
+        ui.previewParams.appendChild(row);
+    }
+}
+
+function safeExpression(id) {
+    try {
+        model?.expression(id);
+        activeExpression = id;
+        syncPreviewActionStates();
+        logPreviewEvent(`expression: ${id ?? "(reset)"}`);
+    } catch (err) {
+        postRendererError("expression", err);
+    }
+}
+
+function safeMotion(group, index) {
+    try {
+        model?.motion(group, index, PIXI.live2d.MotionPriority.FORCE);
+        activeMotion = `${group}/${index}`;
+        syncPreviewActionStates();
+        logPreviewEvent(`motion: ${group}/${index}`);
+    } catch (err) {
+        postRendererError("motion", err);
+    }
+}
+
+function syncPreviewActionStates() {
+    for (const button of ui.previewExpressions?.children ?? []) {
+        button.classList.toggle("active", button.dataset.expressionId === (activeExpression ?? ""));
+    }
+
+    for (const button of ui.previewMotions?.children ?? []) {
+        button.classList.toggle("active", button.dataset.motionId === activeMotion);
+    }
+}
+
+function renderCatalog(catalog) {
+    showPreviewPanel();
+    ui.previewExpressions?.replaceChildren();
+    ui.previewMotions?.replaceChildren();
+
+    const resetButton = document.createElement("button");
+    resetButton.classList.add("preview-action", "secondary");
+    resetButton.textContent = "Reset";
+    resetButton.innerText = "Reset";
+    resetButton.dataset.expressionId = "";
+    resetButton.onclick = () => safeExpression(null);
+    ui.previewExpressions?.appendChild(resetButton);
+
+    for (const expression of catalog.expressions ?? []) {
+        const button = document.createElement("button");
+        button.classList.add("preview-action");
+        button.textContent = expression.name;
+        button.innerText = expression.name;
+        button.dataset.expressionId = expression.name;
+        button.onclick = () => safeExpression(expression.name);
+        ui.previewExpressions?.appendChild(button);
+    }
+
+    for (const motion of catalog.motions ?? []) {
+        const button = document.createElement("button");
+        button.classList.add("preview-action");
+        button.textContent = motion.name;
+        button.innerText = motion.name;
+        button.dataset.motionId = `${motion.group}/${motion.index}`;
+        button.onclick = () => safeMotion(motion.group, motion.index);
+        ui.previewMotions?.appendChild(button);
+    }
+
+    postMessage({type: "catalog", expressions: catalog.expressions ?? [], motions: catalog.motions ?? []});
+    renderParameterInspector();
+    syncPreviewActionStates();
 }
 
 function startIdleCycle(parameters = {}) {
@@ -150,13 +295,22 @@ window.chrome.webview.addEventListener("message", (e) => {
             break;
         //修改表情
         case "expression":
-            model.expression(msg.id);
+            safeExpression(msg.id);
             break;
         //修改动作
         case "motion":
-            model.motion(msg.group, msg.index, PIXI.live2d.MotionPriority.FORCE);
+            safeMotion(msg.group, msg.index);
+            break;
+        case "catalog":
+            renderCatalog(msg);
+            break;
+        case "preview":
+            showPreviewPanel();
             break;
         //修改气泡文字
+        case "diagnostic":
+            addDiagnostic(msg.level ?? "info", msg.message ?? "");
+            break;
         case "bubble":
             ui.bubble.innerText = msg.text;
             ui.bubbleContainer.classList.add("show");
@@ -232,26 +386,32 @@ async function loadModel(url) {
 
     // 保存原始无缩放的高度，避免因为循环自乘导致闪烁变大
     const baseHeight = model.internalModel.originalHeight || (model.height / model.scale.y);
+    const baseWidth = model.internalModel.originalWidth || model.width || baseHeight;
 
-    const updateLayout = () => {
+    updateModelLayout = () => {
         const uiScale = window.innerHeight / 540;
         document.documentElement.style.setProperty('--ui-scale', uiScale);
-        const scale = (window.innerHeight * 0.9) / baseHeight;
-        model.scale.set(scale);
-        model.position.set(window.innerWidth / 2, window.innerHeight / 2);
+        const previewReservedWidth = ui.previewPanel?.classList.contains("show")
+            ? (ui.previewPanel.offsetWidth || 260) + 28
+            : 0;
+        const availableWidth = Math.max(window.innerWidth - previewReservedWidth, window.innerWidth * 0.35);
+        const scale = Math.min((window.innerHeight * 0.9) / baseHeight, (availableWidth * 0.9) / baseWidth);
+        model.scale.set(scale * viewScaleMultiplier);
+        model.position.set(previewReservedWidth + availableWidth / 2, window.innerHeight / 2);
     };
 
     model.anchor.set(0.5, 0.5);
-    updateLayout();
+    updateModelLayout();
     model.interactive = true;
 
     window.addEventListener("resize", () => {
         if (model) {
-            updateLayout();
+            updateModelLayout();
         }
     });
 
     startIdleCycle();
+    renderParameterInspector();
     postMessage({type: "loaded"});
 }
 
@@ -317,6 +477,24 @@ async function loadModel(url) {
     ui.sendBtn.onclick = onSend;
     ui.chatInput.onkeydown = (e) => {
         if (e.key === "Enter") onSend();
+    };
+
+    ui.previewScale.oninput = event => {
+        viewScaleMultiplier = Number(event.target.value);
+        if (!Number.isFinite(viewScaleMultiplier)) viewScaleMultiplier = 1;
+        updateModelLayout();
+    };
+
+    ui.previewResetView.onclick = () => {
+        viewScaleMultiplier = 1;
+        ui.previewScale.value = "1";
+        updateModelLayout();
+        logPreviewEvent("view: fit");
+    };
+
+    ui.previewBgToggle.onclick = () => {
+        document.body.classList.toggle("checkerboard");
+        logPreviewEvent(`background: ${document.body.classList.contains("checkerboard") ? "grid" : "transparent"}`);
     };
 
 }

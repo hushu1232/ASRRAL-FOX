@@ -15,9 +15,29 @@ function createElement(tagName = "DIV") {
     return {
         tagName,
         innerText: "",
+        textContent: "",
+        offsetWidth: 0,
+        offsetHeight: 0,
+        dataset: {},
+        type: "",
+        min: "",
+        max: "",
+        step: "",
         value: "",
+        oninput: null,
         onclick: null,
         onkeydown: null,
+        children: [],
+        append(...children) {
+            this.children.push(...children);
+        },
+        appendChild(child) {
+            this.children.push(child);
+            return child;
+        },
+        replaceChildren(...children) {
+            this.children = children;
+        },
         classList: {
             values: new Set(),
             add(value) {
@@ -25,6 +45,18 @@ function createElement(tagName = "DIV") {
             },
             remove(value) {
                 this.values.delete(value);
+            },
+            contains(value) {
+                return this.values.has(value);
+            },
+            toggle(value, force) {
+                const enabled = force ?? !this.values.has(value);
+                if (enabled) {
+                    this.values.add(value);
+                } else {
+                    this.values.delete(value);
+                }
+                return enabled;
             }
         },
         addEventListener() {
@@ -60,6 +92,8 @@ function createPetHarness() {
         ["ParamEyeLOpen", [0, 1]]
     ]);
     const parameterWrites = [];
+    const expressionCalls = [];
+    const motionCalls = [];
     let messageHandler = null;
     let frameId = 0;
 
@@ -89,6 +123,7 @@ function createPetHarness() {
         internalModel: {
             coreModel,
             originalHeight: 1000,
+            originalWidth: 1400,
             focusController: {},
             getHitAreaDefs() {
                 return [];
@@ -114,9 +149,11 @@ function createPetHarness() {
             }
         },
         interactive: false,
-        expression() {
+        expression(id) {
+            expressionCalls.push(id);
         },
-        motion() {
+        motion(group, index, priority) {
+            motionCalls.push({ group, index, priority });
         },
         focus() {
         },
@@ -126,6 +163,7 @@ function createPetHarness() {
     };
 
     const elements = new Map();
+    const documentBody = createElement("BODY");
     const context = {
         console: {
             log() {
@@ -134,6 +172,7 @@ function createPetHarness() {
             }
         },
         document: {
+            body: documentBody,
             documentElement: {
                 style: {
                     setProperty() {
@@ -145,6 +184,9 @@ function createPetHarness() {
                     elements.set(id, createElement(id === "canvas" ? "CANVAS" : "DIV"));
                 }
                 return elements.get(id);
+            },
+            createElement(tagName) {
+                return createElement(tagName.toUpperCase());
             }
         },
         window: {
@@ -227,6 +269,11 @@ function createPetHarness() {
 
     return {
         messages,
+        elements,
+        documentBody,
+        live2dModel,
+        expressionCalls,
+        motionCalls,
         parameterValues,
         parameterWrites,
         animationFrames,
@@ -278,4 +325,136 @@ test("pet.js starts and stops the idle animation loop", async () => {
 
     await pet.send({ type: "idle-cycle", enabled: false });
     assert.equal(pet.animationFrames.length, 0);
+});
+
+test("pet.js keeps the model clear of the preview panel when catalog is shown", async () => {
+    const pet = createPetHarness();
+    pet.elements.get("preview-panel").offsetWidth = 260;
+
+    await pet.send({ type: "load", url: "model.model3.json" });
+    assert.equal(pet.live2dModel.position.x, 480);
+
+    await pet.send({
+        type: "catalog",
+        expressions: [
+            { name: "cry", file: "exp/cry.exp3.json" }
+        ],
+        motions: []
+    });
+
+    assert.equal(pet.live2dModel.position.x, 624);
+    assert.ok(pet.live2dModel.scale.y < 0.486);
+});
+
+test("pet.js renders preview catalog buttons and invokes expressions and motions", async () => {
+    const pet = createPetHarness();
+
+    await pet.send({ type: "load", url: "model.model3.json" });
+    await pet.send({
+        type: "catalog",
+        expressions: [
+            { name: "哭哭", file: "exp/哭哭.exp3.json" }
+        ],
+        motions: [
+            { name: "常规", group: "exp", index: 0, file: "exp/常规.motion3.json", loop: true }
+        ]
+    });
+
+    const expressionList = pet.elements.get("preview-expressions");
+    const motionList = pet.elements.get("preview-motions");
+    assert.equal(expressionList.children.length, 2);
+    assert.equal(motionList.children.length, 1);
+
+    expressionList.children.find(button => button.dataset?.expressionId === "哭哭").onclick();
+    motionList.children.find(button => button.dataset?.motionId === "exp/0").onclick();
+
+    assert.deepEqual(pet.expressionCalls, ["哭哭"]);
+    assert.deepEqual(pet.motionCalls, [{ group: "exp", index: 0, priority: 3 }]);
+});
+
+test("pet.js renders parameter sliders and writes values to the core model", async () => {
+    const pet = createPetHarness();
+
+    await pet.send({ type: "load", url: "model.model3.json" });
+    await pet.send({ type: "catalog", expressions: [], motions: [] });
+
+    const paramsList = pet.elements.get("preview-params");
+    assert.ok(paramsList.children.length >= 3);
+
+    const angleRow = paramsList.children.find(row => row.dataset?.paramId === "ParamAngleX");
+    assert.ok(angleRow, "ParamAngleX row should exist");
+
+    const slider = angleRow.children.find(child => child.tagName === "INPUT");
+    assert.ok(slider, "ParamAngleX slider should exist");
+
+    slider.value = "12";
+    slider.oninput({ target: slider });
+
+    assert.equal(pet.parameterValues.get("ParamAngleX"), 12);
+});
+
+test("pet.js renders an expression reset button", async () => {
+    const pet = createPetHarness();
+
+    await pet.send({ type: "load", url: "model.model3.json" });
+    await pet.send({
+        type: "catalog",
+        expressions: [{ name: "cry", file: "exp/cry.exp3.json" }],
+        motions: []
+    });
+
+    const expressionList = pet.elements.get("preview-expressions");
+    const resetButton = expressionList.children.find(button => button.dataset?.expressionId === "");
+    assert.ok(resetButton, "reset expression button should exist");
+
+    resetButton.onclick();
+
+    assert.deepEqual(pet.expressionCalls, [null]);
+});
+
+test("pet.js supports preview view scale reset", async () => {
+    const pet = createPetHarness();
+
+    await pet.send({ type: "load", url: "model.model3.json" });
+    await pet.send({ type: "catalog", expressions: [], motions: [] });
+
+    const scaleInput = pet.elements.get("preview-scale");
+    const resetButton = pet.elements.get("preview-reset-view");
+    assert.ok(scaleInput, "scale input should exist");
+    assert.ok(resetButton, "reset view button should exist");
+
+    scaleInput.value = "0.5";
+    scaleInput.oninput({ target: scaleInput });
+    assert.ok(pet.live2dModel.scale.y < 0.3);
+
+    resetButton.onclick();
+    assert.ok(pet.live2dModel.scale.y > 0.3);
+});
+
+test("pet.js toggles checkerboard preview background", async () => {
+    const pet = createPetHarness();
+
+    await pet.send({ type: "load", url: "model.model3.json" });
+    await pet.send({ type: "catalog", expressions: [], motions: [] });
+
+    const backgroundToggle = pet.elements.get("preview-bg-toggle");
+    assert.ok(backgroundToggle, "background toggle should exist");
+
+    backgroundToggle.onclick();
+    assert.equal(pet.documentBody.classList.contains("checkerboard"), true);
+
+    backgroundToggle.onclick();
+    assert.equal(pet.documentBody.classList.contains("checkerboard"), false);
+});
+
+test("pet.js displays renderer diagnostics", async () => {
+    const pet = createPetHarness();
+
+    await pet.send({ type: "load", url: "model.model3.json" });
+    await pet.send({ type: "catalog", expressions: [], motions: [] });
+    await pet.send({ type: "diagnostic", level: "warning", message: "Missing texture_99.png" });
+
+    const diagnostics = pet.elements.get("preview-diagnostics");
+    assert.equal(diagnostics.children.length, 1);
+    assert.equal(diagnostics.children[0].innerText, "warning: Missing texture_99.png");
 });
