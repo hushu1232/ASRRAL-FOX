@@ -84,6 +84,23 @@
                                             @snapshot.LatestTask.Status
                                         </Tag>
                                     </div>
+                                    <Space>
+                                        <SpaceItem>
+                                            <Button Size="@ButtonSize.Small"
+                                                    Disabled="@(snapshot.LatestTask.Status != AgentTaskStatus.Planned)"
+                                                    OnClick="@(() => StartTask(snapshot.LatestTask.Id))">
+                                                Start
+                                            </Button>
+                                        </SpaceItem>
+                                        <SpaceItem>
+                                            <Button Size="@ButtonSize.Small"
+                                                    Type="@ButtonType.Primary"
+                                                    Disabled="@(snapshot.LatestTask.Status is AgentTaskStatus.Completed or AgentTaskStatus.Failed or AgentTaskStatus.Cancelled)"
+                                                    OnClick="@(() => CompleteTask(snapshot.LatestTask.Id))">
+                                                Complete
+                                            </Button>
+                                        </SpaceItem>
+                                    </Space>
                                     @if (snapshot.LatestTask.Steps.Count > 0)
                                     {
                                         <div class="step-list">
@@ -121,6 +138,10 @@
                                         <Panel Key="@proposal.Id" Header="@($"{proposal.RelativePath}  {proposal.Id[..Math.Min(8, proposal.Id.Length)]}")">
                                             <Text Type="TextElementType.Secondary">Created: @proposal.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</Text>
                                             <pre class="proposal-preview">@proposal.Preview</pre>
+                                            <div class="confirmation-box">
+                                                <Text Type="TextElementType.Secondary">Owner confirmation command</Text>
+                                                <div class="confirmation-text">@AgentControlCenterService.BuildWorkspaceProposalConfirmationText(proposal)</div>
+                                            </div>
                                         </Panel>
                                     }
                                 </Collapse>
@@ -225,6 +246,24 @@
     {
         RefreshSnapshot();
         StateHasChanged();
+    }
+
+    void StartTask(string taskId)
+    {
+        if (Module == null)
+            return;
+
+        Module.StartTaskFromControlCenter(taskId);
+        Refresh();
+    }
+
+    void CompleteTask(string taskId)
+    {
+        if (Module == null)
+            return;
+
+        Module.CompleteTaskFromControlCenter(taskId);
+        Refresh();
     }
 
     void RefreshSnapshot()
@@ -385,6 +424,22 @@
         font-size: 12px;
         line-height: 1.5;
         white-space: pre-wrap;
+    }
+
+    .confirmation-box {
+        margin-top: 10px;
+        border: 1px solid #d9d9d9;
+        border-radius: 6px;
+        background: #fafafa;
+        padding: 10px;
+    }
+
+    .confirmation-text {
+        margin-top: 6px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+        color: #1d4ed8;
     }
 
     .issue-text {

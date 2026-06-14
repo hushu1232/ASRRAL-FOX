@@ -78,6 +78,21 @@ public class AgentControlCenterService(
             auditLog.GetRecentEntries(12));
     }
 
+    public AgentTaskState StartTaskFromControlCenter(string taskId)
+    {
+        return tasks.StartTask(taskId, "agent-control-ui");
+    }
+
+    public AgentTaskState CompleteTaskFromControlCenter(string taskId, string detail = "completed from Agent Control Center")
+    {
+        return tasks.CompleteTask(taskId, "agent-control-ui", detail);
+    }
+
+    public static string BuildWorkspaceProposalConfirmationText(AgentWorkspacePatchProposal proposal)
+    {
+        return $"confirm execute <workspace_apply_proposal id=\"{EscapeXmlAttribute(proposal.Id)}\" />";
+    }
+
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
@@ -131,5 +146,14 @@ public class AgentControlCenterService(
             new AgentCommandDefinition("dotnet-build-solution", "Build the Alife solution without restoring packages.", "dotnet", "build Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(3)),
             new AgentCommandDefinition("dotnet-test-solution", "Run the Alife solution tests without restoring packages.", "dotnet", "test Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(5))
         ]);
+    }
+
+    static string EscapeXmlAttribute(string value)
+    {
+        return value
+            .Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace("\"", "&quot;", StringComparison.Ordinal)
+            .Replace("<", "&lt;", StringComparison.Ordinal)
+            .Replace(">", "&gt;", StringComparison.Ordinal);
     }
 }

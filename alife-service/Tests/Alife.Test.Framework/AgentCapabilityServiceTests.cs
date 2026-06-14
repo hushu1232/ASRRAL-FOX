@@ -524,6 +524,44 @@ public class AgentCapabilityServiceTests
         Assert.That(snapshot.WorkspaceRoots, Does.Contain(Path.GetFullPath(root)));
     }
 
+    [Test]
+    public void AgentControlCenterTaskActionsUpdateStateAndAudit()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentTaskService tasks = new(audit, taskStorePath: Path.Combine(root, "tasks.json"));
+        AgentTaskState task = tasks.CreateTask("owner", "Operate from control center", ["start", "complete"]);
+        AgentControlCenterService service = new(tasks: tasks, auditLog: audit);
+
+        AgentTaskState running = service.StartTaskFromControlCenter(task.Id);
+        AgentTaskState completed = service.CompleteTaskFromControlCenter(task.Id, "verified from UI");
+
+        Assert.That(running.Status, Is.EqualTo(AgentTaskStatus.Running));
+        Assert.That(completed.Status, Is.EqualTo(AgentTaskStatus.Completed));
+        Assert.That(tasks.GetLatestTask()?.Status, Is.EqualTo(AgentTaskStatus.Completed));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.task.completed"));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Actor), Does.Contain("agent-control-ui"));
+    }
+
+    [Test]
+    public void AgentControlCenterBuildsOwnerConfirmationTextForWorkspaceProposal()
+    {
+        AgentWorkspacePatchProposal proposal = new(
+            "abc123",
+            "D:/workspace/src/AgentNote.cs",
+            "src/AgentNote.cs",
+            "AgentNote",
+            "GeneratedAgentNote",
+            "- AgentNote\n+ GeneratedAgentNote",
+            DateTimeOffset.Now);
+
+        string confirmation = AgentControlCenterService.BuildWorkspaceProposalConfirmationText(proposal);
+
+        Assert.That(confirmation, Does.Contain("confirm execute"));
+        Assert.That(confirmation, Does.Contain("workspace_apply_proposal"));
+        Assert.That(confirmation, Does.Contain("abc123"));
+    }
+
     static string CreateTempWorkspace()
     {
         string root = Path.Combine(Path.GetTempPath(), "alife-agent-tests", Guid.NewGuid().ToString("N"));
