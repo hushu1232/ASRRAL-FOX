@@ -134,6 +134,34 @@
                             </Card>
                         </GridCol>
                     </GridRow>
+                    <GridRow Gutter="16" Style="margin-top: 16px;">
+                        <GridCol Xs="24">
+                            <Card Size="CardSize.Small" Title="Interaction limits" Class="qzone-card">
+                                <GridRow Gutter="16">
+                                    <GridCol Xs="24" Md="12">
+                                        <FormItem Label="Target cooldown minutes">
+                                            <AntDesign.InputNumber @bind-Value="@Configuration.QZoneTargetCooldownMinutes"
+                                                                   Min="0.0"
+                                                                   Max="1440.0"
+                                                                   Step="1.0"
+                                                                   Style="width: 100%;" />
+                                        </FormItem>
+                                    </GridCol>
+                                    <GridCol Xs="24" Md="12">
+                                        <FormItem Label="Max interactions per target per day">
+                                            <AntDesign.InputNumber @bind-Value="@Configuration.MaxQZoneInteractionsPerTargetPerDay"
+                                                                   Min="0"
+                                                                   Max="50"
+                                                                   Style="width: 100%;" />
+                                        </FormItem>
+                                    </GridCol>
+                                </GridRow>
+                                <Text Type="TextElementType.Secondary">
+                                    Set 0 to disable a limit. These rules apply after the allowlist check and before live QZone actions.
+                                </Text>
+                            </Card>
+                        </GridCol>
+                    </GridRow>
                 </TabPane>
 
                 <TabPane Tab="高级" Key="advanced">

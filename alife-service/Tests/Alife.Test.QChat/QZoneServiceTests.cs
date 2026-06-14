@@ -70,6 +70,56 @@ public class QZoneServiceTests
     }
 
     [Test]
+    public async Task QZoneLike_SkipsSameTargetDuringConfiguredCooldown()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-14T12:00:00Z");
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = new(runtime, clock: () => now)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                PrivateChatContactIds = "1001",
+                PrivateContactLikeProbability = 1.0,
+                QZoneTargetCooldownMinutes = 30,
+                DryRunExternalActions = false
+            }
+        };
+
+        QZoneActionResult first = await service.QZoneLike(1001, "post-a", () => 0.0);
+        QZoneActionResult second = await service.QZoneLike(1001, "post-b", () => 0.0);
+
+        Assert.That(first.Executed, Is.True);
+        Assert.That(second.Executed, Is.False);
+        Assert.That(second.Reason, Does.Contain("cooldown"));
+        Assert.That(runtime.Likes, Is.EqualTo(new[] { (1001L, "post-a") }));
+    }
+
+    [Test]
+    public async Task QZoneComment_SkipsSameTargetAfterDailyLimit()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-14T12:00:00Z");
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = new(runtime, clock: () => now)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                MaxQZoneInteractionsPerTargetPerDay = 1,
+                DryRunExternalActions = false
+            }
+        };
+
+        QZoneActionResult first = await service.QZoneComment(1001, "post-a", "nice");
+        QZoneActionResult second = await service.QZoneComment(1001, "post-b", "thanks");
+
+        Assert.That(first.Executed, Is.True);
+        Assert.That(second.Executed, Is.False);
+        Assert.That(second.Reason, Does.Contain("daily limit"));
+        Assert.That(runtime.Comments, Is.EqualTo(new[] { (1001L, "post-a", "nice") }));
+    }
+
+    [Test]
     public async Task QZoneReplyComment_CallsRuntimeWhenMostlyReplyPolicyAllows()
     {
         FakeQZoneRuntime runtime = new();

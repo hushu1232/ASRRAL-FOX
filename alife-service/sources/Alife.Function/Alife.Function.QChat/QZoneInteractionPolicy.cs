@@ -10,6 +10,8 @@ public record QZoneInteractionConfig
     public string PrivateChatContactIds { get; set; } = "";
     public double PrivateContactLikeProbability { get; set; } = 0.15;
     public double CommentReplyProbability { get; set; } = 0.8;
+    public double QZoneTargetCooldownMinutes { get; set; }
+    public int MaxQZoneInteractionsPerTargetPerDay { get; set; }
 }
 
 public static class QZoneInteractionPolicy

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -44,7 +45,8 @@ public class QZoneService(
     XmlFunctionCaller? functionService = null,
     ILifeEventPublisher? lifeEventPublisher = null,
     AgentProactiveBehaviorService? proactiveBehavior = null,
-    AgentAuditLogService? auditLog = null) :
+    AgentAuditLogService? auditLog = null,
+    Func<DateTimeOffset>? clock = null) :
     InteractiveModule<QZoneService>,
     IConfigurable<QZoneServiceConfig>,
     IEmbodiedCapability,
@@ -55,6 +57,9 @@ public class QZoneService(
     IOneBotActionConnection? ownedConnection;
     readonly AgentProactiveBehaviorService? proactiveBehavior = proactiveBehavior;
     readonly AgentAuditLogService? auditLog = auditLog;
+    readonly Func<DateTimeOffset> clock = clock ?? (() => DateTimeOffset.Now);
+    readonly Dictionary<long, DateTimeOffset> lastTargetInteractions = new();
+    readonly Dictionary<long, List<DateTimeOffset>> targetInteractionHistory = new();
     public QZoneServiceConfig? Configuration { get; set; } = new();
     public string Name => "QQ空间";
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Communication;
@@ -172,6 +177,7 @@ public class QZoneService(
 
         IQZoneRuntime liveRuntime = GetRuntime();
         await liveRuntime.Comment(targetId, postId, content);
+        MarkTargetInteraction(targetId);
         PublishLifeEvent($"You commented on QQ Zone post {targetId}/{postId}: {content}");
         return Report(new QZoneActionResult("comment", true, "commented on QQ Zone post"));
     }
@@ -201,6 +207,7 @@ public class QZoneService(
 
         IQZoneRuntime liveRuntime = GetRuntime();
         await liveRuntime.ReplyComment(targetId, postId, commentId, content);
+        MarkTargetInteraction(targetId);
         PublishLifeEvent($"You replied to QQ Zone comment {targetId}/{postId}/{commentId}: {content}");
         return Report(new QZoneActionResult("reply", true, "replied to QQ Zone comment"));
     }
@@ -229,6 +236,7 @@ public class QZoneService(
 
         IQZoneRuntime liveRuntime = GetRuntime();
         await liveRuntime.LikePost(targetId, postId);
+        MarkTargetInteraction(targetId);
         PublishLifeEvent($"You liked QQ Zone post {targetId}/{postId}.");
         return Report(new QZoneActionResult("like", true, "liked QQ Zone post"));
     }
@@ -338,7 +346,7 @@ public class QZoneService(
             : new QZoneActionResult(action, false, "QQ Zone is disabled");
     }
 
-    static QZoneActionResult? BeforeTargetAction(string action, QZoneServiceConfig config, long targetId)
+    QZoneActionResult? BeforeTargetAction(string action, QZoneServiceConfig config, long targetId)
     {
         QZoneActionResult? result = BeforeAction(action, config);
         if (result != null)
@@ -349,7 +357,55 @@ public class QZoneService(
         if (IsAllowedTarget(config.AllowedQZoneTargetIds, targetId) == false)
             return new QZoneActionResult(action, false, $"QQ Zone target {targetId} is not in the allowlist");
 
+        result = BuildCooldownResult(action, config, targetId);
+        if (result != null)
+            return result;
+
+        result = BuildDailyLimitResult(action, config, targetId);
+        if (result != null)
+            return result;
+
         return null;
+    }
+
+    QZoneActionResult? BuildCooldownResult(string action, QZoneServiceConfig config, long targetId)
+    {
+        if (config.QZoneTargetCooldownMinutes <= 0)
+            return null;
+        if (lastTargetInteractions.TryGetValue(targetId, out DateTimeOffset lastInteraction) == false)
+            return null;
+
+        DateTimeOffset availableAt = lastInteraction.AddMinutes(config.QZoneTargetCooldownMinutes);
+        return clock() < availableAt
+            ? new QZoneActionResult(action, false, $"QQ Zone target {targetId} is on cooldown until {availableAt:u}")
+            : null;
+    }
+
+    void MarkTargetInteraction(long targetId)
+    {
+        DateTimeOffset now = clock();
+        lastTargetInteractions[targetId] = now;
+        if (targetInteractionHistory.TryGetValue(targetId, out List<DateTimeOffset>? history) == false)
+        {
+            history = new List<DateTimeOffset>();
+            targetInteractionHistory[targetId] = history;
+        }
+
+        history.Add(now);
+    }
+
+    QZoneActionResult? BuildDailyLimitResult(string action, QZoneServiceConfig config, long targetId)
+    {
+        if (config.MaxQZoneInteractionsPerTargetPerDay <= 0)
+            return null;
+        if (targetInteractionHistory.TryGetValue(targetId, out List<DateTimeOffset>? history) == false)
+            return null;
+
+        DateTimeOffset now = clock();
+        int todayCount = history.Count(item => item.Date == now.Date);
+        return todayCount >= config.MaxQZoneInteractionsPerTargetPerDay
+            ? new QZoneActionResult(action, false, $"QQ Zone target {targetId} reached the daily limit.")
+            : null;
     }
 
     static bool IsAllowedTarget(string allowedIds, long targetId)
