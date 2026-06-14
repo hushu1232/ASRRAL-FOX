@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
+using Alife.Function.Agent;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Alife.Function.Speech;
@@ -55,6 +56,7 @@ public class GroupState
     public DateTime LastActivityTime { get; set; }
     public DateTime LastFlushedTime { get; set; }
     public List<string> MessageBuffer { get; set; } = [];
+    public AgentPermissionRequest? PermissionRequest { get; set; }
 }
 
 [Module("QQ聊天", """
@@ -484,6 +486,9 @@ public class QChatService(
     string[] groupAwakingWords = [];
     string[] ignoredGroup = [];
     readonly Dictionary<long, GroupState> groupStates = new();
+    readonly object permissionGate = new();
+    AgentPermissionRequest? currentPermissionRequest;
+    DateTime currentPermissionExpiresAt = DateTime.MinValue;
     DateTime lastReconnectAttemptTime = DateTime.MinValue;
     XmlHandler xmlHandler = null!;
 
@@ -497,6 +502,7 @@ public class QChatService(
         // 注入函数和提示词
         xmlHandler = new(this);
         functionService.RegisterHandlerWithoutDocument(xmlHandler);
+        functionService.ExecutionPolicy.AuthorizeHighRiskFunction = AuthorizeHighRiskXmlFunction;
 
         Prompt($"""
                 此服务为你增加收发qq消息的能力，能够处理图片，文件，转发等各种丰富的qq功能。
@@ -511,6 +517,7 @@ public class QChatService(
             throw new NullReferenceException(nameof(oneBotClient));
 
         oneBotClient.EventReceived += OnEventReceived;
+        ChatBot.ChatOver += ClearPermissionRequest;
 
         //初始尝试链接
         try
@@ -603,7 +610,12 @@ public class QChatService(
                     config,
                     basicMessageEvent,
                     pokeEvent.TargetId == config.BotId);
-                await HandleFormattedMessage(basicMessageEvent, formatted, isAwakening, senderRole);
+                AgentPermissionRequest permissionRequest = QChatMessageSecurity.BuildPermissionRequest(
+                    config,
+                    basicMessageEvent,
+                    pokeEvent.TargetId == config.BotId,
+                    content);
+                await HandleFormattedMessage(basicMessageEvent, formatted, isAwakening, senderRole, permissionRequest);
             }
 
             if (basicMessageEvent is OneBotMessageEvent messageEvent)
@@ -617,7 +629,12 @@ public class QChatService(
                                           groupAwakingWords.Any(word =>
                                               messageEvent.RawMessage.Contains(word, StringComparison.OrdinalIgnoreCase));
                 bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(config, messageEvent, isMentionedOrWoken);
-                await HandleFormattedMessage(messageEvent, formatted, isAwakening, senderRole);
+                AgentPermissionRequest permissionRequest = QChatMessageSecurity.BuildPermissionRequest(
+                    config,
+                    messageEvent,
+                    isMentionedOrWoken,
+                    messageEvent.RawMessage);
+                await HandleFormattedMessage(messageEvent, formatted, isAwakening, senderRole, permissionRequest);
             }
         }
         catch (Exception e)
@@ -636,12 +653,20 @@ public class QChatService(
             QGroup(groupId, true);
     }
 
-    async Task HandleFormattedMessage(OneBotBasicMessageEvent messageEvent, string formatted, bool isAwakening, QChatSenderRole senderRole)
+    async Task HandleFormattedMessage(
+        OneBotBasicMessageEvent messageEvent,
+        string formatted,
+        bool isAwakening,
+        QChatSenderRole senderRole,
+        AgentPermissionRequest permissionRequest)
     {
         if (messageEvent.MessageType == OneBotMessageType.Private)//私聊消息
         {
             if (senderRole == QChatSenderRole.Owner || Configuration!.AllowPrivateGuestChat)
+            {
+                using IDisposable _ = PushPermissionRequest(permissionRequest, TimeSpan.FromMinutes(5));
                 await ChatAsync(formatted);
+            }
         }
         else//群聊消息
         {
@@ -656,23 +681,33 @@ public class QChatService(
 
             if (state.IsEnabled)//群聊已激活时（直接接收）
             {
-                BufferGroupMessage(state, formatted, senderRole == QChatSenderRole.Owner && Configuration!.OwnerPriorityMode);
+                BufferGroupMessage(
+                    state,
+                    formatted,
+                    senderRole == QChatSenderRole.Owner && Configuration!.OwnerPriorityMode,
+                    permissionRequest);
             }
             else if (QChatMessageSecurity.ShouldAllowProactiveGroupChat(Configuration!, messageEvent) &&
                      Random.Shared.NextSingle() < Configuration!.ProactiveChatProbability)//群聊未激活时（概率接收）
             {
-                BufferGroupMessage(state, formatted);
+                BufferGroupMessage(state, formatted, permissionRequest: permissionRequest);
                 state.LastFlushedTime = DateTime.Now;
             }
         }
     }
 
-    void BufferGroupMessage(GroupState state, string formatted, bool highPriority = false)
+    void BufferGroupMessage(
+        GroupState state,
+        string formatted,
+        bool highPriority = false,
+        AgentPermissionRequest? permissionRequest = null)
     {
         if (highPriority)
             state.MessageBuffer.Insert(0, formatted);
         else
             state.MessageBuffer.Add(formatted);
+        if (permissionRequest != null)
+            state.PermissionRequest = ChooseStrongerPermissionRequest(state.PermissionRequest, permissionRequest);
         if (Configuration!.DebounceEnabled)
             state.LastFlushedTime = DateTime.Now;
         if (Configuration!.MaxBufferMessages != -1 && state.MessageBuffer.Count > Configuration.MaxBufferMessages)
@@ -694,6 +729,11 @@ public class QChatService(
              """;
 
         state.MessageBuffer.Clear();
+        if (state.PermissionRequest != null)
+        {
+            SetPermissionRequest(state.PermissionRequest, TimeSpan.FromMinutes(5));
+            state.PermissionRequest = null;
+        }
         Poke(cachedMessage);
     }
 
@@ -709,6 +749,7 @@ public class QChatService(
         else
         {
             state.MessageBuffer.Clear();
+            state.PermissionRequest = null;
         }
     }
 
@@ -783,5 +824,133 @@ public class QChatService(
             throw new FileNotFoundException("QQ video file does not exist.", video);
 
         return video.Replace('\\', '/');
+    }
+
+    XmlFunctionExecutionDecision AuthorizeHighRiskXmlFunction(XmlFunction function)
+    {
+        AgentPermissionRequest request = GetCurrentPermissionRequest() ?? new AgentPermissionRequest(
+            ActorUserId: null,
+            Source: AgentRequestSource.PrivateChat,
+            IsMentioned: false,
+            RiskLevel: AgentRiskLevel.High,
+            HasExplicitConfirmation: false,
+            Action: $"xml.{function.Name}");
+
+        AgentPermissionConfig permissionConfig = new()
+        {
+            OwnerUserIds = Configuration is { OwnerId: not 0 } ? [Configuration.OwnerId] : [],
+            AllowGroupLowRisk = true,
+            AllowGroupMediumRiskWhenMentioned = true,
+            RequireConfirmationForHighRisk = true,
+        };
+        AgentPermissionPolicy policy = new(permissionConfig);
+        AgentPermissionDecision decision = policy.Evaluate(request with {
+            RiskLevel = ToAgentRiskLevel(function.RiskLevel),
+            Action = $"xml.{function.Name}"
+        });
+
+        return new XmlFunctionExecutionDecision(decision.Allowed, decision.Reason);
+    }
+
+    IDisposable PushPermissionRequest(AgentPermissionRequest request, TimeSpan ttl)
+    {
+        AgentPermissionRequest? previousRequest;
+        DateTime previousExpiresAt;
+        lock (permissionGate)
+        {
+            previousRequest = currentPermissionRequest;
+            previousExpiresAt = currentPermissionExpiresAt;
+            currentPermissionRequest = request;
+            currentPermissionExpiresAt = DateTime.Now.Add(ttl);
+        }
+
+        return new PermissionScope(this, previousRequest, previousExpiresAt);
+    }
+
+    void SetPermissionRequest(AgentPermissionRequest request, TimeSpan ttl)
+    {
+        lock (permissionGate)
+        {
+            currentPermissionRequest = request;
+            currentPermissionExpiresAt = DateTime.Now.Add(ttl);
+        }
+    }
+
+    AgentPermissionRequest? GetCurrentPermissionRequest()
+    {
+        lock (permissionGate)
+        {
+            if (currentPermissionRequest != null && DateTime.Now > currentPermissionExpiresAt)
+                ClearPermissionRequestCore();
+            return currentPermissionRequest;
+        }
+    }
+
+    void ClearPermissionRequest()
+    {
+        lock (permissionGate)
+            ClearPermissionRequestCore();
+    }
+
+    void RestorePermissionRequest(AgentPermissionRequest? request, DateTime expiresAt)
+    {
+        lock (permissionGate)
+        {
+            currentPermissionRequest = request;
+            currentPermissionExpiresAt = expiresAt;
+        }
+    }
+
+    void ClearPermissionRequestCore()
+    {
+        currentPermissionRequest = null;
+        currentPermissionExpiresAt = DateTime.MinValue;
+    }
+
+    AgentPermissionRequest ChooseStrongerPermissionRequest(
+        AgentPermissionRequest? current,
+        AgentPermissionRequest incoming)
+    {
+        if (current == null)
+            return incoming;
+
+        int currentScore = PermissionScore(current);
+        int incomingScore = PermissionScore(incoming);
+        if (incomingScore > currentScore)
+            return incoming;
+        if (incomingScore == currentScore && incoming.HasExplicitConfirmation && current.HasExplicitConfirmation == false)
+            return incoming;
+        return current;
+    }
+
+    int PermissionScore(AgentPermissionRequest request)
+    {
+        int score = request.Source == AgentRequestSource.GroupChat ? 10 : 20;
+        if (Configuration?.OwnerId != 0 && request.ActorUserId == Configuration?.OwnerId)
+            score += 100;
+        if (request.IsMentioned)
+            score += 5;
+        if (request.HasExplicitConfirmation)
+            score += 10;
+        if (request.ActorUserId != null)
+            score += 1;
+        return score;
+    }
+
+    static AgentRiskLevel ToAgentRiskLevel(XmlFunctionRiskLevel riskLevel) => riskLevel switch {
+        XmlFunctionRiskLevel.High => AgentRiskLevel.High,
+        XmlFunctionRiskLevel.Medium => AgentRiskLevel.Medium,
+        _ => AgentRiskLevel.Low,
+    };
+
+    sealed class PermissionScope(
+        QChatService service,
+        AgentPermissionRequest? previousRequest,
+        DateTime previousExpiresAt) : IDisposable
+    {
+        public void Dispose()
+        {
+            service.RestorePermissionRequest(previousRequest, previousExpiresAt);
+        }
     }
 }

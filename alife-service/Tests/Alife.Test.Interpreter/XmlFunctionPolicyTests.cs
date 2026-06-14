@@ -41,6 +41,29 @@ public class XmlFunctionPolicyTests
         Assert.That(handler.PingCalls, Is.EqualTo(3));
     }
 
+    [Test]
+    public async Task Handle_AllowsHighRiskFunctionOnlyWhenAuthorizerApproves()
+    {
+        PolicyHandler handler = new();
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.MaxBudgetPerTurn = 1;
+        table.ExecutionPolicy.AuthorizeHighRiskFunction = function =>
+            function.Name == "deletefile"
+                ? new XmlFunctionExecutionDecision(true, "approved")
+                : new XmlFunctionExecutionDecision(false, "denied");
+        table.Register(new XmlHandler(handler));
+
+        XmlContext context = OneShotContext();
+        await table.Handle("deletefile", context);
+
+        Assert.That(handler.DeleteCalls, Is.EqualTo(1));
+        Assert.That(table.ExecutionPolicy.BudgetUsedThisTurn, Is.EqualTo(1));
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await table.Handle("deletefile", context));
+        Assert.That(exception!.Message, Does.Contain("budget"));
+        Assert.That(handler.DeleteCalls, Is.EqualTo(1));
+    }
+
     static XmlContext OneShotContext() => new()
     {
         CallMode = CallMode.OneShot,

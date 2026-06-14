@@ -268,6 +268,7 @@ public sealed record XmlFunctionExecutionDecision(bool IsAllowed, string? Reason
 public sealed class XmlFunctionExecutionPolicy
 {
     public bool AllowHighRisk { get; set; }
+    public Func<XmlFunction, XmlFunctionExecutionDecision>? AuthorizeHighRiskFunction { get; set; }
     public int MaxBudgetPerTurn { get; set; } = 64;
     public int BudgetUsedThisTurn { get; private set; }
 
@@ -281,13 +282,19 @@ public sealed class XmlFunctionExecutionPolicy
 
     public XmlFunctionExecutionDecision TryConsume(XmlFunction function)
     {
-        lock (gate)
+        if (function.RiskLevel == XmlFunctionRiskLevel.High && AllowHighRisk == false)
         {
-            if (function.RiskLevel == XmlFunctionRiskLevel.High && AllowHighRisk == false)
-                return new XmlFunctionExecutionDecision(
+            XmlFunctionExecutionDecision? authorization = AuthorizeHighRiskFunction?.Invoke(function);
+            if (authorization is not { IsAllowed: true })
+            {
+                return authorization ?? new XmlFunctionExecutionDecision(
                     false,
                     $"XML function '{function.Name}' is high-risk and is blocked by policy.");
+            }
+        }
 
+        lock (gate)
+        {
             int budgetCost = Math.Max(1, function.BudgetCost);
             if (BudgetUsedThisTurn + budgetCost > MaxBudgetPerTurn)
                 return new XmlFunctionExecutionDecision(

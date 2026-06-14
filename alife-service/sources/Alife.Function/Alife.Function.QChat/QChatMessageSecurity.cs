@@ -1,3 +1,6 @@
+using System;
+using Alife.Function.Agent;
+
 namespace Alife.Function.QChat;
 
 public enum QChatSenderRole
@@ -48,6 +51,37 @@ public static class QChatMessageSecurity
 
         QChatSenderRole role = Classify(config, messageEvent);
         return role != QChatSenderRole.Owner && config.AllowGroupMemberChat && config.AllowProactiveGroupChat;
+    }
+
+    public static AgentPermissionRequest BuildPermissionRequest(
+        QChatConfig config,
+        OneBotBasicMessageEvent messageEvent,
+        bool isMentionedOrWoken,
+        string rawMessage)
+    {
+        AgentRequestSource source = messageEvent.MessageType == OneBotMessageType.Group
+            ? AgentRequestSource.GroupChat
+            : AgentRequestSource.PrivateChat;
+
+        return new AgentPermissionRequest(
+            ActorUserId: messageEvent.UserId == 0 ? null : messageEvent.UserId,
+            Source: source,
+            IsMentioned: isMentionedOrWoken,
+            RiskLevel: AgentRiskLevel.Low,
+            HasExplicitConfirmation: HasExplicitHighRiskConfirmation(rawMessage),
+            Action: "qq.message");
+    }
+
+    public static bool HasExplicitHighRiskConfirmation(string rawMessage)
+    {
+        if (string.IsNullOrWhiteSpace(rawMessage))
+            return false;
+
+        return rawMessage.Contains("确认执行", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("确认高风险", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("确认授权", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("confirm high risk", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("confirm execute", StringComparison.OrdinalIgnoreCase);
     }
 
     public static string FormatForModel(QChatConfig config, OneBotBasicMessageEvent messageEvent, string formatted)

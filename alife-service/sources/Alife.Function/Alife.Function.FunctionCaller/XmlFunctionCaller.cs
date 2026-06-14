@@ -15,6 +15,7 @@ namespace Alife.Function.FunctionCaller;
 public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveModule<XmlFunctionCaller>
 {
     public bool IsIdle => executor.IsInactive;
+    public XmlFunctionExecutionPolicy ExecutionPolicy => handlerTable.ExecutionPolicy;
 
     public void RegisterHandlerWithoutDocument(XmlHandler handler, params string[] plainAreas)
     {
