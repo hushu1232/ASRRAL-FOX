@@ -166,6 +166,28 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void WorkspaceServiceListsPendingReplaceProposals()
+    {
+        string root = CreateTempWorkspace();
+        string file = Path.Combine(root, "src", "AgentNote.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "class AgentNote {}\n");
+        AgentWorkspaceService workspace = new(new AgentWorkspacePolicy([root]));
+
+        AgentWorkspacePatchProposal proposal = workspace.ProposeReplace(
+            "src/AgentNote.cs",
+            "AgentNote",
+            "GeneratedAgentNote");
+
+        IReadOnlyList<AgentWorkspacePatchProposal> proposals = workspace.GetPendingProposals();
+
+        Assert.That(proposals.Select(item => item.Id), Does.Contain(proposal.Id));
+        Assert.That(proposals[0].RelativePath, Is.EqualTo("src/AgentNote.cs"));
+        Assert.That(proposals[0].Preview, Does.Contain("- AgentNote"));
+        Assert.That(File.ReadAllText(file), Does.Contain("class AgentNote {}"));
+    }
+
+    [Test]
     public void WorkspaceDefaultPolicyIncludesCurrentDirectoryForProjectCodeWork()
     {
         AgentWorkspaceService workspace = new();
@@ -450,6 +472,56 @@ public class AgentCapabilityServiceTests
         Assert.That(report, Does.Contain("LLM request failed"));
         Assert.That(report, Does.Contain("agent.command.test"));
         Assert.That(report, Does.Contain("[Degraded] QChat"));
+    }
+
+    [Test]
+    public void AgentControlCenterBuildsReadOnlySnapshot()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        audit.Record("workspace.replace", "owner", "path=src/AgentNote.cs", AgentAuditRiskLevel.High, true);
+        audit.Record("agent.command.test", "owner", "dotnet test", AgentAuditRiskLevel.High, false, "exit 1");
+        AgentTaskService tasks = new(audit, taskStorePath: Path.Combine(root, "tasks.json"));
+        AgentTaskState task = tasks.CreateTask("owner", "Build control center", ["inspect", "render"]);
+        tasks.StartTask(task.Id, "owner");
+        AgentWorkspaceService workspace = new(new AgentWorkspacePolicy([root]), auditLog: audit);
+        string file = Path.Combine(root, "src", "AgentNote.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "class AgentNote {}\n");
+        workspace.ProposeReplace("src/AgentNote.cs", "AgentNote", "GeneratedAgentNote");
+        AgentCommandPolicy commandPolicy = new([
+            new AgentCommandDefinition("test", "Run tests", "dotnet", "test", root, TimeSpan.FromSeconds(30))
+        ]);
+        AgentControlCenterService service = new(
+            new AgentDiagnosticsService(
+                [new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected.")],
+                [new StubCapability("Workspace", EmbodiedCapabilityKind.Tool, "Restricted workspace tools.", "ready")]),
+            new AgentIssueReportService(
+                audit,
+                [new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected.")]),
+            tasks,
+            workspace,
+            new AgentWorkspacePolicy([root]),
+            commandPolicy,
+            audit);
+        ChatRuntimeState runtime = new(
+            IsChatting: true,
+            PendingPokeCount: 1,
+            ChatHistoryCount: 5,
+            LastError: "LLM request failed",
+            RecentEvents: [new ChatRuntimeEvent(DateTimeOffset.Now, "Error", "LLM request failed")]);
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+
+        Assert.That(snapshot.AgentState.CharacterName, Is.EqualTo("Kira"));
+        Assert.That(snapshot.AgentState.IsChatting, Is.True);
+        Assert.That(snapshot.LatestTask?.Goal, Is.EqualTo("Build control center"));
+        Assert.That(snapshot.PendingWorkspaceProposals, Has.Count.EqualTo(1));
+        Assert.That(snapshot.AllowedCommands.Select(command => command.Id), Does.Contain("test"));
+        Assert.That(snapshot.RecentAuditEntries.Select(entry => entry.Action), Does.Contain("workspace.replace"));
+        Assert.That(snapshot.IssueReport.LastError, Is.EqualTo("LLM request failed"));
+        Assert.That(snapshot.IssueReport.FailedAuditEntries.Select(entry => entry.Action), Does.Contain("agent.command.test"));
+        Assert.That(snapshot.WorkspaceRoots, Does.Contain(Path.GetFullPath(root)));
     }
 
     static string CreateTempWorkspace()

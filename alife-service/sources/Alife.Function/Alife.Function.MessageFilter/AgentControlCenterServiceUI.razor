@@ -1,0 +1,403 @@
+@namespace Alife.Function.Agent
+@inherits Alife.Framework.ModuleUIBase<AgentControlCenterService>
+@using Alife.Framework
+@using AntDesign
+
+<div class="agent-control-shell">
+    @if (snapshot == null)
+    {
+        <Alert Type="AlertType.Warning"
+               ShowIcon="true"
+               Message="Agent control center is waiting for the runtime module instance." />
+    }
+    else
+    {
+        <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
+            <Card Size="CardSize.Small" Class="agent-control-card">
+                <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("12")">
+                    <div>
+                        <Title Level="4" Style="margin: 0;">AstralFox Agent Control</Title>
+                        <Text Type="TextElementType.Secondary">
+                            Runtime state, tasks, audit, commands, errors, and workspace proposals.
+                        </Text>
+                    </div>
+                    <Space>
+                        <SpaceItem>
+                            <Badge Status="@GetRuntimeBadgeStatus()" Text="@GetRuntimeText()" />
+                        </SpaceItem>
+                        <SpaceItem>
+                            <Button Type="@ButtonType.Primary"
+                                    Icon="@IconType.Outline.Reload"
+                                    OnClick="Refresh">
+                                Refresh
+                            </Button>
+                        </SpaceItem>
+                    </Space>
+                </Flex>
+            </Card>
+
+            <GridRow Gutter="16">
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="agent-control-card metric-card">
+                        <Text Type="TextElementType.Secondary">Runtime</Text>
+                        <div class="metric-value">@GetRuntimeText()</div>
+                        <div class="metric-caption">@snapshot.AgentState.PendingPokeCount pending / @snapshot.AgentState.ChatHistoryCount history</div>
+                    </Card>
+                </GridCol>
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="agent-control-card metric-card">
+                        <Text Type="TextElementType.Secondary">Last error</Text>
+                        <div class="metric-value compact">@Truncate(snapshot.AgentState.LastError ?? "none", 36)</div>
+                        <div class="metric-caption">@snapshot.IssueReport.RuntimeErrors.Count runtime errors</div>
+                    </Card>
+                </GridCol>
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="agent-control-card metric-card">
+                        <Text Type="TextElementType.Secondary">Task</Text>
+                        <div class="metric-value compact">@GetTaskText()</div>
+                        <div class="metric-caption">latest tracked task</div>
+                    </Card>
+                </GridCol>
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="agent-control-card metric-card">
+                        <Text Type="TextElementType.Secondary">Risk</Text>
+                        <div class="metric-value">@snapshot.PendingWorkspaceProposals.Count proposals</div>
+                        <div class="metric-caption">@HighRiskAuditCount high-risk recent entries</div>
+                    </Card>
+                </GridCol>
+            </GridRow>
+
+            <GridRow Gutter="16">
+                <GridCol Xs="24" Lg="15">
+                    <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
+                        <Card Size="CardSize.Small" Title="Current task" Class="agent-control-card">
+                            @if (snapshot.LatestTask == null)
+                            {
+                                <div class="empty-state">No tracked task</div>
+                            }
+                            else
+                            {
+                                <Flex Direction="FlexDirection.Vertical" Gap="@("10")">
+                                    <div>
+                                        <Text Strong>@snapshot.LatestTask.Goal</Text>
+                                        <Tag Color="@GetTaskColor(snapshot.LatestTask.Status)" Style="margin-left: 8px;">
+                                            @snapshot.LatestTask.Status
+                                        </Tag>
+                                    </div>
+                                    @if (snapshot.LatestTask.Steps.Count > 0)
+                                    {
+                                        <div class="step-list">
+                                            @foreach (string step in snapshot.LatestTask.Steps)
+                                            {
+                                                <div class="step-line">@step</div>
+                                            }
+                                        </div>
+                                    }
+                                    <div class="event-list">
+                                        @foreach (AgentTaskEvent taskEvent in snapshot.LatestTask.Events.TakeLast(5))
+                                        {
+                                            <div class="event-line">
+                                                <span class="event-time">@taskEvent.Timestamp.ToString("HH:mm:ss")</span>
+                                                <span>@taskEvent.Kind</span>
+                                                <span>@taskEvent.Actor</span>
+                                                <span>@taskEvent.Detail</span>
+                                            </div>
+                                        }
+                                    </div>
+                                </Flex>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Workspace proposals" Class="agent-control-card">
+                            @if (snapshot.PendingWorkspaceProposals.Count == 0)
+                            {
+                                <div class="empty-state">No pending workspace proposals</div>
+                            }
+                            else
+                            {
+                                <Collapse>
+                                    @foreach (AgentWorkspacePatchProposal proposal in snapshot.PendingWorkspaceProposals.Take(6))
+                                    {
+                                        <Panel Key="@proposal.Id" Header="@($"{proposal.RelativePath}  {proposal.Id[..Math.Min(8, proposal.Id.Length)]}")">
+                                            <Text Type="TextElementType.Secondary">Created: @proposal.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</Text>
+                                            <pre class="proposal-preview">@proposal.Preview</pre>
+                                        </Panel>
+                                    }
+                                </Collapse>
+                            }
+                        </Card>
+                    </Flex>
+                </GridCol>
+
+                <GridCol Xs="24" Lg="9">
+                    <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
+                        <Card Size="CardSize.Small" Title="Allowed commands" Class="agent-control-card">
+                            @if (snapshot.AllowedCommands.Count == 0)
+                            {
+                                <div class="empty-state">No commands configured</div>
+                            }
+                            else
+                            {
+                                <div class="command-list">
+                                    @foreach (AgentCommandDefinition command in snapshot.AllowedCommands)
+                                    {
+                                        <div class="command-line">
+                                            <div>
+                                                <Text Strong>@command.Id</Text>
+                                                <div class="muted">@command.Description</div>
+                                            </div>
+                                            <Tag Color="@("blue")">@command.Timeout.TotalSeconds.ToString("0")s</Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Recent audit" Class="agent-control-card">
+                            @if (snapshot.RecentAuditEntries.Count == 0)
+                            {
+                                <div class="empty-state">No audit entries</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list">
+                                    @foreach (AgentAuditLogEntry entry in snapshot.RecentAuditEntries.TakeLast(8).Reverse())
+                                    {
+                                        <div class="audit-line @(entry.Succeeded ? "" : "failed")">
+                                            <div>
+                                                <Text Strong>@entry.Action</Text>
+                                                <div class="muted">@Truncate(entry.Detail, 80)</div>
+                                                @if (string.IsNullOrWhiteSpace(entry.Error) == false)
+                                                {
+                                                    <div class="audit-error">@entry.Error</div>
+                                                }
+                                            </div>
+                                            <Tag Color="@GetRiskColor(entry.RiskLevel)">
+                                                @entry.RiskLevel
+                                            </Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Issue report" Class="agent-control-card">
+                            <Flex Direction="FlexDirection.Vertical" Gap="@("8")">
+                                <div>
+                                    <Text Type="TextElementType.Secondary">Last error</Text>
+                                    <div class="issue-text">@Truncate(snapshot.IssueReport.LastError ?? "none", 100)</div>
+                                </div>
+                                <Divider Style="margin: 4px 0;" />
+                                <div>
+                                    <Text Type="TextElementType.Secondary">Unhealthy modules</Text>
+                                    @if (snapshot.IssueReport.UnhealthyModules.Count == 0)
+                                    {
+                                        <div class="muted">none</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (ModuleHealth health in snapshot.IssueReport.UnhealthyModules.Take(5))
+                                        {
+                                            <div class="issue-text">[@health.Status] @health.Name: @health.Summary</div>
+                                        }
+                                    }
+                                </div>
+                            </Flex>
+                        </Card>
+                    </Flex>
+                </GridCol>
+            </GridRow>
+        </Flex>
+    }
+</div>
+
+@code {
+    AgentControlCenterSnapshot? snapshot;
+
+    int HighRiskAuditCount => snapshot?.RecentAuditEntries.Count(entry => entry.RiskLevel == AgentAuditRiskLevel.High) ?? 0;
+
+    protected override void OnParametersSet()
+    {
+        RefreshSnapshot();
+    }
+
+    void Refresh()
+    {
+        RefreshSnapshot();
+        StateHasChanged();
+    }
+
+    void RefreshSnapshot()
+    {
+        if (Module == null)
+        {
+            snapshot = null;
+            return;
+        }
+
+        ChatRuntimeState runtime = ChatActivity?.ChatBot.GetRuntimeState()
+                                   ?? new ChatRuntimeState(false, 0, 0, null, []);
+        string characterName = Character?.Name ?? "Agent";
+        snapshot = Module.BuildSnapshot(runtime, characterName);
+    }
+
+    BadgeStatus GetRuntimeBadgeStatus()
+    {
+        if (snapshot == null)
+            return BadgeStatus.Default;
+        return snapshot.AgentState.LastError == null
+            ? (snapshot.AgentState.IsChatting ? BadgeStatus.Processing : BadgeStatus.Success)
+            : BadgeStatus.Error;
+    }
+
+    string GetRuntimeText()
+    {
+        if (snapshot == null)
+            return "unavailable";
+        if (snapshot.AgentState.LastError != null)
+            return "attention";
+        return snapshot.AgentState.IsChatting ? "chatting" : "idle";
+    }
+
+    string GetTaskText()
+    {
+        if (snapshot?.LatestTask == null)
+            return "none";
+        return $"{snapshot.LatestTask.Status}";
+    }
+
+    static string GetTaskColor(AgentTaskStatus status) => status switch
+    {
+        AgentTaskStatus.Running => "processing",
+        AgentTaskStatus.Completed => "success",
+        AgentTaskStatus.Failed => "error",
+        AgentTaskStatus.Cancelled => "default",
+        _ => "blue"
+    };
+
+    static string GetRiskColor(AgentAuditRiskLevel riskLevel) => riskLevel switch
+    {
+        AgentAuditRiskLevel.High => "red",
+        AgentAuditRiskLevel.Medium => "orange",
+        _ => "green"
+    };
+
+    static string Truncate(string value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "none";
+        string trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength] + "...";
+    }
+}
+
+<style>
+    .agent-control-shell {
+        background: #fafafa;
+        border: 1px solid #f0f0f0;
+        border-radius: 8px;
+        padding: 16px;
+    }
+
+    .agent-control-card {
+        border-radius: 8px;
+    }
+
+    .metric-card {
+        min-height: 92px;
+    }
+
+    .metric-value {
+        font-size: 20px;
+        font-weight: 650;
+        margin-top: 6px;
+        overflow-wrap: anywhere;
+    }
+
+    .metric-value.compact {
+        font-size: 16px;
+    }
+
+    .metric-caption,
+    .muted {
+        color: #64748b;
+        font-size: 12px;
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+    }
+
+    .step-list,
+    .event-list,
+    .command-list,
+    .audit-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .step-line,
+    .event-line,
+    .command-line,
+    .audit-line {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 8px;
+        overflow-wrap: anywhere;
+    }
+
+    .event-line,
+    .command-line,
+    .audit-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+    }
+
+    .event-time {
+        color: #64748b;
+        font-family: Consolas, monospace;
+        min-width: 54px;
+    }
+
+    .audit-line.failed {
+        border-color: #ffccc7;
+        background: #fff2f0;
+    }
+
+    .audit-error {
+        color: #cf1322;
+        font-size: 12px;
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+    }
+
+    .proposal-preview {
+        margin-top: 10px;
+        max-height: 240px;
+        overflow: auto;
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 10px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+    }
+
+    .issue-text {
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+    }
+
+    .empty-state {
+        color: #64748b;
+        padding: 24px;
+        text-align: center;
+        border: 1px dashed #d9d9d9;
+        border-radius: 6px;
+        background: #fff;
+    }
+</style>

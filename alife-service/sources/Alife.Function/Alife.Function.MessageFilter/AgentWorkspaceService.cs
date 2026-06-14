@@ -423,6 +423,16 @@ public class AgentWorkspaceService(
         return proposal;
     }
 
+    public IReadOnlyList<AgentWorkspacePatchProposal> GetPendingProposals()
+    {
+        lock (patchProposals)
+        {
+            return patchProposals.Values
+                .OrderByDescending(proposal => proposal.CreatedAt)
+                .ToArray();
+        }
+    }
+
     public AgentWorkspaceReplaceResult ApplyProposedReplace(string id)
     {
         if (string.IsNullOrWhiteSpace(id))
