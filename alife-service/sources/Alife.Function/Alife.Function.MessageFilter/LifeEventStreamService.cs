@@ -1,0 +1,190 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Alife.Framework;
+using Alife.Platform;
+
+namespace Alife.Function.MessageFilter;
+
+[Module(
+    "Life Event Stream",
+    "Keeps a bounded short-term stream of recent embodied experiences for self-context injection.",
+    defaultCategory: "Alife Official/Living Environment",
+    LaunchOrder = -85)]
+public class LifeEventStreamService
+    : InteractiveModule<LifeEventStreamService>, ILifeEventStream, IModuleHealthReporter
+{
+    readonly object syncRoot = new();
+    readonly List<LifeEvent> events = new();
+    readonly int maxRetainedEvents;
+    string? storeFilePath;
+
+    public LifeEventStreamService(int maxRetainedEvents = 32, string? storagePath = null)
+    {
+        this.maxRetainedEvents = Math.Max(1, maxRetainedEvents);
+        if (string.IsNullOrWhiteSpace(storagePath) == false)
+        {
+            InitializeStorage(storagePath);
+        }
+    }
+
+    public override async Task AwakeAsync(AwakeContext context)
+    {
+        await base.AwakeAsync(context);
+        if (storeFilePath == null)
+            InitializeStorage(Path.Combine(AlifePath.StorageFolderPath, context.Character.StorageKey, "LifeEvents"));
+    }
+
+    public void Publish(LifeEvent lifeEvent)
+    {
+        if (string.IsNullOrWhiteSpace(lifeEvent.Summary))
+            return;
+
+        lock (syncRoot)
+        {
+            LifeEvent normalized = lifeEvent with
+            {
+                Id = string.IsNullOrWhiteSpace(lifeEvent.Id) ? Guid.NewGuid().ToString("N") : lifeEvent.Id.Trim(),
+                Importance = Math.Max(0, lifeEvent.Importance),
+                Source = lifeEvent.Source.Trim(),
+                Summary = lifeEvent.Summary.Trim()
+            };
+
+            events.RemoveAll(existing => existing.Id == normalized.Id);
+            events.Add(normalized);
+            int overflow = events.Count - maxRetainedEvents;
+            if (overflow > 0)
+                events.RemoveRange(0, overflow);
+
+            SavePersistedEvents();
+        }
+    }
+
+    public IReadOnlyList<LifeEvent> GetRecentEvents(int maxCount)
+    {
+        if (maxCount <= 0)
+            return [];
+
+        lock (syncRoot)
+        {
+            return events
+                .OrderBy(lifeEvent => lifeEvent.Timestamp)
+                .TakeLast(maxCount)
+                .ToArray();
+        }
+    }
+
+    public ModuleHealth GetHealth()
+    {
+        int count;
+        lock (syncRoot)
+        {
+            count = events.Count;
+        }
+
+        return new ModuleHealth("LifeEventStream", ModuleHealthStatus.Healthy, $"In-memory life event stream is available; retained events: {count}.");
+    }
+
+    public void MarkPersisted(IEnumerable<string> eventIds)
+    {
+        HashSet<string> ids = eventIds
+            .Where(id => string.IsNullOrWhiteSpace(id) == false)
+            .Select(id => id.Trim())
+            .ToHashSet(StringComparer.Ordinal);
+        if (ids.Count == 0)
+            return;
+
+        lock (syncRoot)
+        {
+            for (int index = 0; index < events.Count; index++)
+            {
+                if (ids.Contains(events[index].Id))
+                    events[index] = events[index] with { IsPersisted = true };
+            }
+
+            SavePersistedEvents();
+        }
+    }
+
+    public static string FormatRecentExperiences(
+        IEnumerable<LifeEvent> recentEvents,
+        int maxCount = 8,
+        int maxSummaryLength = 180)
+    {
+        LifeEvent[] selectedEvents = recentEvents
+            .Where(lifeEvent => string.IsNullOrWhiteSpace(lifeEvent.Summary) == false)
+            .OrderBy(lifeEvent => lifeEvent.Timestamp)
+            .TakeLast(Math.Max(0, maxCount))
+            .ToArray();
+
+        if (selectedEvents.Length == 0)
+            return string.Empty;
+
+        int summaryLength = Math.Max(8, maxSummaryLength);
+        StringBuilder builder = new();
+        builder.AppendLine("[Recent experiences]");
+        foreach (LifeEvent lifeEvent in selectedEvents)
+        {
+            builder.Append("- ");
+            builder.Append(lifeEvent.Timestamp.ToString("HH:mm"));
+            builder.Append(' ');
+            builder.AppendLine(Truncate(lifeEvent.Summary.Trim(), summaryLength));
+        }
+        builder.Append("[/Recent experiences]");
+        return builder.ToString();
+    }
+
+    static string Truncate(string text, int maxLength)
+    {
+        if (text.Length <= maxLength)
+            return text;
+
+        return text[..maxLength] + "...";
+    }
+
+    void LoadPersistedEvents()
+    {
+        if (storeFilePath == null || File.Exists(storeFilePath) == false)
+            return;
+
+        foreach (string line in File.ReadLines(storeFilePath))
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+            try
+            {
+                LifeEvent? lifeEvent = JsonSerializer.Deserialize<LifeEvent>(line);
+                if (lifeEvent != null && string.IsNullOrWhiteSpace(lifeEvent.Summary) == false)
+                    events.Add(lifeEvent);
+            }
+            catch
+            {
+                // Ignore malformed historical lines; the stream is best-effort context.
+            }
+        }
+
+        events.Sort((left, right) => left.Timestamp.CompareTo(right.Timestamp));
+        int overflow = events.Count - maxRetainedEvents;
+        if (overflow > 0)
+            events.RemoveRange(0, overflow);
+    }
+
+    void SavePersistedEvents()
+    {
+        if (storeFilePath == null)
+            return;
+
+        File.WriteAllLines(storeFilePath, events.Select(lifeEvent => JsonSerializer.Serialize(lifeEvent)));
+    }
+
+    void InitializeStorage(string storagePath)
+    {
+        Directory.CreateDirectory(storagePath);
+        storeFilePath = Path.Combine(storagePath, "life-events.jsonl");
+        LoadPersistedEvents();
+    }
+}
