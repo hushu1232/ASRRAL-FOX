@@ -56,6 +56,16 @@ public interface IAgentProactiveSuggestionProvider
     IReadOnlyList<AgentProactiveSuggestion> BuildSuggestions(AgentProactiveSuggestionContext context);
 }
 
+public sealed record AgentProactiveExternalExecutionResult(
+    bool Succeeded,
+    string Message);
+
+public interface IAgentProactiveSuggestionExecutor
+{
+    bool CanExecute(AgentProactivePendingSuggestion pending);
+    Task<AgentProactiveExternalExecutionResult> ExecuteAsync(AgentProactivePendingSuggestion pending);
+}
+
 public sealed class AgentProactiveSuggestionPersistenceState
 {
     public List<AgentProactivePendingSuggestion> Pending { get; set; } = [];

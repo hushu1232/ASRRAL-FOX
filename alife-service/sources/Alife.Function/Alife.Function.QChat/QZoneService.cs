@@ -48,7 +48,8 @@ public class QZoneService(
     InteractiveModule<QZoneService>,
     IConfigurable<QZoneServiceConfig>,
     IEmbodiedCapability,
-    IModuleHealthReporter
+    IModuleHealthReporter,
+    IAgentProactiveSuggestionExecutor
 {
     IQZoneRuntime? createdRuntime;
     IOneBotActionConnection? ownedConnection;
@@ -230,6 +231,20 @@ public class QZoneService(
         await liveRuntime.LikePost(targetId, postId);
         PublishLifeEvent($"You liked QQ Zone post {targetId}/{postId}.");
         return Report(new QZoneActionResult("like", true, "liked QQ Zone post"));
+    }
+
+    public bool CanExecute(AgentProactivePendingSuggestion pending)
+    {
+        return pending.Status == AgentProactivePendingStatus.Confirmed
+               && pending.Suggestion.TargetType?.Equals("qzone", StringComparison.OrdinalIgnoreCase) == true
+               && pending.Suggestion.Kind is AgentProactiveActionKind.QZoneLike or AgentProactiveActionKind.QZoneReply;
+    }
+
+    public async Task<AgentProactiveExternalExecutionResult> ExecuteAsync(AgentProactivePendingSuggestion pending)
+    {
+        QZoneProactiveExecutionService executor = new(this);
+        QZoneProactiveExecutionResult result = await executor.ExecuteAsync(pending);
+        return new AgentProactiveExternalExecutionResult(result.Succeeded, result.Message);
     }
 
     [XmlFunction(FunctionMode.OneShot, name: "qzone_proactive_execute", riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]

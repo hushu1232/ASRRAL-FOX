@@ -149,6 +149,13 @@
                         </Card>
 
                         <Card Size="CardSize.Small" Title="Proactive suggestions" Class="agent-control-card">
+                            @if (string.IsNullOrWhiteSpace(lastProactiveActionMessage) == false)
+                            {
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="@lastProactiveActionMessage"
+                                       Style="margin-bottom: 10px;" />
+                            }
                             @if (snapshot.PendingProactiveSuggestions.Count == 0)
                             {
                                 <div class="empty-state">No pending proactive suggestions</div>
@@ -167,6 +174,21 @@
                                                     <div class="muted">Draft: @Truncate(pending.Suggestion.DraftText, 120)</div>
                                                 }
                                                 <div class="confirmation-text">@AgentProactiveBehaviorService.BuildPendingSuggestionConfirmationText(pending)</div>
+                                                <Space Style="margin-top: 8px;">
+                                                    <SpaceItem>
+                                                        <Button Size="@ButtonSize.Small"
+                                                                Type="@ButtonType.Primary"
+                                                                OnClick="@(() => ConfirmProactive(pending.Id))">
+                                                            Confirm
+                                                        </Button>
+                                                    </SpaceItem>
+                                                    <SpaceItem>
+                                                        <Button Size="@ButtonSize.Small"
+                                                                OnClick="@(() => DismissProactive(pending.Id))">
+                                                            Dismiss
+                                                        </Button>
+                                                    </SpaceItem>
+                                                </Space>
                                             </div>
                                             <Tag Color="@GetRiskColor(pending.Suggestion.RiskLevel)">
                                                 @pending.Suggestion.RiskLevel
@@ -178,6 +200,14 @@
                         </Card>
 
                         <Card Size="CardSize.Small" Title="Proactive history" Class="agent-control-card">
+                            <Space Style="margin-bottom: 10px;">
+                                <SpaceItem>
+                                    <Button Size="@ButtonSize.Small"
+                                            OnClick="@CleanupProactive">
+                                        Cleanup
+                                    </Button>
+                                </SpaceItem>
+                            </Space>
                             @if (snapshot.CompletedProactiveSuggestions.Count == 0)
                             {
                                 <div class="empty-state">No completed proactive suggestions</div>
@@ -198,6 +228,12 @@
                                                 @if (completed.Status == AgentProactivePendingStatus.Confirmed)
                                                 {
                                                     <div class="confirmation-text">@AgentProactiveBehaviorService.BuildConfirmedSuggestionExecutionText(completed)</div>
+                                                    <Button Size="@ButtonSize.Small"
+                                                            Type="@ButtonType.Primary"
+                                                            Style="margin-top: 8px;"
+                                                            OnClick="@(() => ExecuteProactive(completed.Id))">
+                                                        Execute
+                                                    </Button>
                                                 }
                                             </div>
                                             <Tag Color="@GetProactiveStatusColor(completed.Status)">
@@ -358,6 +394,7 @@
 
 @code {
     AgentControlCenterSnapshot? snapshot;
+    string? lastProactiveActionMessage;
 
     int HighRiskAuditCount => snapshot?.RecentAuditEntries.Count(entry => entry.RiskLevel == AgentAuditRiskLevel.High) ?? 0;
 
@@ -388,6 +425,52 @@
 
         Module.CompleteTaskFromControlCenter(taskId);
         Refresh();
+    }
+
+    Task ConfirmProactive(string id)
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        AgentProactivePendingSuggestion pending = Module.ConfirmProactiveSuggestionFromControlCenter(id);
+        lastProactiveActionMessage = $"Confirmed {pending.Suggestion.Kind}.";
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    Task DismissProactive(string id)
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        AgentProactivePendingSuggestion pending = Module.DismissProactiveSuggestionFromControlCenter(id);
+        lastProactiveActionMessage = $"Dismissed {pending.Suggestion.Kind}.";
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    async Task ExecuteProactive(string id)
+    {
+        if (Module == null)
+            return;
+
+        AgentProactiveExternalExecutionResult result = await Module.ExecuteProactiveSuggestionFromControlCenter(id);
+        lastProactiveActionMessage = result.Message;
+        Refresh();
+    }
+
+    Task CleanupProactive()
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        AgentProactiveCleanupResult result = Module.CleanupProactiveSuggestionsFromControlCenter(
+            TimeSpan.FromHours(24),
+            TimeSpan.FromDays(30));
+        lastProactiveActionMessage =
+            $"Cleanup expired {result.ExpiredPendingCount} pending and removed {result.RemovedCompletedCount} completed.";
+        Refresh();
+        return Task.CompletedTask;
     }
 
     void RefreshSnapshot()

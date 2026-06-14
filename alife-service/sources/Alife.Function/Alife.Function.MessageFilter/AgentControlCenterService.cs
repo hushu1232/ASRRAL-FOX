@@ -86,6 +86,7 @@ public class AgentControlCenterService(
         workspacePolicy,
         auditLog: auditLog);
     AgentProactiveBehaviorService? proactiveBehavior;
+    IReadOnlyList<IAgentProactiveSuggestionExecutor> proactiveExecutors = [];
     readonly AgentWorkspacePolicy workspacePolicy = NormalizeWorkspacePolicy(workspacePolicy ?? CreateDefaultWorkspacePolicy());
     readonly Dictionary<string, AgentConfigurationChangeProposal> configurationProposals = new(StringComparer.OrdinalIgnoreCase);
     readonly ConfigurationSystem? configurationSystem = configurationSystem;
@@ -95,6 +96,11 @@ public class AgentControlCenterService(
     {
         get => proactiveBehavior;
         set => proactiveBehavior = value;
+    }
+    public IReadOnlyList<IAgentProactiveSuggestionExecutor> ProactiveExecutors
+    {
+        get => proactiveExecutors;
+        set => proactiveExecutors = value ?? [];
     }
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_control_center")]
@@ -195,6 +201,52 @@ public class AgentControlCenterService(
     public AgentTaskState CompleteTaskFromControlCenter(string taskId, string detail = "completed from Agent Control Center")
     {
         return tasks.CompleteTask(taskId, "agent-control-ui", detail);
+    }
+
+    public AgentProactivePendingSuggestion ConfirmProactiveSuggestionFromControlCenter(string id)
+    {
+        return GetProactiveBehavior().ConfirmPendingSuggestion(id, "agent-control-ui");
+    }
+
+    public AgentProactivePendingSuggestion DismissProactiveSuggestionFromControlCenter(string id)
+    {
+        return GetProactiveBehavior().DismissPendingSuggestion(id, "agent-control-ui");
+    }
+
+    public AgentProactiveCleanupResult CleanupProactiveSuggestionsFromControlCenter(
+        TimeSpan maxPendingAge,
+        TimeSpan maxCompletedAge)
+    {
+        return GetProactiveBehavior().CleanupSuggestions(maxPendingAge, maxCompletedAge, "agent-control-ui");
+    }
+
+    public async Task<AgentProactiveExternalExecutionResult> ExecuteProactiveSuggestionFromControlCenter(string id)
+    {
+        AgentProactiveBehaviorService proactive = GetProactiveBehavior();
+        AgentProactivePendingSuggestion? pending = proactive.GetCompletedSuggestion(id);
+        if (pending == null)
+            return new AgentProactiveExternalExecutionResult(false, "Confirmed proactive suggestion was not found.");
+        if (pending.Status == AgentProactivePendingStatus.Executed)
+            return new AgentProactiveExternalExecutionResult(false, "Proactive suggestion was already executed.");
+        if (pending.Status != AgentProactivePendingStatus.Confirmed)
+            return new AgentProactiveExternalExecutionResult(false, "Proactive suggestion must be confirmed before execution.");
+
+        IAgentProactiveSuggestionExecutor? executor = proactiveExecutors.FirstOrDefault(item => item.CanExecute(pending));
+        if (executor == null)
+            return new AgentProactiveExternalExecutionResult(false, $"No executor is available for {pending.Suggestion.Kind}.");
+
+        AgentProactiveExternalExecutionResult result = await executor.ExecuteAsync(pending);
+        if (result.Succeeded)
+            proactive.MarkSuggestionExecuted(id, "agent-control-ui", result.Message);
+
+        auditLog.Record(
+            "agent.proactive.control.execute",
+            "agent-control-ui",
+            $"{pending.Suggestion.Kind}: {result.Message}",
+            pending.Suggestion.RiskLevel,
+            result.Succeeded,
+            result.Succeeded ? null : result.Message);
+        return result;
     }
 
     public static string BuildWorkspaceProposalConfirmationText(AgentWorkspacePatchProposal proposal)
@@ -364,7 +416,14 @@ public class AgentControlCenterService(
     {
         await base.AwakeAsync(context);
         proactiveBehavior ??= context.Services.GetService(typeof(AgentProactiveBehaviorService)) as AgentProactiveBehaviorService;
+        if (context.Services.GetService(typeof(IEnumerable<IAgentProactiveSuggestionExecutor>)) is IEnumerable<IAgentProactiveSuggestionExecutor> executors)
+            proactiveExecutors = executors.ToArray();
         functionCaller?.RegisterHandler(this);
+    }
+
+    AgentProactiveBehaviorService GetProactiveBehavior()
+    {
+        return proactiveBehavior ?? throw new InvalidOperationException("Agent proactive behavior service is unavailable.");
     }
 
     static AgentWorkspacePolicy NormalizeWorkspacePolicy(AgentWorkspacePolicy rawPolicy)

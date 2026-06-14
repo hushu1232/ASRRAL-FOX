@@ -677,6 +677,72 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void AgentControlCenterProactiveActionsConfirmDismissAndCleanup()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-14T12:00:00Z");
+        AgentProactiveBehaviorService proactive = new(clock: () => now);
+        AgentControlCenterService service = new()
+        {
+            ProactiveBehavior = proactive
+        };
+        AgentProactivePendingSuggestion first = proactive.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneLike,
+            "like qzone post",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001,
+            DraftText: "like target=1001 post=post-a"));
+        AgentProactivePendingSuggestion second = proactive.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneReply,
+            "reply to qzone comment",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001,
+            DraftText: "reply target=1001 post=post-b comment=comment-b"));
+
+        AgentProactivePendingSuggestion confirmed = service.ConfirmProactiveSuggestionFromControlCenter(first.Id);
+        AgentProactivePendingSuggestion dismissed = service.DismissProactiveSuggestionFromControlCenter(second.Id);
+        now = now.AddDays(31);
+        AgentProactiveCleanupResult cleanup = service.CleanupProactiveSuggestionsFromControlCenter(
+            TimeSpan.FromHours(24),
+            TimeSpan.FromDays(30));
+
+        Assert.That(confirmed.Status, Is.EqualTo(AgentProactivePendingStatus.Confirmed));
+        Assert.That(dismissed.Status, Is.EqualTo(AgentProactivePendingStatus.Dismissed));
+        Assert.That(cleanup.RemovedCompletedCount, Is.EqualTo(2));
+        Assert.That(proactive.GetCompletedSuggestions(), Is.Empty);
+    }
+
+    [Test]
+    public async Task AgentControlCenterExecutesConfirmedProactiveSuggestionThroughExecutor()
+    {
+        AgentProactiveBehaviorService proactive = new();
+        StubProactiveExecutor executor = new();
+        AgentControlCenterService service = new()
+        {
+            ProactiveBehavior = proactive,
+            ProactiveExecutors = [executor]
+        };
+        AgentProactivePendingSuggestion pending = proactive.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneLike,
+            "like qzone post",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001,
+            DraftText: "like target=1001 post=post-a"));
+        proactive.ConfirmPendingSuggestion(pending.Id, "owner");
+
+        AgentProactiveExternalExecutionResult result = await service.ExecuteProactiveSuggestionFromControlCenter(pending.Id);
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(executor.ExecutedIds, Is.EqualTo(new[] { pending.Id }));
+        Assert.That(proactive.GetCompletedSuggestion(pending.Id)?.Status, Is.EqualTo(AgentProactivePendingStatus.Executed));
+    }
+
+    [Test]
     public void AgentControlCenterBuildsOwnerConfirmationTextForWorkspaceProposal()
     {
         AgentWorkspacePatchProposal proposal = new(
@@ -883,6 +949,22 @@ public class AgentCapabilityServiceTests
         {
             LastRequest = request;
             return Task.FromResult(new AgentCommandResult(request.CommandId, 0, "ok", "", TimeSpan.FromMilliseconds(5)));
+        }
+    }
+
+    sealed class StubProactiveExecutor : IAgentProactiveSuggestionExecutor
+    {
+        public List<string> ExecutedIds { get; } = [];
+
+        public bool CanExecute(AgentProactivePendingSuggestion pending)
+        {
+            return pending.Suggestion.TargetType == "qzone";
+        }
+
+        public Task<AgentProactiveExternalExecutionResult> ExecuteAsync(AgentProactivePendingSuggestion pending)
+        {
+            ExecutedIds.Add(pending.Id);
+            return Task.FromResult(new AgentProactiveExternalExecutionResult(true, "executed by stub"));
         }
     }
 }

@@ -34,8 +34,7 @@ public class QZoneProactiveExecutionServiceTests
             DraftText: "reply target=1001 post=post-a comment=comment-a"));
         proactive.PrepareQZoneReplyContent(pending.Id, "谢谢分享。", "agent");
         proactive.ConfirmPendingSuggestion(pending.Id, "owner");
-        QZoneService qzone = container.Resolve<QZoneService>();
-        qzone.Configuration = new QZoneServiceConfig
+        container.Resolve<QZoneService>().Configuration = new QZoneServiceConfig
         {
             DryRunExternalActions = true,
             CommentReplyProbability = 1.0
@@ -49,7 +48,7 @@ public class QZoneProactiveExecutionServiceTests
             ContextBuilder = new ChatHistoryAgentThread()
         });
 
-        QZoneProactiveExecutionResult result = await qzone.ExecuteConfirmedProactiveSuggestion(pending.Id, () => 0.0);
+        AgentProactiveExternalExecutionResult result = await controlCenter.ExecuteProactiveSuggestionFromControlCenter(pending.Id);
         AgentControlCenterSnapshot snapshot = controlCenter.BuildSnapshot(
             new ChatRuntimeState(false, 0, 0, null, []),
             character.Name);
