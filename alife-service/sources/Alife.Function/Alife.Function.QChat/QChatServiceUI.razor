@@ -172,6 +172,49 @@
         <FormItem Label="主人 ID">
             <Input @bind-Value="@Configuration.OwnerId" Style="width: 100%;"/>
         </FormItem>
+        <Divider>Owner safety</Divider>
+        <FormItem Label="Owner priority mode">
+            <Switch @bind-Value="@Configuration.OwnerPriorityMode"/>
+            <br/>
+            <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                Owner messages are marked as highest priority in QQ context.
+            </Text>
+        </FormItem>
+        <FormItem Label="Allow group member chat">
+            <Switch @bind-Value="@Configuration.AllowGroupMemberChat"/>
+            <br/>
+            <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                Group members can chat, but their messages are treated as external conversation content.
+            </Text>
+        </FormItem>
+        <FormItem Label="Allow mentions">
+            <Switch @bind-Value="@Configuration.AllowGroupMemberMentions"/>
+            <br/>
+            <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                Non-owner group members can wake the bot by mentioning it.
+            </Text>
+        </FormItem>
+        <FormItem Label="Allow proactive group chat">
+            <Switch @bind-Value="@Configuration.AllowProactiveGroupChat"/>
+            <br/>
+            <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                Non-owner group messages can trigger proactive replies according to the probability below.
+            </Text>
+        </FormItem>
+        <FormItem Label="Allow private guest chat">
+            <Switch @bind-Value="@Configuration.AllowPrivateGuestChat"/>
+            <br/>
+            <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                Private messages from non-owner users enter the model only when this is enabled.
+            </Text>
+        </FormItem>
+        <FormItem Label="Treat non-owner as untrusted">
+            <Switch @bind-Value="@Configuration.TreatNonOwnerAsUntrusted"/>
+            <br/>
+            <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                Non-owner messages are wrapped as untrusted chat content, not as owner/system/tool instructions.
+            </Text>
+        </FormItem>
         <FormItem Label="回复提示">
             <TextArea @bind-Value="@Configuration.AppendChatPrompt" Rows="2"
                       Placeholder="附加在消息末尾的指导提示词"></TextArea>

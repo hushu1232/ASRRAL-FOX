@@ -22,6 +22,12 @@ public record QChatConfig
     public int AutoReconnectSeconds { get; set; } = 60;//自动尝试重连的间隔（秒）
     public long BotId { get; set; }
     public long OwnerId { get; set; }
+    public bool OwnerPriorityMode { get; set; } = true;
+    public bool AllowGroupMemberChat { get; set; } = true;
+    public bool AllowGroupMemberMentions { get; set; } = true;
+    public bool AllowProactiveGroupChat { get; set; } = true;
+    public bool AllowPrivateGuestChat { get; set; }
+    public bool TreatNonOwnerAsUntrusted { get; set; } = true;
     public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。此外注意分清语境，群聊环境人声嘈杂，不要回复与自己无关的内容，回复时请加上CQat标签";
     //群监听唤醒
     public string IgnoredGroup { get; set; } = "";//完全屏蔽消息的群，不会收到这些群的任何信息
@@ -481,13 +487,23 @@ public class QChatService(
                 return;
             if (ignoredGroup.Contains(basicMessageEvent.GroupId.ToString()))
                 return;
+            QChatConfig config = Configuration!;
+            QChatSenderRole senderRole = QChatMessageSecurity.Classify(config, basicMessageEvent);
+            if (basicMessageEvent.MessageType == OneBotMessageType.Private &&
+                QChatMessageSecurity.ShouldAcceptPrivateMessage(config, basicMessageEvent) == false)
+                return;
 
             if (basicMessageEvent is OneBotPokeEvent pokeEvent)
             {
                 string speaker = pokeEvent.GetSpeakerTag();
                 string content = $"戳了戳 {pokeEvent.TargetId}";
                 string formatted = $"{speaker} {content}";
-                await HandleFormattedMessage(basicMessageEvent, formatted, pokeEvent.TargetId == configuration!.BotId);
+                formatted = QChatMessageSecurity.FormatForModel(config, basicMessageEvent, formatted);
+                bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(
+                    config,
+                    basicMessageEvent,
+                    pokeEvent.TargetId == config.BotId);
+                await HandleFormattedMessage(basicMessageEvent, formatted, isAwakening, senderRole);
             }
 
             if (basicMessageEvent is OneBotMessageEvent messageEvent)
@@ -496,10 +512,12 @@ public class QChatService(
                 IOneBotRuntime client = GetOneBotClient();
                 string content = await messageEvent.GetReadableMessage(client);
                 string formatted = $"{speaker}：{content}";
-                bool isAwakening = messageEvent.GetAtID() == client.BotId ||
-                                   groupAwakingWords.Any(word =>
-                                       messageEvent.RawMessage.Contains(word, StringComparison.OrdinalIgnoreCase));
-                await HandleFormattedMessage(messageEvent, formatted, isAwakening);
+                formatted = QChatMessageSecurity.FormatForModel(config, messageEvent, formatted);
+                bool isMentionedOrWoken = messageEvent.GetAtID() == client.BotId ||
+                                          groupAwakingWords.Any(word =>
+                                              messageEvent.RawMessage.Contains(word, StringComparison.OrdinalIgnoreCase));
+                bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(config, messageEvent, isMentionedOrWoken);
+                await HandleFormattedMessage(messageEvent, formatted, isAwakening, senderRole);
             }
         }
         catch (Exception e)
@@ -518,17 +536,18 @@ public class QChatService(
             QGroup(groupId, true);
     }
 
-    async Task HandleFormattedMessage(OneBotBasicMessageEvent messageEvent, string formatted, bool isAwakening)
+    async Task HandleFormattedMessage(OneBotBasicMessageEvent messageEvent, string formatted, bool isAwakening, QChatSenderRole senderRole)
     {
         if (messageEvent.MessageType == OneBotMessageType.Private)//私聊消息
         {
-            if (messageEvent.UserId == Configuration!.OwnerId)
+            if (senderRole == QChatSenderRole.Owner || Configuration!.AllowPrivateGuestChat)
                 await ChatAsync(formatted);
-            else
-                Poke(formatted);
         }
         else//群聊消息
         {
+            if (senderRole != QChatSenderRole.Owner && Configuration!.AllowGroupMemberChat == false)
+                return;
+
             GroupState state = GetGroupInfo(messageEvent.GroupId);
             state.Tag = messageEvent.GetGroupTag();
 
@@ -537,9 +556,10 @@ public class QChatService(
 
             if (state.IsEnabled)//群聊已激活时（直接接收）
             {
-                BufferGroupMessage(state, formatted);
+                BufferGroupMessage(state, formatted, senderRole == QChatSenderRole.Owner && Configuration!.OwnerPriorityMode);
             }
-            else if (Random.Shared.NextSingle() < Configuration!.ProactiveChatProbability)//群聊未激活时（概率接收）
+            else if (QChatMessageSecurity.ShouldAllowProactiveGroupChat(Configuration!, messageEvent) &&
+                     Random.Shared.NextSingle() < Configuration!.ProactiveChatProbability)//群聊未激活时（概率接收）
             {
                 BufferGroupMessage(state, formatted);
                 state.LastFlushedTime = DateTime.Now;
@@ -547,9 +567,12 @@ public class QChatService(
         }
     }
 
-    void BufferGroupMessage(GroupState state, string formatted)
+    void BufferGroupMessage(GroupState state, string formatted, bool highPriority = false)
     {
-        state.MessageBuffer.Add(formatted);
+        if (highPriority)
+            state.MessageBuffer.Insert(0, formatted);
+        else
+            state.MessageBuffer.Add(formatted);
         if (Configuration!.DebounceEnabled)
             state.LastFlushedTime = DateTime.Now;
         if (Configuration!.MaxBufferMessages != -1 && state.MessageBuffer.Count > Configuration.MaxBufferMessages)
