@@ -28,6 +28,11 @@ public record QChatConfig
     public bool AllowProactiveGroupChat { get; set; } = true;
     public bool AllowPrivateGuestChat { get; set; }
     public bool TreatNonOwnerAsUntrusted { get; set; } = true;
+    public bool EnableGroupFileUpload { get; set; } = true;
+    public bool EnablePrivateFileUpload { get; set; } = true;
+    public bool EnableVideoMessage { get; set; } = true;
+    public string AllowedGroupIds { get; set; } = "";
+    public string AllowedPrivateUserIds { get; set; } = "";
     public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。此外注意分清语境，群聊环境人声嘈杂，不要回复与自己无关的内容，回复时请加上CQat标签";
     //群监听唤醒
     public string IgnoredGroup { get; set; } = "";//完全屏蔽消息的群，不会收到这些群的任何信息
@@ -244,6 +249,101 @@ public class QChatService(
         catch (Exception ex)
         {
             Poke($"[QQ文件发送失败] {ex.Message}");
+        }
+    }
+
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
+    [Description("上传本地文件到指定QQ群文件。")]
+    public async Task QGroupFile(long groupId,
+        [Description("本地绝对路径")] string file,
+        [Description("可选展示文件名，留空则使用原文件名")] string? name = null)
+    {
+        if (Configuration!.EnableGroupFileUpload == false)
+            throw new InvalidOperationException("QQ group file upload is disabled.");
+        if (groupId == 0)
+            throw new ArgumentNullException(nameof(groupId));
+        if (groupId == Configuration.BotId)
+            throw new Exception("Cannot upload a QQ group file to self.");
+        EnsureTargetAllowed(Configuration.AllowedGroupIds, groupId, "QQ group");
+
+        string normalizedFile = NormalizeExistingLocalFile(file);
+        string fileName = NormalizeUploadName(normalizedFile, name);
+
+        try
+        {
+            OnAIGroupActivity(groupId);
+            await GetOneBotClient().UploadGroupFile(groupId, normalizedFile, fileName);
+            PublishLifeEvent($"You uploaded a QQ group file to {groupId}: {fileName}.");
+        }
+        catch (Exception ex)
+        {
+            Poke($"[QQ group file upload failed] {ex.Message}");
+        }
+    }
+
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
+    [Description("上传本地文件到指定QQ私聊。")]
+    public async Task QPrivateFile(long userId,
+        [Description("本地绝对路径")] string file,
+        [Description("可选展示文件名，留空则使用原文件名")] string? name = null)
+    {
+        if (Configuration!.EnablePrivateFileUpload == false)
+            throw new InvalidOperationException("QQ private file upload is disabled.");
+        if (userId == 0)
+            throw new ArgumentNullException(nameof(userId));
+        if (userId == Configuration.BotId)
+            throw new Exception("Cannot upload a QQ private file to self.");
+        EnsureTargetAllowed(Configuration.AllowedPrivateUserIds, userId, "QQ private user");
+
+        string normalizedFile = NormalizeExistingLocalFile(file);
+        string fileName = NormalizeUploadName(normalizedFile, name);
+
+        try
+        {
+            await GetOneBotClient().UploadPrivateFile(userId, normalizedFile, fileName);
+            PublishLifeEvent($"You uploaded a QQ private file to {userId}: {fileName}.");
+        }
+        catch (Exception ex)
+        {
+            Poke($"[QQ private file upload failed] {ex.Message}");
+        }
+    }
+
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
+    [Description("发送QQ视频消息。用于在聊天里发送视频，不等同于上传群文件。")]
+    public async Task QVideo(OneBotMessageType type, long targetId,
+        [Description("视频URL或本地绝对路径，建议mp4")] string video)
+    {
+        if (Configuration!.EnableVideoMessage == false)
+            throw new InvalidOperationException("QQ video messages are disabled.");
+        if (targetId == 0)
+            throw new ArgumentNullException(nameof(targetId));
+        if (targetId == Configuration.BotId)
+            throw new Exception("Cannot send a QQ video message to self.");
+
+        if (type == OneBotMessageType.Group)
+            EnsureTargetAllowed(Configuration.AllowedGroupIds, targetId, "QQ group");
+        else
+            EnsureTargetAllowed(Configuration.AllowedPrivateUserIds, targetId, "QQ private user");
+
+        string normalizedVideo = NormalizeVideoReference(video);
+        string message = $"[CQ:video,file={normalizedVideo}]";
+
+        try
+        {
+            if (type == OneBotMessageType.Group)
+            {
+                OnAIGroupActivity(targetId);
+                await GetOneBotClient().SendGroupMessage(targetId, message);
+            }
+            else
+                await GetOneBotClient().SendPrivateMessage(targetId, message);
+
+            PublishLifeEvent($"You sent a QQ {type.ToString().ToLowerInvariant()} video message to {targetId}.");
+        }
+        catch (Exception ex)
+        {
+            Poke($"[QQ video send failed] {ex.Message}");
         }
     }
 
@@ -632,5 +732,56 @@ public class QChatService(
             LifeEventKind.Communication,
             "QChat",
             summary));
+    }
+
+    static void EnsureTargetAllowed(string allowedIds, long targetId, string targetKind)
+    {
+        string[] ids = allowedIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (ids.Length == 0)
+            return;
+
+        if (ids.Contains(targetId.ToString()))
+            return;
+
+        throw new InvalidOperationException($"{targetKind} {targetId} is not in the QQ allowlist.");
+    }
+
+    static string NormalizeExistingLocalFile(string file)
+    {
+        file = file.Trim();
+        if (string.IsNullOrEmpty(file))
+            throw new ArgumentNullException(nameof(file));
+        if (File.Exists(file) == false)
+            throw new FileNotFoundException("QQ file does not exist.", file);
+
+        return file.Replace('\\', '/');
+    }
+
+    static string NormalizeUploadName(string normalizedFile, string? name)
+    {
+        string fileName = string.IsNullOrWhiteSpace(name) ? Path.GetFileName(normalizedFile) : name.Trim();
+        if (string.IsNullOrWhiteSpace(fileName))
+            throw new InvalidOperationException("QQ upload file name is empty.");
+
+        return fileName;
+    }
+
+    static string NormalizeVideoReference(string video)
+    {
+        video = video.Trim();
+        if (string.IsNullOrEmpty(video))
+            throw new ArgumentNullException(nameof(video));
+
+        bool isUrl = Uri.TryCreate(video, UriKind.Absolute, out Uri? uri) &&
+                     (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+        string extension = isUrl ? Path.GetExtension(uri!.AbsolutePath) : Path.GetExtension(video);
+        string[] allowedExtensions = [".mp4", ".mov", ".mkv", ".webm"];
+        if (allowedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase) == false)
+            throw new InvalidOperationException("QQ video must be .mp4, .mov, .mkv, or .webm.");
+
+        if (isUrl == false && File.Exists(video) == false)
+            throw new FileNotFoundException("QQ video file does not exist.", video);
+
+        return video.Replace('\\', '/');
     }
 }
