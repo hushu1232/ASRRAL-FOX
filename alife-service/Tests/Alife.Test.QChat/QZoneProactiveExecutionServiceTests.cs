@@ -1,5 +1,9 @@
 using Alife.Function.Agent;
 using Alife.Function.QChat;
+using Alife.Framework;
+using Autofac;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
 using NUnit.Framework;
 
 namespace Alife.Test.QChat;
@@ -7,6 +11,55 @@ namespace Alife.Test.QChat;
 [TestFixture]
 public class QZoneProactiveExecutionServiceTests
 {
+    [Test]
+    public async Task RuntimeModuleContainerSharesProactiveBehaviorAcrossQZoneAndControlCenter()
+    {
+        Character character = new() { Name = "AstralFox" };
+        using IContainer container = ChatActivity.BuildModuleContainer(
+            [
+                typeof(AgentProactiveBehaviorService),
+                typeof(AgentControlCenterService),
+                typeof(QZoneService)
+            ],
+            character,
+            new ConfigurationSystem(new StorageSystem()));
+        AgentProactiveBehaviorService proactive = container.Resolve<AgentProactiveBehaviorService>();
+        AgentProactivePendingSuggestion pending = proactive.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneReply,
+            "reply to private qzone comment",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001,
+            DraftText: "reply target=1001 post=post-a comment=comment-a"));
+        proactive.PrepareQZoneReplyContent(pending.Id, "谢谢分享。", "agent");
+        proactive.ConfirmPendingSuggestion(pending.Id, "owner");
+        QZoneService qzone = container.Resolve<QZoneService>();
+        qzone.Configuration = new QZoneServiceConfig
+        {
+            DryRunExternalActions = true,
+            CommentReplyProbability = 1.0
+        };
+        AgentControlCenterService controlCenter = container.Resolve<AgentControlCenterService>();
+        await controlCenter.AwakeAsync(new AwakeContext
+        {
+            Character = character,
+            Services = (IServiceProvider)container,
+            KernelBuilder = Kernel.CreateBuilder(),
+            ContextBuilder = new ChatHistoryAgentThread()
+        });
+
+        QZoneProactiveExecutionResult result = await qzone.ExecuteConfirmedProactiveSuggestion(pending.Id, () => 0.0);
+        AgentControlCenterSnapshot snapshot = controlCenter.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            character.Name);
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(proactive.GetCompletedSuggestion(pending.Id)?.Status, Is.EqualTo(AgentProactivePendingStatus.Executed));
+        Assert.That(snapshot.CompletedProactiveSuggestions.Single(item => item.Id == pending.Id).Status,
+            Is.EqualTo(AgentProactivePendingStatus.Executed));
+    }
+
     [Test]
     public async Task ExecuteConfirmedProactiveSuggestionByIdUsesConfirmedSuggestionHistory()
     {

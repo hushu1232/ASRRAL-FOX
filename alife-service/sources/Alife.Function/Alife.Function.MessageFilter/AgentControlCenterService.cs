@@ -72,7 +72,6 @@ public class AgentControlCenterService(
     AgentWorkspacePolicy? workspacePolicy = null,
     AgentCommandPolicy? commandPolicy = null,
     AgentAuditLogService? auditLog = null,
-    AgentProactiveBehaviorService? proactiveBehavior = null,
     XmlFunctionCaller? functionCaller = null,
     ConfigurationSystem? configurationSystem = null)
     : InteractiveModule<AgentControlCenterService>, IConfigurable<AgentControlCenterConfig>
@@ -86,12 +85,17 @@ public class AgentControlCenterService(
     readonly AgentWorkspaceService workspace = workspace ?? new AgentWorkspaceService(
         workspacePolicy,
         auditLog: auditLog);
-    readonly AgentProactiveBehaviorService? proactiveBehavior = proactiveBehavior;
+    AgentProactiveBehaviorService? proactiveBehavior;
     readonly AgentWorkspacePolicy workspacePolicy = NormalizeWorkspacePolicy(workspacePolicy ?? CreateDefaultWorkspacePolicy());
     readonly Dictionary<string, AgentConfigurationChangeProposal> configurationProposals = new(StringComparer.OrdinalIgnoreCase);
     readonly ConfigurationSystem? configurationSystem = configurationSystem;
 
     public AgentControlCenterConfig? Configuration { get; set; } = new();
+    public AgentProactiveBehaviorService? ProactiveBehavior
+    {
+        get => proactiveBehavior;
+        set => proactiveBehavior = value;
+    }
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_control_center")]
     [Description("Show a concise Agent control center summary for runtime state, tasks, audit, commands, errors, and workspace proposals.")]
@@ -359,6 +363,7 @@ public class AgentControlCenterService(
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
+        proactiveBehavior ??= context.Services.GetService(typeof(AgentProactiveBehaviorService)) as AgentProactiveBehaviorService;
         functionCaller?.RegisterHandler(this);
     }
 

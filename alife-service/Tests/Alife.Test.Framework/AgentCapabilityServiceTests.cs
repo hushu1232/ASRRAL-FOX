@@ -612,8 +612,10 @@ public class AgentCapabilityServiceTests
             workspace,
             new AgentWorkspacePolicy([root]),
             commandPolicy,
-            audit,
-            proactiveBehavior: proactive);
+            audit)
+        {
+            ProactiveBehavior = proactive
+        };
         ChatRuntimeState runtime = new(
             IsChatting: true,
             PendingPokeCount: 1,
