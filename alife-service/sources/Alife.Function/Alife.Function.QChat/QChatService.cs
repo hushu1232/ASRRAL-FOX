@@ -72,7 +72,9 @@ public class QChatService(
     ILogger<QChatService> logger,
     ISpeechModel? speechModel = null,
     IOneBotRuntime? oneBotRuntime = null,
-    ILifeEventPublisher? lifeEventPublisher = null) :
+    ILifeEventPublisher? lifeEventPublisher = null,
+    AgentControlCenterService? agentControlCenter = null,
+    AgentActionAuthorizationService? actionAuthorization = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -482,6 +484,8 @@ public class QChatService(
 
     QChatConfig? configuration;
     readonly IOneBotRuntime? injectedOneBotRuntime = oneBotRuntime;
+    readonly AgentControlCenterService? agentControlCenter = agentControlCenter;
+    readonly AgentActionAuthorizationService actionAuthorization = actionAuthorization ?? new AgentActionAuthorizationService();
     IOneBotRuntime? oneBotClient;
     string[] groupAwakingWords = [];
     string[] ignoredGroup = [];
@@ -595,6 +599,7 @@ public class QChatService(
             if (ignoredGroup.Contains(basicMessageEvent.GroupId.ToString()))
                 return;
             QChatConfig config = Configuration!;
+            AgentControlCenterConfig? controlConfig = agentControlCenter?.Configuration;
             QChatSenderRole senderRole = QChatMessageSecurity.Classify(config, basicMessageEvent);
             if (basicMessageEvent.MessageType == OneBotMessageType.Private &&
                 QChatMessageSecurity.ShouldAcceptPrivateMessage(config, basicMessageEvent) == false)
@@ -609,7 +614,8 @@ public class QChatService(
                 bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(
                     config,
                     basicMessageEvent,
-                    pokeEvent.TargetId == config.BotId);
+                    pokeEvent.TargetId == config.BotId,
+                    controlConfig);
                 AgentPermissionRequest permissionRequest = QChatMessageSecurity.BuildPermissionRequest(
                     config,
                     basicMessageEvent,
@@ -628,7 +634,7 @@ public class QChatService(
                 bool isMentionedOrWoken = messageEvent.GetAtID() == client.BotId ||
                                           groupAwakingWords.Any(word =>
                                               messageEvent.RawMessage.Contains(word, StringComparison.OrdinalIgnoreCase));
-                bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(config, messageEvent, isMentionedOrWoken);
+                bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(config, messageEvent, isMentionedOrWoken, controlConfig);
                 AgentPermissionRequest permissionRequest = QChatMessageSecurity.BuildPermissionRequest(
                     config,
                     messageEvent,
@@ -687,8 +693,8 @@ public class QChatService(
                     senderRole == QChatSenderRole.Owner && Configuration!.OwnerPriorityMode,
                     permissionRequest);
             }
-            else if (QChatMessageSecurity.ShouldAllowProactiveGroupChat(Configuration!, messageEvent) &&
-                     Random.Shared.NextSingle() < Configuration!.ProactiveChatProbability)//群聊未激活时（概率接收）
+            else if (QChatMessageSecurity.ShouldAllowProactiveGroupChat(Configuration!, messageEvent, agentControlCenter?.Configuration) &&
+                     Random.Shared.NextSingle() < QChatMessageSecurity.GetProactiveChatProbability(Configuration!, agentControlCenter?.Configuration))//群聊未激活时（概率接收）
             {
                 BufferGroupMessage(state, formatted, permissionRequest: permissionRequest);
                 state.LastFlushedTime = DateTime.Now;
@@ -836,20 +842,10 @@ public class QChatService(
             HasExplicitConfirmation: false,
             Action: $"xml.{function.Name}");
 
-        AgentPermissionConfig permissionConfig = new()
-        {
-            OwnerUserIds = Configuration is { OwnerId: not 0 } ? [Configuration.OwnerId] : [],
-            AllowGroupLowRisk = true,
-            AllowGroupMediumRiskWhenMentioned = true,
-            RequireConfirmationForHighRisk = true,
-        };
-        AgentPermissionPolicy policy = new(permissionConfig);
-        AgentPermissionDecision decision = policy.Evaluate(request with {
-            RiskLevel = ToAgentRiskLevel(function.RiskLevel),
-            Action = $"xml.{function.Name}"
-        });
-
-        return new XmlFunctionExecutionDecision(decision.Allowed, decision.Reason);
+        AgentPermissionConfig permissionConfig = QChatMessageSecurity.BuildPermissionConfig(
+            Configuration!,
+            agentControlCenter?.Configuration);
+        return actionAuthorization.AuthorizeXmlFunction(function, request, permissionConfig);
     }
 
     IDisposable PushPermissionRequest(AgentPermissionRequest request, TimeSpan ttl)
@@ -936,12 +932,6 @@ public class QChatService(
             score += 1;
         return score;
     }
-
-    static AgentRiskLevel ToAgentRiskLevel(XmlFunctionRiskLevel riskLevel) => riskLevel switch {
-        XmlFunctionRiskLevel.High => AgentRiskLevel.High,
-        XmlFunctionRiskLevel.Medium => AgentRiskLevel.Medium,
-        _ => AgentRiskLevel.Low,
-    };
 
     sealed class PermissionScope(
         QChatService service,

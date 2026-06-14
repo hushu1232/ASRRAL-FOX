@@ -44,6 +44,28 @@ public static class QChatMessageSecurity
         return config.AllowGroupMemberChat && config.AllowGroupMemberMentions && isMentionedOrWoken;
     }
 
+    public static bool ShouldActivateGroup(
+        QChatConfig config,
+        OneBotBasicMessageEvent messageEvent,
+        bool isMentionedOrWoken,
+        AgentControlCenterConfig? controlConfig)
+    {
+        if (messageEvent.MessageType != OneBotMessageType.Group)
+            return false;
+
+        QChatSenderRole role = Classify(config, messageEvent);
+        if (role == QChatSenderRole.Owner)
+            return config.OwnerPriorityMode || isMentionedOrWoken;
+
+        bool mentionWakeupAllowed = controlConfig?.AllowMentionWakeup ?? true;
+        bool passiveListeningAllowed = controlConfig?.AllowPassiveGroupListening ?? true;
+        return passiveListeningAllowed &&
+               mentionWakeupAllowed &&
+               config.AllowGroupMemberChat &&
+               config.AllowGroupMemberMentions &&
+               isMentionedOrWoken;
+    }
+
     public static bool ShouldAllowProactiveGroupChat(QChatConfig config, OneBotBasicMessageEvent messageEvent)
     {
         if (messageEvent.MessageType != OneBotMessageType.Group)
@@ -51,6 +73,39 @@ public static class QChatMessageSecurity
 
         QChatSenderRole role = Classify(config, messageEvent);
         return role != QChatSenderRole.Owner && config.AllowGroupMemberChat && config.AllowProactiveGroupChat;
+    }
+
+    public static bool ShouldAllowProactiveGroupChat(
+        QChatConfig config,
+        OneBotBasicMessageEvent messageEvent,
+        AgentControlCenterConfig? controlConfig)
+    {
+        if (ShouldAllowProactiveGroupChat(config, messageEvent) == false)
+            return false;
+
+        return controlConfig?.AllowProactiveChat ?? true;
+    }
+
+    public static float GetProactiveChatProbability(QChatConfig config, AgentControlCenterConfig? controlConfig)
+    {
+        if (controlConfig == null)
+            return config.ProactiveChatProbability;
+        if (controlConfig.AllowProactiveChat == false)
+            return 0;
+
+        float intensityMultiplier = Math.Clamp(controlConfig.ProactiveChatIntensity, 0, 10) / 5f;
+        return Math.Clamp(config.ProactiveChatProbability * intensityMultiplier, 0f, 1f);
+    }
+
+    public static AgentPermissionConfig BuildPermissionConfig(QChatConfig config, AgentControlCenterConfig? controlConfig)
+    {
+        return new AgentPermissionConfig
+        {
+            OwnerUserIds = config.OwnerId != 0 ? [config.OwnerId] : [],
+            AllowGroupLowRisk = true,
+            AllowGroupMediumRiskWhenMentioned = controlConfig?.AllowMentionWakeup ?? true,
+            RequireConfirmationForHighRisk = controlConfig?.RequireOwnerConfirmationForHighRiskConfiguration ?? true,
+        };
     }
 
     public static AgentPermissionRequest BuildPermissionRequest(

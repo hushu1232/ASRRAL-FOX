@@ -11,12 +11,49 @@ using Alife.Platform;
 
 namespace Alife.Function.Agent;
 
+public sealed class AgentControlCenterConfig
+{
+    public bool AllowAgentLowRiskSelfConfiguration { get; set; } = true;
+    public bool RequireOwnerConfirmationForHighRiskConfiguration { get; set; } = true;
+    public bool AllowMentionWakeup { get; set; } = true;
+    public bool AllowPassiveGroupListening { get; set; } = true;
+    public bool AllowProactiveChat { get; set; } = true;
+    public int ProactiveChatIntensity { get; set; } = 2;
+    public int MaxSelfConfigChangesPerHour { get; set; } = 6;
+    public string LowRiskConfigurationKeys { get; set; } =
+        "AllowMentionWakeup;AllowPassiveGroupListening;AllowProactiveChat;ProactiveChatIntensity;MaxSelfConfigChangesPerHour";
+    public string ProtectedConfigurationKeys { get; set; } =
+        "OwnerUserIds;AllowedWorkspaceRoots;AllowedCommands;RequireOwnerConfirmationForHighRiskConfiguration;ProtectedConfigurationKeys;GitHubUpload;QZonePost;QZoneComment;QZoneLike;GroupFileUpload;CodeExecution";
+}
+
+public sealed record AgentConfigurationChangeProposal(
+    string Id,
+    string Key,
+    string RequestedValue,
+    string CurrentValue,
+    string Reason,
+    AgentAuditRiskLevel RiskLevel,
+    DateTimeOffset CreatedAt,
+    string Actor);
+
+public sealed record AgentConfigurationChangeResult(
+    bool Applied,
+    bool RequiresOwnerConfirmation,
+    string Key,
+    string RequestedValue,
+    string Message,
+    AgentConfigurationChangeProposal? Proposal = null);
+
 public sealed record AgentControlCenterSnapshot(
     DateTimeOffset Timestamp,
     AgentStateSnapshot AgentState,
     AgentIssueReportSnapshot IssueReport,
+    AgentControlCenterConfig Configuration,
+    IReadOnlyList<AgentConfigurationChangeProposal> PendingConfigurationProposals,
     AgentTaskState? LatestTask,
     IReadOnlyList<AgentWorkspacePatchProposal> PendingWorkspaceProposals,
+    IReadOnlyList<AgentProactivePendingSuggestion> PendingProactiveSuggestions,
+    IReadOnlyList<AgentProactivePendingSuggestion> CompletedProactiveSuggestions,
     IReadOnlyList<string> WorkspaceRoots,
     IReadOnlyList<AgentCommandDefinition> AllowedCommands,
     IReadOnlyList<AgentAuditLogEntry> RecentAuditEntries);
@@ -35,8 +72,10 @@ public class AgentControlCenterService(
     AgentWorkspacePolicy? workspacePolicy = null,
     AgentCommandPolicy? commandPolicy = null,
     AgentAuditLogService? auditLog = null,
-    XmlFunctionCaller? functionCaller = null)
-    : InteractiveModule<AgentControlCenterService>
+    AgentProactiveBehaviorService? proactiveBehavior = null,
+    XmlFunctionCaller? functionCaller = null,
+    ConfigurationSystem? configurationSystem = null)
+    : InteractiveModule<AgentControlCenterService>, IConfigurable<AgentControlCenterConfig>
 {
     readonly AgentAuditLogService auditLog = auditLog ?? new AgentAuditLogService(
         Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-audit.jsonl"));
@@ -47,7 +86,12 @@ public class AgentControlCenterService(
     readonly AgentWorkspaceService workspace = workspace ?? new AgentWorkspaceService(
         workspacePolicy,
         auditLog: auditLog);
+    readonly AgentProactiveBehaviorService? proactiveBehavior = proactiveBehavior;
     readonly AgentWorkspacePolicy workspacePolicy = NormalizeWorkspacePolicy(workspacePolicy ?? CreateDefaultWorkspacePolicy());
+    readonly Dictionary<string, AgentConfigurationChangeProposal> configurationProposals = new(StringComparer.OrdinalIgnoreCase);
+    readonly ConfigurationSystem? configurationSystem = configurationSystem;
+
+    public AgentControlCenterConfig? Configuration { get; set; } = new();
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_control_center")]
     [Description("Show a concise Agent control center summary for runtime state, tasks, audit, commands, errors, and workspace proposals.")]
@@ -60,19 +104,80 @@ public class AgentControlCenterService(
               Last error: {snapshot.AgentState.LastError ?? "none"}
               Latest task: {snapshot.LatestTask?.Goal ?? "none"}
               Pending proposals: {snapshot.PendingWorkspaceProposals.Count}
+              Pending proactive suggestions: {snapshot.PendingProactiveSuggestions.Count}
               Recent audit entries: {snapshot.RecentAuditEntries.Count}
               Allowed commands: {snapshot.AllowedCommands.Count}
               """);
     }
 
+    [XmlFunction(FunctionMode.OneShot, name: "agent_config_status")]
+    [Description("Show the Agent Control Center self-configuration state and pending configuration proposals.")]
+    public void ShowAgentConfigurationStatus()
+    {
+        AgentControlCenterConfig config = EnsureConfiguration();
+        auditLog.Record("agent.config.status", "agent", "read self-configuration status", AgentAuditRiskLevel.Low, true);
+        Poke($"""
+              Agent self-configuration
+              Low-risk self-configuration: {(config.AllowAgentLowRiskSelfConfiguration ? "enabled" : "disabled")}
+              Mention wakeup: {(config.AllowMentionWakeup ? "enabled" : "disabled")}
+              Passive group listening: {(config.AllowPassiveGroupListening ? "enabled" : "disabled")}
+              Proactive chat: {(config.AllowProactiveChat ? "enabled" : "disabled")} intensity={config.ProactiveChatIntensity}
+              Pending configuration proposals: {configurationProposals.Count}
+              """);
+    }
+
+    [XmlFunction(FunctionMode.OneShot, name: "agent_config_apply")]
+    [Description("Apply an allowed low-risk Agent Control Center configuration change, or create a proposal when owner confirmation is required.")]
+    public void ApplyAgentConfiguration(string key, string value, string reason = "")
+    {
+        AgentConfigurationChangeResult result = ApplyConfigurationChange(key, value, "agent", reason);
+        Poke(result.Proposal == null
+            ? $"Agent configuration: {result.Message} key={result.Key}"
+            : $"Agent configuration proposal created: {result.Proposal.Id} key={result.Key}");
+    }
+
+    [XmlFunction(FunctionMode.OneShot, name: "agent_config_propose")]
+    [Description("Create a pending Agent Control Center configuration proposal for owner review.")]
+    public void ProposeAgentConfiguration(string key, string value, string reason = "")
+    {
+        AgentConfigurationChangeProposal proposal = ProposeConfigurationChange(key, value, "agent", reason);
+        Poke($"Agent configuration proposal created: {proposal.Id} key={proposal.Key}");
+    }
+
+    [XmlFunction(FunctionMode.OneShot, name: "agent_config_confirmation_text")]
+    [Description("Show the owner confirmation command for a pending Agent Control Center configuration proposal.")]
+    public void ShowAgentConfigurationConfirmationText(string id)
+    {
+        if (configurationProposals.TryGetValue(id, out AgentConfigurationChangeProposal? proposal) == false)
+        {
+            Poke("Configuration proposal was not found.");
+            return;
+        }
+
+        Poke(BuildConfigurationProposalConfirmationText(proposal));
+    }
+
+    [XmlFunction(FunctionMode.OneShot, name: "agent_config_apply_proposal", riskLevel: XmlFunctionRiskLevel.High)]
+    [Description("Apply a pending Agent Control Center configuration proposal after owner confirmation.")]
+    public void ApplyAgentConfigurationProposal(string id)
+    {
+        AgentConfigurationChangeResult result = ApplyConfigurationProposal(id, "owner");
+        Poke($"Agent configuration proposal: {result.Message} key={result.Key}");
+    }
+
     public AgentControlCenterSnapshot BuildSnapshot(ChatRuntimeState runtimeState, string characterName)
     {
+        AgentControlCenterConfig configuration = EnsureConfiguration();
         return new AgentControlCenterSnapshot(
             DateTimeOffset.Now,
             diagnostics.BuildSnapshot(runtimeState, characterName),
             issueReports.BuildSnapshot(runtimeState),
+            configuration,
+            GetPendingConfigurationProposals(),
             tasks.GetLatestTask(),
             workspace.GetPendingProposals(),
+            proactiveBehavior?.GetPendingSuggestions() ?? [],
+            proactiveBehavior?.GetCompletedSuggestions() ?? [],
             workspacePolicy.AllowedRoots,
             commandPolicy.AllowedCommands,
             auditLog.GetRecentEntries(12));
@@ -91,6 +196,164 @@ public class AgentControlCenterService(
     public static string BuildWorkspaceProposalConfirmationText(AgentWorkspacePatchProposal proposal)
     {
         return $"confirm execute <workspace_apply_proposal id=\"{EscapeXmlAttribute(proposal.Id)}\" />";
+    }
+
+    public IReadOnlyList<AgentConfigurationChangeProposal> GetPendingConfigurationProposals()
+    {
+        return configurationProposals.Values
+            .OrderBy(proposal => proposal.CreatedAt)
+            .ToArray();
+    }
+
+    public AgentConfigurationChangeProposal ProposeConfigurationChange(
+        string key,
+        string requestedValue,
+        string actor,
+        string reason = "")
+    {
+        AgentControlCenterConfig config = EnsureConfiguration();
+        string normalizedKey = key.Trim();
+        string normalizedValue = requestedValue.Trim();
+        string normalizedReason = reason.Trim();
+        string normalizedActor = string.IsNullOrWhiteSpace(actor) ? "agent" : actor.Trim();
+        AgentConfigurationChangeProposal proposal = new(
+            Guid.NewGuid().ToString("N"),
+            normalizedKey,
+            normalizedValue,
+            GetConfigValue(config, normalizedKey),
+            normalizedReason,
+            GetConfigurationRisk(normalizedKey),
+            DateTimeOffset.Now,
+            normalizedActor);
+
+        configurationProposals[proposal.Id] = proposal;
+        auditLog.Record(
+            "agent.config.proposed",
+            normalizedActor,
+            FormatConfigAuditDetail(proposal.Key, proposal.RequestedValue, proposal.Reason),
+            proposal.RiskLevel,
+            true);
+        return proposal;
+    }
+
+    public AgentConfigurationChangeResult ApplyConfigurationChange(
+        string key,
+        string requestedValue,
+        string actor,
+        string reason = "")
+    {
+        AgentControlCenterConfig config = EnsureConfiguration();
+        string normalizedKey = key.Trim();
+        string normalizedValue = requestedValue.Trim();
+        string normalizedReason = reason.Trim();
+        string normalizedActor = string.IsNullOrWhiteSpace(actor) ? "agent" : actor.Trim();
+
+        if (CanApplyDirectly(config, normalizedKey) == false)
+        {
+            AgentConfigurationChangeProposal proposal = ProposeConfigurationChange(
+                normalizedKey,
+                normalizedValue,
+                normalizedActor,
+                normalizedReason);
+            return new AgentConfigurationChangeResult(
+                false,
+                true,
+                normalizedKey,
+                normalizedValue,
+                "Owner confirmation required.",
+                proposal);
+        }
+
+        try
+        {
+            ApplyConfigValue(config, normalizedKey, normalizedValue);
+            PersistConfiguration(config);
+            auditLog.Record(
+                "agent.config.applied",
+                normalizedActor,
+                FormatConfigAuditDetail(normalizedKey, normalizedValue, normalizedReason),
+                AgentAuditRiskLevel.Low,
+                true);
+            return new AgentConfigurationChangeResult(
+                true,
+                false,
+                normalizedKey,
+                normalizedValue,
+                "Configuration applied.");
+        }
+        catch (Exception exception)
+        {
+            auditLog.Record(
+                "agent.config.failed",
+                normalizedActor,
+                FormatConfigAuditDetail(normalizedKey, normalizedValue, normalizedReason),
+                AgentAuditRiskLevel.Low,
+                false,
+                exception.Message);
+            return new AgentConfigurationChangeResult(
+                false,
+                false,
+                normalizedKey,
+                normalizedValue,
+                exception.Message);
+        }
+    }
+
+    public AgentConfigurationChangeResult ApplyConfigurationProposal(string id, string actor)
+    {
+        if (configurationProposals.TryGetValue(id, out AgentConfigurationChangeProposal? proposal) == false)
+        {
+            return new AgentConfigurationChangeResult(
+                false,
+                false,
+                "",
+                "",
+                "Configuration proposal was not found.");
+        }
+
+        AgentControlCenterConfig config = EnsureConfiguration();
+        string normalizedActor = string.IsNullOrWhiteSpace(actor) ? "owner" : actor.Trim();
+        try
+        {
+            ApplyConfigValue(config, proposal.Key, proposal.RequestedValue);
+            PersistConfiguration(config);
+            configurationProposals.Remove(id);
+            auditLog.Record(
+                "agent.config.confirmed",
+                normalizedActor,
+                FormatConfigAuditDetail(proposal.Key, proposal.RequestedValue, proposal.Reason),
+                proposal.RiskLevel,
+                true);
+            return new AgentConfigurationChangeResult(
+                true,
+                false,
+                proposal.Key,
+                proposal.RequestedValue,
+                "Configuration proposal applied.",
+                proposal);
+        }
+        catch (Exception exception)
+        {
+            auditLog.Record(
+                "agent.config.failed",
+                normalizedActor,
+                FormatConfigAuditDetail(proposal.Key, proposal.RequestedValue, proposal.Reason),
+                proposal.RiskLevel,
+                false,
+                exception.Message);
+            return new AgentConfigurationChangeResult(
+                false,
+                false,
+                proposal.Key,
+                proposal.RequestedValue,
+                exception.Message,
+                proposal);
+        }
+    }
+
+    public static string BuildConfigurationProposalConfirmationText(AgentConfigurationChangeProposal proposal)
+    {
+        return $"confirm execute <agent_config_apply_proposal id=\"{EscapeXmlAttribute(proposal.Id)}\" />";
     }
 
     public override async Task AwakeAsync(AwakeContext context)
@@ -146,6 +409,62 @@ public class AgentControlCenterService(
             new AgentCommandDefinition("dotnet-build-solution", "Build the Alife solution without restoring packages.", "dotnet", "build Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(3)),
             new AgentCommandDefinition("dotnet-test-solution", "Run the Alife solution tests without restoring packages.", "dotnet", "test Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(5))
         ]);
+    }
+
+    AgentControlCenterConfig EnsureConfiguration()
+    {
+        return Configuration ??= new AgentControlCenterConfig();
+    }
+
+    bool CanApplyDirectly(AgentControlCenterConfig config, string key)
+    {
+        if (config.AllowAgentLowRiskSelfConfiguration == false)
+            return false;
+
+        return ParseKeyList(config.LowRiskConfigurationKeys).Contains(key, StringComparer.OrdinalIgnoreCase)
+               && ParseKeyList(config.ProtectedConfigurationKeys).Contains(key, StringComparer.OrdinalIgnoreCase) == false;
+    }
+
+    AgentAuditRiskLevel GetConfigurationRisk(string key)
+    {
+        AgentControlCenterConfig config = EnsureConfiguration();
+        return CanApplyDirectly(config, key) ? AgentAuditRiskLevel.Low : AgentAuditRiskLevel.High;
+    }
+
+    static IReadOnlyList<string> ParseKeyList(string value)
+    {
+        return value.Split([';', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    static string GetConfigValue(AgentControlCenterConfig config, string key)
+    {
+        System.Reflection.PropertyInfo? property = typeof(AgentControlCenterConfig).GetProperty(key);
+        object? value = property?.GetValue(config);
+        return value?.ToString() ?? "";
+    }
+
+    static void ApplyConfigValue(AgentControlCenterConfig config, string key, string requestedValue)
+    {
+        System.Reflection.PropertyInfo? property = typeof(AgentControlCenterConfig).GetProperty(key);
+        if (property == null || property.CanWrite == false)
+            throw new InvalidOperationException($"Unknown configuration key: {key}");
+
+        object value = property.PropertyType == typeof(bool)
+            ? bool.Parse(requestedValue)
+            : property.PropertyType == typeof(int)
+                ? Math.Clamp(int.Parse(requestedValue), 0, 10)
+                : requestedValue;
+        property.SetValue(config, value);
+    }
+
+    static string FormatConfigAuditDetail(string key, string requestedValue, string reason)
+    {
+        return $"key={key}; value={requestedValue}; reason={reason}";
+    }
+
+    void PersistConfiguration(AgentControlCenterConfig config)
+    {
+        configurationSystem?.SetConfiguration(typeof(AgentControlCenterService), config);
     }
 
     static string EscapeXmlAttribute(string value)

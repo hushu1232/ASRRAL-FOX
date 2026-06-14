@@ -5,7 +5,7 @@ namespace Alife.Function.QChat;
 
 public record QZoneInteractionConfig
 {
-    public bool EnableQZone { get; set; }
+    public bool EnableQZone { get; set; } = true;
     public string AllowedQZoneTargetIds { get; set; } = "";
     public string PrivateChatContactIds { get; set; } = "";
     public double PrivateContactLikeProbability { get; set; } = 0.15;

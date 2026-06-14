@@ -10,7 +10,8 @@ namespace Alife.Function.Interpreter;
 public class XmlStreamParser
 {
     public IReadOnlyList<string> TagStack => tagStack;
-    public IReadOnlyDictionary<string, string> TagParameters => parsedAttributes;
+    public IReadOnlyDictionary<string, string> TagParameters =>
+        tagParameterStack.Count == 0 ? parsedAttributes : tagParameterStack.Last();
     public Func<Task>? TagOpened { get; set; }
     public Func<Task>? TagClosed { get; set; }
     public Func<Task>? TagShotted { get; set; }
@@ -164,6 +165,7 @@ public class XmlStreamParser
             if (TagClosed != null)
                 await TagClosed.Invoke();
             tagStack.RemoveAt(tagStack.Count - 1);
+            tagParameterStack.RemoveAt(tagParameterStack.Count - 1);
         }
 
         ClearAnnotation();
@@ -197,6 +199,7 @@ public class XmlStreamParser
     int tagMode;
 
     readonly List<string> tagStack = new();
+    readonly List<Dictionary<string, string>> tagParameterStack = new();
 
     async Task HandleContentChar(char ch)
     {
@@ -290,6 +293,8 @@ public class XmlStreamParser
             {
                 case 0:
                     tagStack.Add(currentTagName);
+                    tagParameterStack.Add(CreateEffectiveParameters());
+                    parsedAttributes.Clear();
                     if (TagOpened != null)
                         await TagOpened.Invoke();
 
@@ -308,17 +313,22 @@ public class XmlStreamParser
                         if (TagClosed != null)
                             await TagClosed.Invoke(); //因为入栈且调用过函数，所以要回调
                         tagStack.RemoveAt(tagStack.Count - 1);
+                        tagParameterStack.RemoveAt(tagParameterStack.Count - 1);
                     }
 
                     if (TagClosed != null)
                         await TagClosed.Invoke();
                     tagStack.RemoveAt(tagStack.Count - 1);
+                    tagParameterStack.RemoveAt(tagParameterStack.Count - 1);
                     break;
                 case 2:
                     tagStack.Add(currentTagName);
+                    tagParameterStack.Add(CreateEffectiveParameters());
+                    parsedAttributes.Clear();
                     if (TagShotted != null)
                         await TagShotted.Invoke();
                     tagStack.RemoveAt(tagStack.Count - 1);
+                    tagParameterStack.RemoveAt(tagParameterStack.Count - 1);
                     break;
             }
         }
@@ -326,9 +336,20 @@ public class XmlStreamParser
         isTagParsing = false;
         currentTagName = null;
         currentTagAttributeName = null;
-        if (tagStack.Count == 0) //TODO 缺少正确的Xml参数环境，目前等于不清除，虽然确保闭标签时也能拿到参数，但可能污染其他标签。
-            parsedAttributes.Clear();
+        parsedAttributes.Clear();
         tagMode = 0;
+    }
+
+    Dictionary<string, string> CreateEffectiveParameters()
+    {
+        Dictionary<string, string> effective = tagParameterStack.Count == 0
+            ? new Dictionary<string, string>()
+            : new Dictionary<string, string>(tagParameterStack.Last());
+
+        foreach ((string key, string value) in parsedAttributes)
+            effective[key] = value;
+
+        return effective;
     }
 
     void ClearTag()

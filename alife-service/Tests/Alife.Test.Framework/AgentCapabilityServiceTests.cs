@@ -1,6 +1,8 @@
 using Alife.Framework;
 using Alife.Function.Agent;
 using Alife.Function.Interpreter;
+using Alife.Function.MessageFilter;
+using Alife.Platform;
 
 namespace Alife.Test.Framework;
 
@@ -37,6 +39,69 @@ public class AgentCapabilityServiceTests
         Assert.That(report, Does.Contain("Last error: last failure"));
         Assert.That(report, Does.Contain("[Healthy] Memory: Memory is ready."));
         Assert.That(report, Does.Contain("[Sense] Browser: Real browser. State: loading"));
+    }
+
+    [Test]
+    public void SelfModelCombinesIdentityCapabilitiesTasksRestrictionsAndRecentExperiences()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentTaskService tasks = new(audit, taskStorePath: Path.Combine(root, "tasks.json"));
+        tasks.CreateTask("owner", "Make the bot more human-like", ["inspect", "implement"]);
+        LifeEventStreamService lifeEvents = new(storagePath: Path.Combine(root, "life-events"));
+        lifeEvents.Publish(new LifeEvent(
+            DateTimeOffset.Parse("2026-06-14T12:00:00Z"),
+            LifeEventKind.Communication,
+            "QChat",
+            "Owner asked the bot to continue improving itself."));
+        AgentControlCenterService controlCenter = new(auditLog: audit)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowMentionWakeup = true,
+                AllowPassiveGroupListening = true,
+                AllowProactiveChat = false,
+                RequireOwnerConfirmationForHighRiskConfiguration = true,
+            }
+        };
+        AgentSelfModelService service = new(
+            new AgentDiagnosticsService(
+                [new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected.")],
+                [new StubCapability("QChat", EmbodiedCapabilityKind.Communication, "QQ channel.", "offline")]),
+            tasks,
+            controlCenter,
+            lifeEvents);
+
+        AgentSelfModelSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 2, null, []),
+            "AstralFox");
+        string prompt = AgentSelfModelService.FormatForPrompt(snapshot);
+
+        Assert.That(snapshot.CharacterName, Is.EqualTo("AstralFox"));
+        Assert.That(snapshot.Capabilities.Select(capability => capability.Name), Does.Contain("QChat"));
+        Assert.That(snapshot.ModuleHealth.Select(health => health.Name), Does.Contain("QChat"));
+        Assert.That(snapshot.LatestTask?.Goal, Is.EqualTo("Make the bot more human-like"));
+        Assert.That(snapshot.SafetyBoundaries, Does.Contain("High-risk actions require owner confirmation."));
+        Assert.That(snapshot.RecentExperiences.Select(item => item.Summary), Does.Contain("Owner asked the bot to continue improving itself."));
+        Assert.That(prompt, Does.Contain("[Self model]"));
+        Assert.That(prompt, Does.Contain("AstralFox"));
+        Assert.That(prompt, Does.Contain("High-risk actions require owner confirmation."));
+        Assert.That(prompt, Does.Contain("Owner asked the bot to continue improving itself."));
+    }
+
+    [Test]
+    public void SelfModelExposesXmlTool()
+    {
+        string[] xmlFunctionNames = typeof(AgentSelfModelService)
+            .GetMethods()
+            .Select(method => method.GetCustomAttributes(typeof(XmlFunctionAttribute), inherit: false)
+                .OfType<XmlFunctionAttribute>()
+                .FirstOrDefault())
+            .OfType<XmlFunctionAttribute>()
+            .Select(attribute => attribute.Name ?? string.Empty)
+            .ToArray();
+
+        Assert.That(xmlFunctionNames, Does.Contain("agent_self_model"));
     }
 
     [Test]
@@ -334,6 +399,49 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void ActionAuthorizationAllowsOwnerConfirmedHighRiskXmlAndBlocksMemberSpoof()
+    {
+        AgentActionAuthorizationService service = new();
+        XmlFunction function = new()
+        {
+            Name = "dangeroustool",
+            Mode = FunctionMode.OneShot,
+            RiskLevel = XmlFunctionRiskLevel.High,
+            Invoker = (_, _) => Task.CompletedTask,
+        };
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [10001],
+            RequireConfirmationForHighRisk = true,
+        };
+
+        XmlFunctionExecutionDecision ownerDecision = service.AuthorizeXmlFunction(
+            function,
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "qq.message"),
+            config);
+        XmlFunctionExecutionDecision memberDecision = service.AuthorizeXmlFunction(
+            function,
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: true,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "qq.message"),
+            config);
+
+        Assert.That(ownerDecision.IsAllowed, Is.True);
+        Assert.That(memberDecision.IsAllowed, Is.False);
+        Assert.That(memberDecision.Reason, Does.Contain("owner authority"));
+    }
+
+    [Test]
     public void TaskServiceTracksLifecycleAndAuditTrail()
     {
         AgentAuditLogService audit = new(Path.Combine(CreateTempWorkspace(), "audit.jsonl"));
@@ -492,6 +600,7 @@ public class AgentCapabilityServiceTests
         AgentCommandPolicy commandPolicy = new([
             new AgentCommandDefinition("test", "Run tests", "dotnet", "test", root, TimeSpan.FromSeconds(30))
         ]);
+        AgentProactiveBehaviorService proactive = new();
         AgentControlCenterService service = new(
             new AgentDiagnosticsService(
                 [new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected.")],
@@ -503,13 +612,31 @@ public class AgentCapabilityServiceTests
             workspace,
             new AgentWorkspacePolicy([root]),
             commandPolicy,
-            audit);
+            audit,
+            proactiveBehavior: proactive);
         ChatRuntimeState runtime = new(
             IsChatting: true,
             PendingPokeCount: 1,
             ChatHistoryCount: 5,
             LastError: "LLM request failed",
             RecentEvents: [new ChatRuntimeEvent(DateTimeOffset.Now, "Error", "LLM request failed")]);
+        proactive.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneReply,
+            "reply to qzone comment",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001,
+            DraftText: "reply target=1001 post=post-a"));
+        AgentProactivePendingSuggestion confirmed = proactive.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneLike,
+            "like private qzone post",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001,
+            DraftText: "like target=1001 post=post-b"));
+        proactive.ConfirmPendingSuggestion(confirmed.Id, "owner");
 
         AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
 
@@ -522,6 +649,10 @@ public class AgentCapabilityServiceTests
         Assert.That(snapshot.IssueReport.LastError, Is.EqualTo("LLM request failed"));
         Assert.That(snapshot.IssueReport.FailedAuditEntries.Select(entry => entry.Action), Does.Contain("agent.command.test"));
         Assert.That(snapshot.WorkspaceRoots, Does.Contain(Path.GetFullPath(root)));
+        Assert.That(snapshot.PendingProactiveSuggestions, Has.Count.EqualTo(1));
+        Assert.That(snapshot.PendingProactiveSuggestions[0].Suggestion.Kind, Is.EqualTo(AgentProactiveActionKind.QZoneReply));
+        Assert.That(snapshot.CompletedProactiveSuggestions, Has.Count.EqualTo(1));
+        Assert.That(snapshot.CompletedProactiveSuggestions[0].Status, Is.EqualTo(AgentProactivePendingStatus.Confirmed));
     }
 
     [Test]
@@ -560,6 +691,162 @@ public class AgentCapabilityServiceTests
         Assert.That(confirmation, Does.Contain("confirm execute"));
         Assert.That(confirmation, Does.Contain("workspace_apply_proposal"));
         Assert.That(confirmation, Does.Contain("abc123"));
+    }
+
+    [Test]
+    public void AgentControlCenterExposesConfigurationSnapshot()
+    {
+        AgentControlCenterService service = new();
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        Assert.That(snapshot.Configuration.AllowAgentLowRiskSelfConfiguration, Is.True);
+        Assert.That(snapshot.Configuration.AllowMentionWakeup, Is.True);
+        Assert.That(snapshot.PendingConfigurationProposals, Is.Empty);
+    }
+
+    [Test]
+    public void AgentControlCenterAppliesAllowedLowRiskConfigurationAndAudits()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(auditLog: audit);
+
+        AgentConfigurationChangeResult result = service.ApplyConfigurationChange(
+            "ProactiveChatIntensity",
+            "4",
+            "agent",
+            "owner requested more proactive conversation");
+
+        Assert.That(result.Applied, Is.True);
+        Assert.That(service.Configuration!.ProactiveChatIntensity, Is.EqualTo(4));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.config.applied"));
+    }
+
+    [Test]
+    public void AgentControlCenterPersistsLowRiskConfigurationWhenConfigurationSystemIsAvailable()
+    {
+        string previousStorage = AlifePath.StorageFolderPath;
+        string storageRoot = CreateTempWorkspace();
+        Directory.CreateDirectory(storageRoot);
+        try
+        {
+            AlifePath.SetStorageFolderPath(storageRoot);
+            ConfigurationSystem configurationSystem = new(new StorageSystem());
+            AgentControlCenterService service = new(configurationSystem: configurationSystem);
+
+            AgentConfigurationChangeResult result = service.ApplyConfigurationChange(
+                "ProactiveChatIntensity",
+                "5",
+                "agent",
+                "persist self-configuration");
+
+            AgentControlCenterConfig persisted = (AgentControlCenterConfig)configurationSystem
+                .GetConfiguration(typeof(AgentControlCenterService))!;
+
+            Assert.That(result.Applied, Is.True);
+            Assert.That(persisted.ProactiveChatIntensity, Is.EqualTo(5));
+        }
+        finally
+        {
+            AlifePath.SetStorageFolderPath(previousStorage);
+        }
+    }
+
+    [Test]
+    public void AgentControlCenterBlocksProtectedConfigurationWithoutOwnerConfirmation()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(auditLog: audit);
+
+        AgentConfigurationChangeResult result = service.ApplyConfigurationChange(
+            "OwnerUserIds",
+            "10001",
+            "agent",
+            "attempt to claim owner access");
+
+        Assert.That(result.Applied, Is.False);
+        Assert.That(result.RequiresOwnerConfirmation, Is.True);
+        Assert.That(service.GetPendingConfigurationProposals(), Has.Count.EqualTo(1));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.config.proposed"));
+    }
+
+    [Test]
+    public void AgentControlCenterCreatesHighRiskConfigurationProposal()
+    {
+        AgentControlCenterService service = new();
+
+        AgentConfigurationChangeProposal proposal = service.ProposeConfigurationChange(
+            "AllowedWorkspaceRoots",
+            "D:/Alife",
+            "agent",
+            "needed for code work");
+
+        Assert.That(proposal.Key, Is.EqualTo("AllowedWorkspaceRoots"));
+        Assert.That(proposal.RiskLevel, Is.EqualTo(AgentAuditRiskLevel.High));
+        Assert.That(service.GetPendingConfigurationProposals().Select(item => item.Id), Does.Contain(proposal.Id));
+    }
+
+    [Test]
+    public void AgentControlCenterBuildsOwnerConfirmationTextForConfigProposal()
+    {
+        AgentConfigurationChangeProposal proposal = new(
+            "config-1",
+            "AllowedWorkspaceRoots",
+            "D:/Alife",
+            "",
+            "needed for code work",
+            AgentAuditRiskLevel.High,
+            DateTimeOffset.Now,
+            "agent");
+
+        string confirmation = AgentControlCenterService.BuildConfigurationProposalConfirmationText(proposal);
+
+        Assert.That(confirmation, Does.Contain("confirm execute"));
+        Assert.That(confirmation, Does.Contain("agent_config_apply_proposal"));
+        Assert.That(confirmation, Does.Contain("config-1"));
+    }
+
+    [Test]
+    public void AgentControlCenterAppliesConfirmedConfigProposal()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(auditLog: audit);
+        AgentConfigurationChangeProposal proposal = service.ProposeConfigurationChange(
+            "AllowPassiveGroupListening",
+            "false",
+            "agent",
+            "owner wants mention-only mode");
+
+        AgentConfigurationChangeResult result = service.ApplyConfigurationProposal(proposal.Id, "owner");
+
+        Assert.That(result.Applied, Is.True);
+        Assert.That(service.Configuration!.AllowPassiveGroupListening, Is.False);
+        Assert.That(service.GetPendingConfigurationProposals(), Is.Empty);
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.config.confirmed"));
+    }
+
+    [Test]
+    public void AgentControlCenterExposesSelfConfigurationXmlTools()
+    {
+        string[] xmlFunctionNames = typeof(AgentControlCenterService)
+            .GetMethods()
+            .Select(method => method.GetCustomAttributes(typeof(XmlFunctionAttribute), inherit: false)
+                .OfType<XmlFunctionAttribute>()
+                .FirstOrDefault())
+            .OfType<XmlFunctionAttribute>()
+            .Select(attribute => attribute.Name ?? string.Empty)
+            .ToArray();
+
+        Assert.That(xmlFunctionNames, Does.Contain("agent_config_status"));
+        Assert.That(xmlFunctionNames, Does.Contain("agent_config_apply"));
+        Assert.That(xmlFunctionNames, Does.Contain("agent_config_propose"));
+        Assert.That(xmlFunctionNames, Does.Contain("agent_config_confirmation_text"));
+        Assert.That(xmlFunctionNames, Does.Contain("agent_config_apply_proposal"));
     }
 
     static string CreateTempWorkspace()

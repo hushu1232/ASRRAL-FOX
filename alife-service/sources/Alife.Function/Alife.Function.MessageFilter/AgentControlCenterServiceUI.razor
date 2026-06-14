@@ -18,7 +18,7 @@
                     <div>
                         <Title Level="4" Style="margin: 0;">AstralFox Agent Control</Title>
                         <Text Type="TextElementType.Secondary">
-                            Runtime state, tasks, audit, commands, errors, and workspace proposals.
+                            Configuration, runtime state, tasks, audit, commands, errors, and proposals.
                         </Text>
                     </div>
                     <Space>
@@ -61,7 +61,7 @@
                 <GridCol Xs="24" Md="6">
                     <Card Size="CardSize.Small" Class="agent-control-card metric-card">
                         <Text Type="TextElementType.Secondary">Risk</Text>
-                        <div class="metric-value">@snapshot.PendingWorkspaceProposals.Count proposals</div>
+                        <div class="metric-value">@(snapshot.PendingWorkspaceProposals.Count + snapshot.PendingProactiveSuggestions.Count) proposals</div>
                         <div class="metric-caption">@HighRiskAuditCount high-risk recent entries</div>
                     </Card>
                 </GridCol>
@@ -147,11 +147,135 @@
                                 </Collapse>
                             }
                         </Card>
+
+                        <Card Size="CardSize.Small" Title="Proactive suggestions" Class="agent-control-card">
+                            @if (snapshot.PendingProactiveSuggestions.Count == 0)
+                            {
+                                <div class="empty-state">No pending proactive suggestions</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list">
+                                    @foreach (AgentProactivePendingSuggestion pending in snapshot.PendingProactiveSuggestions.Take(6))
+                                    {
+                                        <div class="audit-line">
+                                            <div>
+                                                <Text Strong>@pending.Suggestion.Kind</Text>
+                                                <div class="muted">@Truncate(pending.Suggestion.Reason, 100)</div>
+                                                @if (string.IsNullOrWhiteSpace(pending.Suggestion.DraftText) == false)
+                                                {
+                                                    <div class="muted">Draft: @Truncate(pending.Suggestion.DraftText, 120)</div>
+                                                }
+                                                <div class="confirmation-text">@AgentProactiveBehaviorService.BuildPendingSuggestionConfirmationText(pending)</div>
+                                            </div>
+                                            <Tag Color="@GetRiskColor(pending.Suggestion.RiskLevel)">
+                                                @pending.Suggestion.RiskLevel
+                                            </Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Proactive history" Class="agent-control-card">
+                            @if (snapshot.CompletedProactiveSuggestions.Count == 0)
+                            {
+                                <div class="empty-state">No completed proactive suggestions</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list">
+                                    @foreach (AgentProactivePendingSuggestion completed in snapshot.CompletedProactiveSuggestions.Take(6))
+                                    {
+                                        <div class="audit-line">
+                                            <div>
+                                                <Text Strong>@completed.Suggestion.Kind</Text>
+                                                <div class="muted">@Truncate(completed.Suggestion.Reason, 100)</div>
+                                                @if (string.IsNullOrWhiteSpace(completed.Suggestion.DraftText) == false)
+                                                {
+                                                    <div class="muted">Draft: @Truncate(completed.Suggestion.DraftText, 120)</div>
+                                                }
+                                                @if (completed.Status == AgentProactivePendingStatus.Confirmed)
+                                                {
+                                                    <div class="confirmation-text">@AgentProactiveBehaviorService.BuildConfirmedSuggestionExecutionText(completed)</div>
+                                                }
+                                            </div>
+                                            <Tag Color="@GetProactiveStatusColor(completed.Status)">
+                                                @completed.Status
+                                            </Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Configuration proposals" Class="agent-control-card">
+                            @if (snapshot.PendingConfigurationProposals.Count == 0)
+                            {
+                                <div class="empty-state">No pending configuration proposals</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list">
+                                    @foreach (AgentConfigurationChangeProposal proposal in snapshot.PendingConfigurationProposals.Take(6))
+                                    {
+                                        <div class="audit-line">
+                                            <div>
+                                                <Text Strong>@proposal.Key</Text>
+                                                <div class="muted">@Truncate(proposal.Reason, 80)</div>
+                                                <div class="muted">Requested: @Truncate(proposal.RequestedValue, 80)</div>
+                                                <div class="confirmation-text">@AgentControlCenterService.BuildConfigurationProposalConfirmationText(proposal)</div>
+                                            </div>
+                                            <Tag Color="@GetRiskColor(proposal.RiskLevel)">
+                                                @proposal.RiskLevel
+                                            </Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
                     </Flex>
                 </GridCol>
 
                 <GridCol Xs="24" Lg="9">
                     <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
+                        <Card Size="CardSize.Small" Title="Self-configuration" Class="agent-control-card">
+                            <Flex Direction="FlexDirection.Vertical" Gap="@("8")">
+                                <div class="command-line">
+                                    <span>Agent self-config</span>
+                                    <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowAgentLowRiskSelfConfiguration)">
+                                        @GetEnabledText(snapshot.Configuration.AllowAgentLowRiskSelfConfiguration)
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>Mention wakeup</span>
+                                    <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowMentionWakeup)">
+                                        @GetEnabledText(snapshot.Configuration.AllowMentionWakeup)
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>Passive group listening</span>
+                                    <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowPassiveGroupListening)">
+                                        @GetEnabledText(snapshot.Configuration.AllowPassiveGroupListening)
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>Proactive chat</span>
+                                    <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowProactiveChat)">
+                                        @GetEnabledText(snapshot.Configuration.AllowProactiveChat)
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>Proactive intensity</span>
+                                    <Tag Color="@("blue")">@snapshot.Configuration.ProactiveChatIntensity</Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>Self-config limit</span>
+                                    <Tag Color="@("blue")">@snapshot.Configuration.MaxSelfConfigChangesPerHour / hour</Tag>
+                                </div>
+                            </Flex>
+                        </Card>
+
                         <Card Size="CardSize.Small" Title="Allowed commands" Class="agent-control-card">
                             @if (snapshot.AllowedCommands.Count == 0)
                             {
@@ -319,6 +443,18 @@
         AgentAuditRiskLevel.High => "red",
         AgentAuditRiskLevel.Medium => "orange",
         _ => "green"
+    };
+
+    static string GetEnabledColor(bool enabled) => enabled ? "green" : "default";
+
+    static string GetEnabledText(bool enabled) => enabled ? "enabled" : "disabled";
+
+    static string GetProactiveStatusColor(AgentProactivePendingStatus status) => status switch
+    {
+        AgentProactivePendingStatus.Confirmed => "blue",
+        AgentProactivePendingStatus.Executed => "green",
+        AgentProactivePendingStatus.Dismissed => "default",
+        _ => "orange"
     };
 
     static string Truncate(string value, int maxLength)

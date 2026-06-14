@@ -86,6 +86,66 @@ public class QChatMessageSecurityTests
     }
 
     [Test]
+    public void ControlCenterConfig_DisablesNonOwnerMentionWakeupButKeepsOwnerPriority()
+    {
+        QChatConfig config = new() {
+            OwnerId = 10001,
+            OwnerPriorityMode = true,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+        };
+        AgentControlCenterConfig control = new() {
+            AllowMentionWakeup = false,
+            AllowPassiveGroupListening = true,
+        };
+        OneBotBasicMessageEvent ownerEvent = new() {
+            UserId = 10001,
+            GroupId = 20002,
+        };
+        OneBotBasicMessageEvent memberEvent = new() {
+            UserId = 30003,
+            GroupId = 20002,
+        };
+
+        Assert.That(QChatMessageSecurity.ShouldActivateGroup(config, memberEvent, isMentionedOrWoken: true, control), Is.False);
+        Assert.That(QChatMessageSecurity.ShouldActivateGroup(config, ownerEvent, isMentionedOrWoken: false, control), Is.True);
+    }
+
+    [Test]
+    public void ControlCenterConfig_DisablesProactiveGroupChat()
+    {
+        QChatConfig config = new() {
+            OwnerId = 10001,
+            AllowGroupMemberChat = true,
+            AllowProactiveGroupChat = true,
+        };
+        AgentControlCenterConfig control = new() {
+            AllowProactiveChat = false,
+            ProactiveChatIntensity = 10,
+        };
+        OneBotBasicMessageEvent memberEvent = new() {
+            UserId = 30003,
+            GroupId = 20002,
+        };
+
+        Assert.That(QChatMessageSecurity.ShouldAllowProactiveGroupChat(config, memberEvent, control), Is.False);
+    }
+
+    [Test]
+    public void ControlCenterConfig_FlowsIntoHighRiskPermissionConfig()
+    {
+        QChatConfig config = new() { OwnerId = 10001 };
+        AgentControlCenterConfig control = new() {
+            RequireOwnerConfirmationForHighRiskConfiguration = false,
+        };
+
+        AgentPermissionConfig permissionConfig = QChatMessageSecurity.BuildPermissionConfig(config, control);
+
+        Assert.That(permissionConfig.OwnerUserIds, Does.Contain(10001));
+        Assert.That(permissionConfig.RequireConfirmationForHighRisk, Is.False);
+    }
+
+    [Test]
     public void BuildPermissionRequest_GivesOwnerHighRiskAuthorityOnlyWithExplicitConfirmation()
     {
         QChatConfig config = new() { OwnerId = 10001 };

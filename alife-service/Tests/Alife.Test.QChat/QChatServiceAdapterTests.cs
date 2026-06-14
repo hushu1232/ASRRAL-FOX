@@ -104,6 +104,51 @@ public class QChatServiceAdapterTests
         Assert.That(runtime.GroupFiles, Is.Empty);
     }
 
+    [Test]
+    public async Task RelationCacheRefreshesGroupMembersFromRuntime()
+    {
+        FakeOneBotRuntime runtime = new();
+        runtime.GroupMemberLists[123] = [
+            new OneBotGroupMember { GroupId = 123, UserId = 1001, Nickname = "Alice", Card = "A-card", Role = "member" },
+            new OneBotGroupMember { GroupId = 123, UserId = 1002, Nickname = "Bob", Role = "admin" }
+        ];
+        QChatRelationCacheService service = new(runtime);
+
+        QChatGroupMemberCacheSnapshot snapshot = await service.RefreshGroupMembersAsync(123);
+
+        Assert.That(snapshot.GroupId, Is.EqualTo(123));
+        Assert.That(snapshot.Members.Select(member => member.UserId), Is.EqualTo(new[] { 1001L, 1002L }));
+        Assert.That(snapshot.Members[0].DisplayName, Is.EqualTo("A-card"));
+        Assert.That(service.TryGetMember(123, 1002)?.DisplayName, Is.EqualTo("Bob"));
+    }
+
+    [Test]
+    public void RelationCacheReturnsEmptySnapshotForUnknownGroup()
+    {
+        QChatRelationCacheService service = new(new FakeOneBotRuntime());
+
+        QChatGroupMemberCacheSnapshot snapshot = service.GetCachedGroupMembers(123);
+
+        Assert.That(snapshot.GroupId, Is.EqualTo(123));
+        Assert.That(snapshot.Members, Is.Empty);
+    }
+
+    [Test]
+    public void RelationCacheExposesXmlTools()
+    {
+        string[] xmlFunctionNames = typeof(QChatRelationCacheService)
+            .GetMethods()
+            .Select(method => method.GetCustomAttributes(typeof(Alife.Function.Interpreter.XmlFunctionAttribute), inherit: false)
+                .OfType<Alife.Function.Interpreter.XmlFunctionAttribute>()
+                .FirstOrDefault())
+            .OfType<Alife.Function.Interpreter.XmlFunctionAttribute>()
+            .Select(attribute => attribute.Name ?? string.Empty)
+            .ToArray();
+
+        Assert.That(xmlFunctionNames, Does.Contain("qchat_group_members_refresh"));
+        Assert.That(xmlFunctionNames, Does.Contain("qchat_group_members_cache"));
+    }
+
     sealed class FakeOneBotRuntime : IOneBotRuntime
     {
         public event Action<OneBotBaseEvent>? EventReceived;
@@ -115,6 +160,7 @@ public class QChatServiceAdapterTests
         public List<(long Target, string Message)> PrivateMessages { get; } = new();
         public List<(long Target, string File, string Name)> GroupFiles { get; } = new();
         public List<(long Target, string File, string Name)> PrivateFiles { get; } = new();
+        public Dictionary<long, IReadOnlyList<OneBotGroupMember>> GroupMemberLists { get; } = new();
 
         public Task ConnectAsync() => Task.CompletedTask;
         public Task SendGroupMessage(long groupId, string message)
@@ -144,6 +190,12 @@ public class QChatServiceAdapterTests
         public Task<OneBotFile?> GetGroupFileUrl(long groupId, string fileId) => Task.FromResult<OneBotFile?>(null);
         public Task<OneBotMessageEvent?> GetMessage(long messageId) => Task.FromResult<OneBotMessageEvent?>(null);
         public Task<List<OneBotForwardMessage>?> GetForwardMessage(string forwardId) => Task.FromResult<List<OneBotForwardMessage>?>([]);
+        public Task<IReadOnlyList<OneBotGroupMember>> GetGroupMemberList(long groupId)
+        {
+            return Task.FromResult(GroupMemberLists.TryGetValue(groupId, out IReadOnlyList<OneBotGroupMember>? members)
+                ? members
+                : Array.Empty<OneBotGroupMember>());
+        }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         public void Raise(OneBotBaseEvent ev) => EventReceived?.Invoke(ev);
     }

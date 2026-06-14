@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Alife.Framework;
+using Alife.Function.Agent;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Microsoft.SemanticKernel;
@@ -41,7 +42,9 @@ public class QZoneService(
     IOneBotActionInvoker? actionInvoker = null,
     IOneBotActionConnection? actionConnection = null,
     XmlFunctionCaller? functionService = null,
-    ILifeEventPublisher? lifeEventPublisher = null) :
+    ILifeEventPublisher? lifeEventPublisher = null,
+    AgentProactiveBehaviorService? proactiveBehavior = null,
+    AgentAuditLogService? auditLog = null) :
     InteractiveModule<QZoneService>,
     IConfigurable<QZoneServiceConfig>,
     IEmbodiedCapability,
@@ -49,6 +52,8 @@ public class QZoneService(
 {
     IQZoneRuntime? createdRuntime;
     IOneBotActionConnection? ownedConnection;
+    readonly AgentProactiveBehaviorService? proactiveBehavior = proactiveBehavior;
+    readonly AgentAuditLogService? auditLog = auditLog;
     public QZoneServiceConfig? Configuration { get; set; } = new();
     public string Name => "QQ空间";
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Communication;
@@ -227,6 +232,35 @@ public class QZoneService(
         return Report(new QZoneActionResult("like", true, "liked QQ Zone post"));
     }
 
+    [XmlFunction(FunctionMode.OneShot, name: "qzone_proactive_execute", riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
+    [Description("Execute a previously owner-confirmed QZone proactive suggestion by id. Confirmation and execution are intentionally separate.")]
+    public Task<QZoneProactiveExecutionResult> ExecuteConfirmedProactiveSuggestion(string id)
+    {
+        return ExecuteConfirmedProactiveSuggestion(id, null);
+    }
+
+    public async Task<QZoneProactiveExecutionResult> ExecuteConfirmedProactiveSuggestion(string id, Func<double>? random)
+    {
+        if (proactiveBehavior == null)
+            return ReportProactiveExecution(new QZoneProactiveExecutionResult(false, "Proactive behavior service is unavailable."), id);
+
+        string normalizedId = id.Trim();
+        AgentProactivePendingSuggestion? pending = proactiveBehavior.GetCompletedSuggestion(normalizedId);
+        if (pending == null)
+            return ReportProactiveExecution(new QZoneProactiveExecutionResult(false, "Confirmed proactive suggestion was not found."), normalizedId);
+        if (pending.Status == AgentProactivePendingStatus.Executed)
+            return ReportProactiveExecution(new QZoneProactiveExecutionResult(false, "Proactive suggestion was already executed."), normalizedId);
+        if (pending.Status != AgentProactivePendingStatus.Confirmed)
+            return ReportProactiveExecution(new QZoneProactiveExecutionResult(false, "Proactive suggestion must be confirmed before execution."), normalizedId);
+
+        QZoneProactiveExecutionService executor = new(this, random);
+        QZoneProactiveExecutionResult result = await executor.ExecuteAsync(pending);
+        if (result.Succeeded)
+            proactiveBehavior.MarkSuggestionExecuted(normalizedId, "agent", result.Message);
+
+        return ReportProactiveExecution(result, normalizedId);
+    }
+
     static bool IsPrivateChatContact(QZoneServiceConfig config, long targetId)
     {
         return config.PrivateChatContactIds
@@ -332,6 +366,19 @@ public class QZoneService(
     QZoneActionResult Report(QZoneActionResult result)
     {
         TryPoke($"[QQ Zone {result.Action}] {(result.Executed ? "executed" : "skipped")}: {result.Reason}");
+        return result;
+    }
+
+    QZoneProactiveExecutionResult ReportProactiveExecution(QZoneProactiveExecutionResult result, string id)
+    {
+        auditLog?.Record(
+            "qzone.proactive.execute",
+            "agent",
+            $"id={id}; {result.Message}",
+            AgentAuditRiskLevel.High,
+            result.Succeeded,
+            result.Succeeded ? null : result.Message);
+        TryPoke($"[QQ Zone proactive] {(result.Succeeded ? "handled" : "rejected")}: {result.Message}");
         return result;
     }
 

@@ -20,6 +20,7 @@ public interface IOneBotRuntime : IAsyncDisposable
     Task<OneBotFile?> GetGroupFileUrl(long groupId, string fileId);
     Task<OneBotMessageEvent?> GetMessage(long messageId);
     Task<List<OneBotForwardMessage>?> GetForwardMessage(string forwardId);
+    Task<IReadOnlyList<OneBotGroupMember>> GetGroupMemberList(long groupId);
 }
 
 public sealed class OneBotRuntime(OneBotClient client) : IOneBotRuntime
@@ -43,5 +44,6 @@ public sealed class OneBotRuntime(OneBotClient client) : IOneBotRuntime
     public Task<OneBotFile?> GetGroupFileUrl(long groupId, string fileId) => client.GetGroupFileUrl(groupId, fileId);
     public Task<OneBotMessageEvent?> GetMessage(long messageId) => client.GetMessage(messageId);
     public Task<List<OneBotForwardMessage>?> GetForwardMessage(string forwardId) => client.GetForwardMessage(forwardId);
+    public Task<IReadOnlyList<OneBotGroupMember>> GetGroupMemberList(long groupId) => client.GetGroupMemberList(groupId);
     public ValueTask DisposeAsync() => client.DisposeAsync();
 }
