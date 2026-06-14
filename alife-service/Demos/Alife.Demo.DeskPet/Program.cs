@@ -4,46 +4,6 @@ using Alife.Function.DeskPet;
 using Alife.Function.FunctionCaller;
 
 
-if (args.Length >= 2 && args[0].Equals("import", StringComparison.OrdinalIgnoreCase))
-{
-    string sourceFolder = args[1];
-    string modelId = args.Length >= 3
-        ? args[2]
-        : Path.GetFileName(Path.TrimEndingDirectorySeparator(sourceFolder));
-    string destinationRoot = Path.Combine(
-        AlifePath.OutputsFolderPath,
-        "Alife.DeskPet.Client",
-        "wwwroot",
-        "model");
-
-    Live2DModelImportResult result = Live2DModelImporter.Import(sourceFolder, destinationRoot, modelId);
-    AlifeTerminal.LogInfo($"Imported Live2D model '{result.Manifest.Id}' to {result.ManifestPath}");
-    foreach (Live2DModelImportDiagnostic diagnostic in result.Diagnostics)
-        AlifeTerminal.LogInfo($"[{diagnostic.Level}] {diagnostic.Path}: {diagnostic.Message}");
-    return;
-}
-
-if (args.Length >= 2 && args[0].Equals("runtime-smoke", StringComparison.OrdinalIgnoreCase))
-{
-    string modelId = args[1];
-    await using PetServer server = new(modelId);
-    server.OnRendererError += error => AlifeTerminal.LogError($"{error.Operation}: {error.Message}");
-    await server.WaitReadyAsync();
-    AlifeTerminal.LogInfo($"DeskPet runtime ready for model '{modelId}'.");
-    server.ShowBubble("Runtime smoke test");
-    await Task.Delay(800);
-    server.PlayMotion("default", 0);
-    await Task.Delay(800);
-    server.TryPlayInteraction("cry");
-    await Task.Delay(800);
-    server.HideBubble();
-    AlifeTerminal.LogInfo("DeskPet runtime smoke completed.");
-    return;
-}
-
-string modelName = args.Length >= 2 && args[0].Equals("model", StringComparison.OrdinalIgnoreCase)
-    ? args[1]
-    : new DeskPetServiceConfig().ModelName;
 
 AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
 AlifeTerminal.Log("   真央桌宠 AI 交互集成验证 Demo", ConsoleColor.Magenta);
@@ -62,11 +22,7 @@ var character = new Character {
 };
 
 // 2. 初始化标准演示套件
-var suite = await DemoSuite.InitializeAsync(character, system => {
-    system.SetConfiguration(typeof(DeskPetService), new DeskPetServiceConfig {
-        ModelName = modelName,
-    });
-});
+var suite = await DemoSuite.InitializeAsync(character);
 
 AlifeTerminal.LogInfo("提示：输入文字开始与真央交流，输入 'exit' 退出。所有的表情/动作指令将在日志中高亮显示。");
 AlifeTerminal.Log("--------------------------------------------------\n", ConsoleColor.Gray);

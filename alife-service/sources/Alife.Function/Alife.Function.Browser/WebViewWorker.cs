@@ -18,6 +18,8 @@ public class WebViewWorker : IDisposable
 {
     public bool IsNavigating => isNavigating;
     public bool IsLoaded => isLoaded;
+    public Exception? InitializationError => initializationError;
+    public Exception? ProcessFailureError => processFailureError;
 
     public Task<T> AddFormTask<T>(Func<WebView2, Task<T>> action)
     {
@@ -46,11 +48,15 @@ public class WebViewWorker : IDisposable
     Window? window;
     WebView2? webView;
     readonly BlockingCollection<Func<Task>> formTasks = new();
+    readonly string? userDataFolderOverride;
     bool isNavigating;
     bool isLoaded;
+    Exception? initializationError;
+    Exception? processFailureError;
 
-    public WebViewWorker()
+    public WebViewWorker(string? userDataFolder = null)
     {
+        userDataFolderOverride = userDataFolder;
         var thread = new Thread(() => {
             try
             {
@@ -72,6 +78,7 @@ public class WebViewWorker : IDisposable
             }
             catch (Exception ex)
             {
+                initializationError = ex;
                 AlifeTerminal.LogError(ex.ToString());
             }
         });
@@ -91,22 +98,29 @@ public class WebViewWorker : IDisposable
     {
         try
         {
-            string userDataFolder = Path.Combine(AlifePath.RuntimeFolderPath, "WebView2Data");
+            string userDataFolder = userDataFolderOverride ?? Path.Combine(AlifePath.RuntimeFolderPath, "WebView2Data");
             if (!Directory.Exists(userDataFolder))
                 Directory.CreateDirectory(userDataFolder);
-            var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
+            CoreWebView2EnvironmentOptions options = new(
+                "--disable-gpu --disable-gpu-compositing --disable-gpu-sandbox --disable-features=RendererCodeIntegrity --no-sandbox");
+            var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder, options: options);
 
-            await webView!.Dispatcher.InvokeAsync(async () => {
-                await webView!.EnsureCoreWebView2Async(env);
-                webView.CoreWebView2.Settings.UserAgent =
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edge/122.0.0.0";
-                webView.CoreWebView2.NewWindowRequested += (_, ev) => {
-                    ev.Handled = true;
-                    webView.CoreWebView2.Navigate(ev.Uri);
-                };
-                webView.CoreWebView2.NavigationStarting += (_, ev) => isNavigating = true;
-                webView.CoreWebView2.NavigationCompleted += (_, ev) => isNavigating = false;
-            });
+            await webView!.EnsureCoreWebView2Async(env);
+            webView.CoreWebView2.Settings.UserAgent =
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edge/122.0.0.0";
+            webView.CoreWebView2.NewWindowRequested += (_, ev) => {
+                ev.Handled = true;
+                webView.CoreWebView2.Navigate(ev.Uri);
+            };
+            webView.CoreWebView2.ProcessFailed += (_, ev) => {
+                string message =
+                    $"Browser WebView process failed: kind={ev.ProcessFailedKind}, reason={ev.Reason}, " +
+                    $"exitCode={ev.ExitCode}, description={ev.ProcessDescription}, source={ev.FailureSourceModulePath}";
+                processFailureError = new InvalidOperationException(message);
+                AlifeTerminal.LogError(message);
+            };
+            webView.CoreWebView2.NavigationStarting += (_, ev) => isNavigating = true;
+            webView.CoreWebView2.NavigationCompleted += (_, ev) => isNavigating = false;
 
             isLoaded = true;
             await Task.Run(() => {
@@ -126,6 +140,7 @@ public class WebViewWorker : IDisposable
         }
         catch (Exception ex)
         {
+            initializationError = ex;
             AlifeTerminal.LogError(ex.ToString());
         }
     }

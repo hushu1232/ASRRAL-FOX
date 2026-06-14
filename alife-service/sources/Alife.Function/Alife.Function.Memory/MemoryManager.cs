@@ -190,9 +190,18 @@ public class MemoryManager
         return memoryStorage.LoadAsync(level, index);
     }
 
-    public async Task<(List<SearchResult> Results, int Total)> SearchMemory(int level, string keyword, string? question, int count, int offset, DateTime? startTime, DateTime? endTime)
+    public async Task<(List<SearchResult> Results, int Total)> SearchMemory(
+        int level,
+        string keyword,
+        string? question,
+        int count,
+        int offset,
+        DateTime? startTime,
+        DateTime? endTime,
+        MemorySearchMode searchMode = MemorySearchMode.Hybrid,
+        bool includePermanent = true)
     {
-        return await memoryStorage.SearchAsync(level, keyword, question, count, offset, startTime, endTime);
+        return await memoryStorage.SearchAsync(level, keyword, question, count, offset, startTime, endTime, searchMode, includePermanent);
     }
 
     public MemoryMeta GetMemoryMetaData(ChatMessageContent content)

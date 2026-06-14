@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Microsoft.SemanticKernel;
@@ -10,13 +12,17 @@ public class MessageFilterData
     public bool EnableTimestamp { get; set; } = true;
     public string MessageAppend { get; set; } = "(回复消息时保持简洁，禁用旁白、emoji)";
     public string PokeAppend { get; set; } = "";
+    public int MaxContextLength { get; set; } = 2400;
     public int MaxMessageLength { get; set; } = 5000;
 }
 
 [Module("消息过滤", "统一管理消息的提示词注入和格式化。负责添加时间戳、通用提示词以及系统消息头。",
     defaultCategory: "Alife 官方/生活环境",
     LaunchOrder = -100, EditorUI = typeof(MessageFilterServiceUI))]
-public class MessageFilterService : InteractiveModule<MessageFilterService>, IConfigurable<MessageFilterData>
+public class MessageFilterService(
+    ILifeEventStream? lifeEventStream = null,
+    IEnumerable<IContextContributor>? contextContributors = null)
+    : InteractiveModule<MessageFilterService>, IConfigurable<MessageFilterData>
 {
     public MessageFilterData? Configuration { get; set; }
 
@@ -35,14 +41,20 @@ public class MessageFilterService : InteractiveModule<MessageFilterService>, ICo
 
     string OnChatSend(string message)
     {
-        string result = $"{message}{Configuration?.MessageAppend}";
-        if (Configuration?.EnableTimestamp == true)
+        return FormatChatMessage(message);
+    }
+
+    public string FormatChatMessage(string message)
+    {
+        MessageFilterData configuration = Configuration ?? new MessageFilterData();
+        string result = $"{PrependContext(message, configuration)}{configuration.MessageAppend}";
+        if (configuration.EnableTimestamp)
             result = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]{result}";
 
-        if (result.Length > Configuration!.MaxMessageLength)
+        if (result.Length > configuration.MaxMessageLength)
         {
-            result = result.Substring(0, Configuration!.MaxMessageLength);
-            result += $"(文本过长，超过 {Configuration?.MaxMessageLength} 的部分已截断)";
+            result = result.Substring(0, configuration.MaxMessageLength);
+            result += $"(文本过长，超过 {configuration.MaxMessageLength} 的部分已截断)";
         }
 
         return result;
@@ -50,6 +62,44 @@ public class MessageFilterService : InteractiveModule<MessageFilterService>, ICo
 
     string OnPokeSend(string message)
     {
-        return $"{message}{Configuration?.PokeAppend}";
+        return FormatPokeMessage(message);
+    }
+
+    public string FormatPokeMessage(string message)
+    {
+        MessageFilterData configuration = Configuration ?? new MessageFilterData();
+        return $"{PrependContext(message, configuration)}{configuration.PokeAppend}";
+    }
+
+    string PrependContext(string message, MessageFilterData configuration)
+    {
+        List<ContextContribution> contributions = new();
+        if (contextContributors != null)
+        {
+            foreach (IContextContributor contributor in contextContributors)
+            {
+                try
+                {
+                    contributions.AddRange(contributor.GetContextContributions());
+                }
+                catch
+                {
+                    // Context must never block user-visible message delivery.
+                }
+            }
+        }
+
+        if (lifeEventStream != null)
+        {
+            string recentExperiences = LifeEventStreamService.FormatRecentExperiences(lifeEventStream.GetRecentEvents(8));
+            if (string.IsNullOrWhiteSpace(recentExperiences) == false)
+                contributions.Add(new ContextContribution("recent-experiences", recentExperiences, Priority: 800, MaxLength: 1200));
+        }
+
+        string context = ContextBudgetComposer.Compose(contributions, configuration.MaxContextLength);
+        if (string.IsNullOrWhiteSpace(context))
+            return message;
+
+        return $"{context}\n{message}";
     }
 }

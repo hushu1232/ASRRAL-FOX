@@ -55,7 +55,6 @@ public class PetActivity : IDisposable
         {
             //加载live2d
             await bridge.LoadModel(metadata.ModelPath);
-            bridge.SendCatalog();
             HandleInteraction("startup");
 
             //监听客户端输入
@@ -68,7 +67,6 @@ public class PetActivity : IDisposable
             bridge.OnDragStart += () => isDragging = true;
             bridge.OnDragEnd += () => isDragging = false;
             bridge.OnParamsReceived += parameters => process.SendOutput(new ParamsListEvent(parameters));
-            bridge.OnRendererError += (operation, message) => process.SendOutput(new RendererErrorEvent(operation, message));
             bridge.OnResizeDelta += (dx, dy) => {
                 (double ScaleX, double ScaleY) dpi = window.GetDpi();
                 window.Width = Math.Max(150, window.Width + dx / dpi.ScaleX);
@@ -212,24 +210,6 @@ public class PetActivity : IDisposable
             case LipSyncCommand l: bridge.SetLipSync(l.Value); break;
             case IdleCycleCommand i: bridge.SetIdleCycle(i.Enabled, i.Params); break;
             case GetParamsCommand: bridge.RequestParams(); break;
-            case GetCatalogCommand: process.SendOutput(CreateCatalogEvent()); break;
         }
-    }
-
-    CatalogEvent CreateCatalogEvent()
-    {
-        List<Live2DModelExpressionEntry> expressions = metadata.Expressions
-            .Select(expression => new Live2DModelExpressionEntry { Name = expression })
-            .ToList();
-        List<Live2DModelMotionEntry> motions = metadata.Motions
-            .Select(motion => new Live2DModelMotionEntry
-            {
-                Name = motion.Key,
-                Group = motion.Value.Group,
-                Index = motion.Value.Index,
-            })
-            .ToList();
-
-        return new CatalogEvent(expressions, motions);
     }
 }

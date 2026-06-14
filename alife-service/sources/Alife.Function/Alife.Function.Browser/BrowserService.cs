@@ -15,14 +15,18 @@ namespace Alife.Function.Browser;
 1. 若遇到验证或登录，可以请求主人协助，从而避免被反爬。
 2. 办事前先明确需求，再行动。
 3. 优先使用搜索引擎`谷歌 > 必应 > 百度`")]
-public class BrowserService(XmlFunctionCaller functionService)
-    : InteractiveModule<BrowserService>, IDisposable
+public class BrowserService(
+    XmlFunctionCaller functionService,
+    IBrowserRuntime? browserRuntime = null,
+    ILifeEventPublisher? lifeEventPublisher = null)
+    : InteractiveModule<BrowserService>, IDisposable, IEmbodiedCapability, IModuleHealthReporter
 {
     [XmlFunction(FunctionMode.OneShot)]
     [Description("打开网页。")]
     public async Task Navigate(string url)
     {
         await browser.NavigateAsync(url);
+        PublishLifeEvent($"You opened a browser page: {url}");
         Poke($"[Navigate] 已打开: {url}（接下来可以使用 observe 来查看页面内容）");
     }
 
@@ -31,10 +35,11 @@ public class BrowserService(XmlFunctionCaller functionService)
     public async Task Observe([Description("观察的页面区域，从1开始")] int page)
     {
         string result = await browser.ObserveAsync(page);
+        PublishLifeEvent($"You observed browser page segment {page}.");
         Poke($"页面结果如下（注意！网站页面大多不能一次全显示，必须通过 page 翻页来查看完整内容。此外若遇到人机验证或登录，可请求主人协助）：\n{result}");
     }
 
-    [XmlFunction(FunctionMode.Content)]
+    [XmlFunction(FunctionMode.Content, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
     [Description("执行JS表达式（这只能在浏览器沙盒中使用，不能执行全局性脚本操作）")]
     public async Task RunJs(XmlExecutorContext context, [XmlContent] string script)
     {
@@ -42,26 +47,48 @@ public class BrowserService(XmlFunctionCaller functionService)
         {
             string code = context.FullContent.Trim();
             string result = await browser.ExecuteScriptAsync(code);
+            PublishLifeEvent("You executed JavaScript in your browser.");
             Poke($"[RunJS] 执行结果：\n{result}");
         }
     }
 
-    [XmlFunction(FunctionMode.OneShot)]
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
     [Description("下载文件。")]
     public async Task Download([Description("下载链接")] string url, [Description("本地绝对路径")] string path)
     {
         await AlifePlatform.DownloadFileAsync(url, path);
+        PublishLifeEvent($"You downloaded a browser file to {path}.");
         Poke($"[Download] 文件已下载至：{path}");
     }
 
-    readonly BrowserEngine browser = new();
+    readonly IBrowserRuntime browser = browserRuntime ?? new BrowserEngine();
+
+    public string Name => "Browser";
+    public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Sense;
+    public string SelfDescription => "Your real browser for opening pages, observing web content, and operating web interfaces when external information is needed.";
+    public string? GetCurrentState() => "Initialized when this module awakes; use browser XML functions to open and observe pages.";
+    public ModuleHealth GetHealth() => browserReady || browser.IsReady
+        ? new ModuleHealth("Browser", ModuleHealthStatus.Healthy, "Browser runtime is initialized.")
+        : new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized yet.");
 
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
         await browser.WaitToLoadedAsync(TimeSpan.FromSeconds(3));
-        functionService.RegisterHandler(this, nameof(RunJs));
+        browserReady = browser.IsReady;
+        functionService?.RegisterHandler(this, nameof(RunJs));
     }
 
     public void Dispose() => browser.Dispose();
+
+    bool browserReady;
+
+    void PublishLifeEvent(string summary)
+    {
+        lifeEventPublisher?.Publish(new LifeEvent(
+            DateTimeOffset.Now,
+            LifeEventKind.Browser,
+            "Browser",
+            summary));
+    }
 }

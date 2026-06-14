@@ -29,9 +29,6 @@ public class PetModelMetadata
         PetModelMetadata metadata = new();
         if (File.Exists(jsonPath) == false) return metadata;
 
-        if (Path.GetFileName(jsonPath).Equals("alife.model.json", StringComparison.OrdinalIgnoreCase))
-            return LoadManifest(jsonPath);
-
         // 设置模型相对路径 (用于 Web 端加载)
         // 假设路径格式为 .../wwwroot/model/...
         int wwwrootIndex = jsonPath.Replace('\\', '/').IndexOf("wwwroot/", StringComparison.Ordinal);
@@ -94,76 +91,5 @@ public class PetModelMetadata
         }
 
         return metadata;
-    }
-
-    static PetModelMetadata LoadManifest(string manifestPath)
-    {
-        PetModelMetadata metadata = new();
-        try
-        {
-            Live2DModelManifest? manifest = JsonSerializer.Deserialize<Live2DModelManifest>(
-                File.ReadAllText(manifestPath),
-                PetProcess.JsonOptions);
-            if (manifest == null)
-                return metadata;
-
-            metadata.ModelPath = ToWebModelPath(Path.Combine(Path.GetDirectoryName(manifestPath)!, manifest.ModelFile));
-            foreach (Live2DModelExpressionEntry expression in manifest.Expressions)
-            {
-                if (string.IsNullOrWhiteSpace(expression.Name) == false)
-                    metadata.Expressions.Add(expression.Name);
-            }
-
-            foreach (Live2DModelMotionEntry motion in manifest.Motions)
-            {
-                if (string.IsNullOrWhiteSpace(motion.Name) == false)
-                    metadata.Motions[motion.Name] = (motion.Group, motion.Index);
-            }
-
-            AddActions(metadata, manifest.Actions);
-
-            string profilePath = Path.Combine(Path.GetDirectoryName(manifestPath)!, "alife.actions.json");
-            if (File.Exists(profilePath))
-            {
-                Live2DActionProfile? profile = JsonSerializer.Deserialize<Live2DActionProfile>(
-                    File.ReadAllText(profilePath),
-                    PetProcess.JsonOptions);
-                if (profile != null)
-                    AddActions(metadata, profile.Actions);
-            }
-        }
-        catch
-        {
-            return metadata;
-        }
-
-        return metadata;
-    }
-
-    static void AddActions(PetModelMetadata metadata, IEnumerable<Live2DModelActionEntry> actions)
-    {
-        foreach (Live2DModelActionEntry action in actions)
-        {
-            if (string.IsNullOrWhiteSpace(action.Name))
-                continue;
-
-            InteractionItem item = new()
-            {
-                Exp = action.Expression,
-                Mtn = action.Motion == null
-                    ? null
-                    : new MotionRef(action.Motion.Group, action.Motion.Index),
-            };
-            metadata.Interactions[action.Name] = [item];
-        }
-    }
-
-    static string ToWebModelPath(string path)
-    {
-        string normalizedPath = path.Replace('\\', '/');
-        int wwwrootIndex = normalizedPath.IndexOf("wwwroot/", StringComparison.Ordinal);
-        return wwwrootIndex == -1
-            ? normalizedPath
-            : normalizedPath[(wwwrootIndex + "wwwroot/".Length)..];
     }
 }

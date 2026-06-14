@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Alife.Framework;
+using Microsoft.SemanticKernel.Agents;
 
 namespace Alife.Test.Framework;
 
@@ -66,5 +67,39 @@ public class ChatBotLifecycleTests
 
         Assert.That(completedTask, Is.SameAs(disposeTask), "DisposeAsync should stop waiting after its bounded timeout.");
         Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromSeconds(6)));
+    }
+
+    [Test]
+    public async Task GetRuntimeStateReportsPendingPokeCountAndRecentEvents()
+    {
+        await using ChatBot chatBot = new(null!, new ChatHistoryAgentThread());
+
+        chatBot.Poke("first");
+        chatBot.Poke("second");
+
+        ChatRuntimeState state = chatBot.GetRuntimeState();
+
+        Assert.That(state.PendingPokeCount, Is.EqualTo(2));
+        Assert.That(state.RecentEvents.Any(runtimeEvent => runtimeEvent.Kind == "PokeQueued"), Is.True);
+    }
+
+    [Test]
+    public async Task GetRuntimeStateReportsLastError()
+    {
+        await using ChatBot chatBot = new(null!, new ChatHistoryAgentThread());
+
+        try
+        {
+            await chatBot.ChatAsync("hello");
+        }
+        catch
+        {
+            // Expected: this test intentionally uses a null agent to exercise runtime error recording.
+        }
+
+        ChatRuntimeState state = chatBot.GetRuntimeState();
+
+        Assert.That(state.LastError, Is.Not.Null);
+        Assert.That(state.RecentEvents.Any(runtimeEvent => runtimeEvent.Kind == "Error"), Is.True);
     }
 }

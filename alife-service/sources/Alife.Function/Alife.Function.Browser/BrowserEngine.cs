@@ -12,33 +12,66 @@ public class NavigateResult
     public int StatusCode { get; set; }
 }
 
-public class BrowserEngine : IDisposable
+public interface IBrowserRuntime : IDisposable
 {
+    bool IsReady { get; }
+    Task WaitToLoadedAsync(TimeSpan timeout);
+    Task<NavigateResult> NavigateAsync(string url, TimeSpan? timeout = null);
+    Task<string> ExecuteScriptAsync(string code);
+    Task<string> ObserveAsync(int page);
+}
+
+public class BrowserEngine : IBrowserRuntime
+{
+    public BrowserEngine(string? userDataFolder = null)
+    {
+        worker = new WebViewWorker(userDataFolder);
+    }
+
+    public bool IsReady => worker.IsLoaded;
+
     public async Task WaitToLoadedAsync(TimeSpan timeout)
     {
         using var cts = new CancellationTokenSource(timeout);
-        while (!worker.IsLoaded)
+        try
         {
-            await Task.Delay(100, cts.Token);
+            while (!worker.IsLoaded)
+            {
+                if (worker.InitializationError != null)
+                    throw new InvalidOperationException("Browser WebView failed to initialize.", worker.InitializationError);
+                await Task.Delay(100, cts.Token);
+            }
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Browser WebView did not initialize within {timeout.TotalSeconds:F0} seconds.");
         }
     }
 
     /// <summary>
     /// 跳转到指定页面
     /// </summary>
-    public Task<NavigateResult> NavigateAsync(string url)
+    public Task<NavigateResult> NavigateAsync(string url, TimeSpan? timeout = null)
     {
         return worker.AddFormTask(async webView => {
-            var tcs = new TaskCompletionSource<NavigateResult>();
-            webView.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
-            webView.CoreWebView2.Navigate(url);
-            return await tcs.Task;
+            if (webView.CoreWebView2 == null)
+                throw new InvalidOperationException("Browser WebView is not initialized.");
 
-            void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+            TimeSpan effectiveTimeout = timeout ?? TimeSpan.FromSeconds(30);
+            DateTime deadline = DateTime.UtcNow + effectiveTimeout;
+            webView.Source = new Uri(url);
+            while (DateTime.UtcNow < deadline)
             {
-                webView.CoreWebView2.NavigationCompleted -= OnNavigationCompleted;
-                tcs.SetResult(new NavigateResult { Success = e.IsSuccess, StatusCode = (int)e.WebErrorStatus });
+                await Task.Delay(100);
+                string readyStateJson = await webView.CoreWebView2.ExecuteScriptAsync("document.readyState");
+                if (readyStateJson.Contains("interactive", StringComparison.OrdinalIgnoreCase) ||
+                    readyStateJson.Contains("complete", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new NavigateResult { Success = true, StatusCode = 0 };
+                }
             }
+
+            throw new TimeoutException($"Navigation to '{url}' did not complete within {effectiveTimeout.TotalSeconds:F0} seconds.");
         });
     }
 
@@ -95,16 +128,16 @@ public class BrowserEngine : IDisposable
                        }
                    })();
                    """;
-            var result = await webView.CoreWebView2.ExecuteScriptWithResultAsync(wrapperScript);
-            if (result.Succeeded)
+            try
             {
-                result.TryGetResultAsString(out string stringResult, out int isSuccess);
-                stringResult = isSuccess == 1 ? stringResult : result.ResultAsJson;
+                string resultJson = await webView.CoreWebView2.ExecuteScriptAsync(wrapperScript);
+                string stringResult = JsonSerializer.Deserialize<string>(resultJson) ?? resultJson;
                 return $"[Success] Return:\n{stringResult}";
             }
-
-            var ex = result.Exception;
-            return $"[Error]\nName: {ex.Name}\nMessage: {ex.Message}\nDetail: {ex.ToJson}\nLocation: Line {ex.LineNumber}, Column {ex.ColumnNumber}";
+            catch (Exception ex)
+            {
+                return $"[Error]\nName: {ex.GetType().Name}\nMessage: {ex.Message}";
+            }
         });
     }
 
@@ -221,7 +254,7 @@ public class BrowserEngine : IDisposable
         return await ExecuteScriptAsync(jsCode);
     }
 
-    readonly WebViewWorker worker = new();
+    readonly WebViewWorker worker;
 
     public void Dispose() => worker.Dispose();
 }

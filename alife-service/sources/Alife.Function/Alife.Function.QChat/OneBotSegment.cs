@@ -36,7 +36,7 @@ public static class OneBotSegment
     /// <summary>
     /// 将消息转换为 AI 友好的可读文本（处理回复、@、图片、表情等）。
     /// </summary>
-    public static async Task<string> GetReadableMessage(this OneBotMessageEvent messageEvent, OneBotClient oneBotClient)
+    public static async Task<string> GetReadableMessage(this OneBotMessageEvent messageEvent, IOneBotRuntime oneBotClient)
     {
         string content = string.IsNullOrEmpty(messageEvent.RawMessage) && messageEvent.Message is System.Text.Json.JsonElement elem
             ? elem.ToCQString()
@@ -52,7 +52,7 @@ public static class OneBotSegment
     /// <summary>
     /// 处理转发消息中的内容（处理嵌套转发、图片、表情等）。
     /// </summary>
-    public static string GetReadableForwardContent(System.Text.Json.JsonElement content, OneBotClient oneBotClient)
+    public static string GetReadableForwardContent(System.Text.Json.JsonElement content, IOneBotRuntime oneBotClient)
     {
         string text = content.ToCQString();
         text = FilterFace(text);
@@ -105,7 +105,7 @@ public static class OneBotSegment
     /// <summary>
     /// 将转发消息列表格式化为 AI 可读的 Markdown 文本。
     /// </summary>
-    public static string FormatForwardList(string forwardId, List<OneBotForwardMessage> messages, OneBotClient oneBotClient)
+    public static string FormatForwardList(string forwardId, List<OneBotForwardMessage> messages, IOneBotRuntime oneBotClient)
     {
         StringBuilder sb = new();
         sb.AppendLine($"# 转发消息内容 (ID: {forwardId})");
@@ -130,7 +130,7 @@ public static class OneBotSegment
     {
         return Regex.Replace(text, @"\[CQ:at,.*?qq=(?<qq>\d+)[^\]]*\]", "@${qq}");
     }
-    public static async Task<string> FilterReply(string text, OneBotClient client)
+    public static async Task<string> FilterReply(string text, IOneBotRuntime client)
     {
         var matches = Regex.Matches(text, @"\[CQ:reply,.*?id=(?<id>-?\d+)[^\]]*\]");
         foreach (Match match in matches)
@@ -153,7 +153,7 @@ public static class OneBotSegment
         text = Regex.Replace(text, @"\[CQ:image[^\]]*\]", "[图片]");
         return text;
     }
-    public static async Task<string> FilterFile(string text, long groupId, OneBotClient client)
+    public static async Task<string> FilterFile(string text, long groupId, IOneBotRuntime client)
     {
         var matches = Regex.Matches(text, @"\[CQ:file,.*?\]");
         foreach (Match match in matches)

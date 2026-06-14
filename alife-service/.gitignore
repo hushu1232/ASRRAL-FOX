@@ -5,12 +5,18 @@
 !/Demos/*
 !/Tests/*
 !/Sources/*
-!/docs/**
 !/开发规范/*
 
 !/.gitignore
+!/AGENTS.md
 !/Alife.slnx
 !/Directory.Build.props
+
+!/docs/
+!/docs/github-upload-via-foxd.md
+
+!/tools/
+!/tools/upload-alife-service-via-foxd.ps1
 
 !/README.md
 !/LICENSE

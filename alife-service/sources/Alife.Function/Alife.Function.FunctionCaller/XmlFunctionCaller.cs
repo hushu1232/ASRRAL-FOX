@@ -58,6 +58,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
             ["，", "。", "！", "？", "......", "~", "…"],
             minBreakingLength: 9
         );
+        handlerTable.ExecutionPolicy.ResetTurnBudget();
         parser.Error += OnError;
         executor.Error += OnError;
 
@@ -116,6 +117,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
             finally
             {
                 ChatBot.ReleaseChat();
+                handlerTable.ExecutionPolicy.ResetTurnBudget();
             }
         }
         catch (OperationCanceledException) {}
