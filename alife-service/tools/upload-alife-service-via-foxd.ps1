@@ -119,7 +119,7 @@ try {
     }
 
     Write-Host "Staging $Subtree..."
-    Invoke-Git @("-C", $Worktree, "add", "-A", "--", $Subtree)
+    Invoke-Git @("-C", $Worktree, "add", "-A", "-f", "--", $Subtree)
 
     $stagedFiles = @(git -c core.quotepath=false -C $Worktree diff --cached --name-only -- $Subtree)
     if ($LASTEXITCODE -ne 0) {
