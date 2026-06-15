@@ -185,12 +185,48 @@ public class QZoneServiceTests
         Assert.That(service.GetHealth().Status, Is.EqualTo(ModuleHealthStatus.Healthy));
     }
 
+    [Test]
+    public async Task QZoneLatestPostAndComments_ReadsLatestPostThenComments()
+    {
+        FakeQZoneRuntime runtime = new()
+        {
+            LatestPost = new QZonePostSnapshot("post-a", 1001, "latest post"),
+            LatestComments =
+            [
+                new QZoneCommentSnapshot("comment-a", 2001, "first"),
+                new QZoneCommentSnapshot("comment-b", 2002, "second")
+            ]
+        };
+        QZoneService service = new(runtime)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                AllowedQZoneTargetIds = "1001"
+            }
+        };
+
+        QZoneQueryResult result = await service.QZoneLatestPostAndComments(1001, 2);
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(result.Post?.PostId, Is.EqualTo("post-a"));
+        Assert.That(result.Comments.Select(comment => comment.CommentId), Is.EqualTo(new[] { "comment-a", "comment-b" }));
+        Assert.That(runtime.LatestPostRequests, Is.EqualTo(new[] { 1001L }));
+        Assert.That(runtime.LatestCommentRequests, Is.EqualTo(new[] { (1001L, "post-a", 2) }));
+        Assert.That(runtime.Comments, Is.Empty);
+        Assert.That(runtime.Likes, Is.Empty);
+    }
+
     sealed class FakeQZoneRuntime : IQZoneRuntime
     {
         public List<string> Posts { get; } = new();
         public List<(long TargetId, string PostId, string Content)> Comments { get; } = new();
         public List<(long TargetId, string PostId, string CommentId, string Content)> Replies { get; } = new();
         public List<(long TargetId, string PostId)> Likes { get; } = new();
+        public List<long> LatestPostRequests { get; } = new();
+        public List<(long TargetId, string PostId, int Count)> LatestCommentRequests { get; } = new();
+        public QZonePostSnapshot? LatestPost { get; init; }
+        public IReadOnlyList<QZoneCommentSnapshot> LatestComments { get; init; } = [];
 
         public Task PublishPost(string content)
         {
@@ -214,6 +250,18 @@ public class QZoneServiceTests
         {
             Likes.Add((targetId, postId));
             return Task.CompletedTask;
+        }
+
+        public Task<QZonePostSnapshot?> GetLatestPost(long targetId)
+        {
+            LatestPostRequests.Add(targetId);
+            return Task.FromResult(LatestPost);
+        }
+
+        public Task<IReadOnlyList<QZoneCommentSnapshot>> GetLatestComments(long targetId, string postId, int count)
+        {
+            LatestCommentRequests.Add((targetId, postId, count));
+            return Task.FromResult(LatestComments);
         }
     }
 

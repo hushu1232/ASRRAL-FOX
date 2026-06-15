@@ -39,6 +39,15 @@ public class BrowserService(
         Poke(FormatObservedPageResult(page, result));
     }
 
+    [XmlFunction(FunctionMode.OneShot)]
+    [Description("查询页面中指定ID元素的详细信息，例如 href、type、placeholder。ID 来自 observe 中的 [ID:文本] 标记。")]
+    public async Task GetElementInfo([Description("元素的 data-alife-id")] int id)
+    {
+        string result = await browser.GetElementInfoAsync(id);
+        PublishLifeEvent($"You inspected browser element {id}.");
+        Poke(FormatElementInfoResult(id, result));
+    }
+
     [XmlFunction(FunctionMode.Content, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
     [Description("执行JS表达式（这只能在浏览器沙盒中使用，不能执行全局性脚本操作）")]
     public async Task RunJs(XmlExecutorContext context, [XmlContent] string script)
@@ -79,6 +88,14 @@ public class BrowserService(
                 """;
     }
 
+    public static string FormatElementInfoResult(int id, string result)
+    {
+        return $"""
+                [GetElementInfo] Element {id}:
+                {ExternalContextFormatter.WrapUntrusted($"browser-element-{id}", result)}
+                """;
+    }
+
     public string Name => "Browser";
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Sense;
     public string SelfDescription => "Your real browser for opening pages, observing web content, and operating web interfaces when external information is needed.";
@@ -92,7 +109,7 @@ public class BrowserService(
         await base.AwakeAsync(context);
         await browser.WaitToLoadedAsync(TimeSpan.FromSeconds(3));
         browserReady = browser.IsReady;
-        functionService?.RegisterHandler(this, nameof(RunJs));
+        functionService?.RegisterHandler(new XmlHandler(this), DocumentMode.Implicit, nameof(RunJs));
     }
 
     public void Dispose() => browser.Dispose();

@@ -35,6 +35,11 @@ public sealed record AgentMaintenanceArchiveResult(
     string Message,
     AgentMaintenanceArchivedProposal? ArchivedProposal = null);
 
+public sealed record AgentMaintenanceInspectionResult(
+    bool Created,
+    string Message,
+    AgentMaintenanceProposal? Proposal = null);
+
 public sealed record AgentMaintenanceRepairEvidence(
     string ProposalId,
     DateTimeOffset RecordedAt,
@@ -60,7 +65,8 @@ public class AgentMaintenanceService(
     AgentIssueReportService? issueReports = null,
     AgentAuditLogService? auditLog = null,
     XmlFunctionCaller? functionCaller = null,
-    string? proposalStorePath = null)
+    string? proposalStorePath = null,
+    Func<DateTimeOffset>? clock = null)
     : InteractiveModule<AgentMaintenanceService>
 {
     readonly object proposalGate = new();
@@ -69,6 +75,7 @@ public class AgentMaintenanceService(
     readonly AgentIssueReportService issueReports = issueReports ?? new AgentIssueReportService();
     readonly AgentAuditLogService auditLog = auditLog ?? new AgentAuditLogService(
         Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-audit.jsonl"));
+    readonly Func<DateTimeOffset> clock = clock ?? (() => DateTimeOffset.Now);
     readonly Dictionary<string, AgentMaintenanceProposal> proposals = LoadProposals(
         proposalStorePath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-maintenance-proposals.json"));
     readonly Dictionary<string, AgentMaintenanceArchivedProposal> archivedProposals = LoadArchivedProposals(
@@ -80,10 +87,11 @@ public class AgentMaintenanceService(
     [Description("Create a self-maintenance proposal from recent runtime errors and failed audit entries. This does not modify files or configuration.")]
     public void ProposeMaintenance(int maxEntries = 8)
     {
-        AgentMaintenanceProposal proposal = ProposeFromIssueReport(
+        AgentMaintenanceInspectionResult result = InspectIssueReport(
             issueReports.BuildSnapshot(ChatBot.GetRuntimeState(), maxEntries),
-            Character.Name);
-        Poke(FormatProposal(proposal));
+            Character.Name,
+            duplicateCooldown: TimeSpan.FromHours(2));
+        Poke(result.Proposal == null ? result.Message : FormatProposal(result.Proposal));
     }
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_maintenance_pending")]
@@ -158,7 +166,7 @@ public class AgentMaintenanceService(
             : AgentAuditRiskLevel.Medium;
         AgentMaintenanceProposal proposal = new(
             Guid.NewGuid().ToString("N"),
-            DateTimeOffset.Now,
+            clock(),
             string.IsNullOrWhiteSpace(actor) ? "agent" : actor.Trim(),
             BuildTitle(issueReport),
             evidence,
@@ -179,6 +187,33 @@ public class AgentMaintenanceService(
             proposal.RiskLevel,
             succeeded: true);
         return proposal;
+    }
+
+    public AgentMaintenanceInspectionResult InspectIssueReport(
+        AgentIssueReportSnapshot issueReport,
+        string actor,
+        TimeSpan duplicateCooldown)
+    {
+        if (HasActionableIssue(issueReport) == false)
+            return new AgentMaintenanceInspectionResult(false, "No actionable maintenance issue was found.");
+
+        TimeSpan cooldown = duplicateCooldown <= TimeSpan.Zero ? TimeSpan.FromHours(2) : duplicateCooldown;
+        string title = BuildTitle(issueReport);
+        string evidence = BuildEvidence(issueReport);
+        AgentMaintenanceProposal? duplicate = FindRecentDuplicate(title, evidence, cooldown);
+        if (duplicate != null)
+        {
+            auditLog.Record(
+                "agent.maintenance.inspect.deduplicated",
+                string.IsNullOrWhiteSpace(actor) ? "agent" : actor.Trim(),
+                duplicate.Title,
+                duplicate.RiskLevel,
+                succeeded: true);
+            return new AgentMaintenanceInspectionResult(false, "Recent duplicate maintenance proposal already exists.", duplicate);
+        }
+
+        AgentMaintenanceProposal proposal = ProposeFromIssueReport(issueReport, actor);
+        return new AgentMaintenanceInspectionResult(true, "Maintenance proposal created.", proposal);
     }
 
     public IReadOnlyList<AgentMaintenanceProposal> GetPendingProposals()
@@ -216,7 +251,7 @@ public class AgentMaintenanceService(
 
             archived = new AgentMaintenanceArchivedProposal(
                 proposal,
-                DateTimeOffset.Now,
+                clock(),
                 normalizedActor,
                 normalizedResolution);
             proposals.Remove(normalizedId);
@@ -246,7 +281,7 @@ public class AgentMaintenanceService(
 
         AgentMaintenanceRepairEvidence evidence = new(
             normalizedProposalId,
-            DateTimeOffset.Now,
+            clock(),
             normalizedActor,
             (workspaceProposalId ?? string.Empty).Trim(),
             (verificationCommandId ?? string.Empty).Trim(),
@@ -362,6 +397,28 @@ public class AgentMaintenanceService(
         if (issueReport.UnhealthyModules.Count > 0)
             steps.Insert(1, "Inspect degraded module health before changing shared code.");
         return steps;
+    }
+
+    AgentMaintenanceProposal? FindRecentDuplicate(string title, string evidence, TimeSpan cooldown)
+    {
+        DateTimeOffset cutoff = clock() - cooldown;
+        lock (proposalGate)
+        {
+            return proposals.Values
+                       .Concat(archivedProposals.Values.Select(item => item.Proposal))
+                       .Where(proposal => proposal.CreatedAt >= cutoff)
+                       .FirstOrDefault(proposal =>
+                           string.Equals(proposal.Title, title, StringComparison.OrdinalIgnoreCase)
+                           && string.Equals(proposal.Evidence, evidence, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    static bool HasActionableIssue(AgentIssueReportSnapshot issueReport)
+    {
+        return string.IsNullOrWhiteSpace(issueReport.LastError) == false
+               || issueReport.RuntimeErrors.Count > 0
+               || issueReport.FailedAuditEntries.Count > 0
+               || issueReport.UnhealthyModules.Count > 0;
     }
 
     static string TrimLine(string value, int maxLength)

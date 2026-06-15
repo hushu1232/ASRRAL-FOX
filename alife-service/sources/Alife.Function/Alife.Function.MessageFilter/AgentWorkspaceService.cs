@@ -61,6 +61,12 @@ public sealed record AgentWorkspaceReplaceResult(
     int ReplacedCount,
     int WrittenChars);
 
+public sealed record AgentWorkspaceApplyProposalResult(
+    bool Applied,
+    AgentExecutionGatewayDecision GatewayDecision,
+    AgentWorkspaceReplaceResult? Result,
+    string Message);
+
 public sealed record AgentWorkspacePatchProposal(
     string Id,
     string FullPath,
@@ -452,6 +458,37 @@ public class AgentWorkspaceService(
         }
 
         return result;
+    }
+
+    public AgentWorkspaceApplyProposalResult ApplyProposedReplace(
+        string id,
+        AgentPermissionRequest request,
+        AgentPermissionConfig config)
+    {
+        AgentExecutionGatewayDecision decision = new AgentActionAuthorizationService().EvaluateExecution(request with
+        {
+            RiskLevel = AgentRiskLevel.High,
+            Action = string.IsNullOrWhiteSpace(request.Action) ? "workspace.apply" : request.Action.Trim()
+        }, config);
+
+        if (decision.AllowedNow == false)
+        {
+            string prefix = decision.Status == AgentExecutionDecisionStatus.OwnerConfirmationRequired
+                ? "Owner confirmation required"
+                : "Blocked";
+            return new AgentWorkspaceApplyProposalResult(
+                Applied: false,
+                decision,
+                Result: null,
+                Message: $"{prefix}: {decision.Reason}");
+        }
+
+        AgentWorkspaceReplaceResult result = ApplyProposedReplace(id);
+        return new AgentWorkspaceApplyProposalResult(
+            Applied: true,
+            decision,
+            result,
+            $"Applied workspace proposal {id}.");
     }
 
     public override async Task AwakeAsync(AwakeContext context)

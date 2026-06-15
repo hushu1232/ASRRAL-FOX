@@ -4,6 +4,8 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
@@ -32,6 +34,7 @@ public record QChatConfig
     public bool EnableGroupFileUpload { get; set; } = true;
     public bool EnablePrivateFileUpload { get; set; } = true;
     public bool EnableVideoMessage { get; set; } = true;
+    public bool EnableBalancedTextStreaming { get; set; } = true;
     public string AllowedGroupIds { get; set; } = "";
     public string AllowedPrivateUserIds { get; set; } = "";
     public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。此外注意分清语境，群聊环境人声嘈杂，不要回复与自己无关的内容，回复时请加上CQat标签";
@@ -51,6 +54,7 @@ public record QChatConfig
 
 public class GroupState
 {
+    public long GroupId { get; set; }
     public string? Tag { get; set; }
     public bool IsEnabled { get; set; }
     public DateTime LastActivityTime { get; set; }
@@ -58,6 +62,29 @@ public class GroupState
     public List<string> MessageBuffer { get; set; } = [];
     public AgentPermissionRequest? PermissionRequest { get; set; }
 }
+
+public sealed record QChatExternalActionResult(
+    bool Executed,
+    AgentExecutionGatewayDecision GatewayDecision,
+    string Message);
+
+public sealed record QChatOwnerNotificationDeliveryResult(
+    bool ShouldNotify,
+    int PrivateSentCount,
+    bool GroupSummarySent,
+    string Message,
+    string? Error = null);
+
+public sealed record QChatInboundMessage(
+    OneBotMessageType MessageType,
+    long TargetId,
+    long SenderId,
+    string Formatted,
+    bool IsAwakening,
+    QChatSenderRole SenderRole,
+    AgentPermissionRequest PermissionRequest);
+
+sealed record QChatReplySession(OneBotMessageType MessageType, long TargetId);
 
 [Module("QQ聊天", """
                 连接 OneBot v11 WebSocket 服务器，实现 QQ 消息收发及文件传输。
@@ -74,7 +101,9 @@ public class QChatService(
     IOneBotRuntime? oneBotRuntime = null,
     ILifeEventPublisher? lifeEventPublisher = null,
     AgentControlCenterService? agentControlCenter = null,
-    AgentActionAuthorizationService? actionAuthorization = null) :
+    AgentActionAuthorizationService? actionAuthorization = null,
+    AgentActionGatewayService? actionGateway = null,
+    AgentAuditLogService? auditLog = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -137,7 +166,7 @@ public class QChatService(
               你的表情库存储路径在 {emoteBase}，你也可以在其中存储自己的表情。直接存储在根目录将作为独立表情，存储到子文件夹，则作为分类。
               """);
     }
-    [XmlFunction(FunctionMode.Content, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
+    [XmlFunction(FunctionMode.Content, budgetCost: 4)]
     [Description("将文本以QQ消息输出（注意！群聊环境对话需用“[CQ:at,qq=发送者ID]”来显式回复）")]
     public async Task QChat(XmlExecutorContext ctx, OneBotMessageType type, long targetId, [Description("将文本转为语音发送")] bool voice = false)
     {
@@ -149,6 +178,8 @@ public class QChatService(
             string message = ctx.FullContent.Trim();
             if (string.IsNullOrEmpty(message))
                 return;
+
+            EnsureQChatReplyTargetAllowed(type, targetId);
 
             if (voice)
             {
@@ -163,18 +194,21 @@ public class QChatService(
 
             try
             {
-                if (type == OneBotMessageType.Group)
-                {
-                    OnAIGroupActivity(targetId);
-                    await GetOneBotClient().SendGroupMessage(targetId, message);
-                }
-                else
-                    await GetOneBotClient().SendPrivateMessage(targetId, message);
+                await SendTextOrMediaMessageAsync(type, targetId, message, streamText: voice == false);
+                WriteQChatDiagnostic("qchat-sent", "QChat XML tool sent a QQ message.", new {
+                    type,
+                    targetId,
+                    message
+                });
 
                 PublishLifeEvent($"You sent a QQ {type.ToString().ToLowerInvariant()} message to {targetId}.");
             }
             catch (Exception ex)
             {
+                WriteQChatDiagnostic("qchat-send-failed", ex.Message, new {
+                    type,
+                    targetId
+                }, ex);
                 Poke($"[QQ消息发送失败] {ex.Message}");
             }
         }
@@ -209,13 +243,7 @@ public class QChatService(
 
         try
         {
-            if (type == OneBotMessageType.Group)
-            {
-                OnAIGroupActivity(targetId);
-                await GetOneBotClient().SendGroupMessage(targetId, message);
-            }
-            else
-                await GetOneBotClient().SendPrivateMessage(targetId, message);
+            await SendTextOrMediaMessageAsync(type, targetId, message, streamText: voice == false);
 
             PublishLifeEvent($"You sent a QQ {targetType.Trim().ToLowerInvariant()} message to {targetId}.");
         }
@@ -223,6 +251,172 @@ public class QChatService(
         {
             Poke($"[QQ message send failed] {ex.Message}");
         }
+    }
+
+    public async Task<QChatOwnerNotificationDeliveryResult> DeliverOwnerNotificationPlanAsync(
+        AgentOwnerNotificationPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        if (plan.ShouldNotifyOwner == false)
+            return new QChatOwnerNotificationDeliveryResult(
+                ShouldNotify: false,
+                PrivateSentCount: 0,
+                GroupSummarySent: false,
+                Message: "Owner notification is not required.");
+
+        if (TryParseQqSessionId(plan.TargetSessionId, "private", out long ownerUserId) == false)
+        {
+            string error = $"Unsupported owner notification target session: {plan.TargetSessionId}";
+            RecordOwnerNotificationAudit("qq.owner_notification.private", "system", plan.TargetSessionId, false, error);
+            return new QChatOwnerNotificationDeliveryResult(
+                ShouldNotify: true,
+                PrivateSentCount: 0,
+                GroupSummarySent: false,
+                Message: "Owner notification was not delivered.",
+                Error: error);
+        }
+
+        int privateSentCount = 0;
+        bool groupSummarySent = false;
+
+        try
+        {
+            string privateMessage = ComposeOwnerNotificationPrivateMessage(plan.PrivateMessages);
+            await GetOneBotClient().SendPrivateMessage(ownerUserId, privateMessage);
+            privateSentCount = 1;
+            RecordOwnerNotificationAudit(
+                "qq.owner_notification.private",
+                "system",
+                $"target={ownerUserId}; messages={plan.PrivateMessages.Count}",
+                true);
+
+            if (TryParseQqSessionId(plan.SourceGroupSessionId, "group", out long sourceGroupId)
+                && string.IsNullOrWhiteSpace(plan.PublicGroupSummary) == false)
+            {
+                await GetOneBotClient().SendGroupMessage(sourceGroupId, plan.PublicGroupSummary.Trim());
+                groupSummarySent = true;
+                RecordOwnerNotificationAudit(
+                    "qq.owner_notification.group_summary",
+                    "system",
+                    $"group={sourceGroupId}",
+                    true);
+            }
+
+            return new QChatOwnerNotificationDeliveryResult(
+                ShouldNotify: true,
+                PrivateSentCount: privateSentCount,
+                GroupSummarySent: groupSummarySent,
+                Message: groupSummarySent
+                    ? "Owner notification and sanitized group summary were delivered."
+                    : "Owner notification was delivered.");
+        }
+        catch (Exception ex)
+        {
+            RecordOwnerNotificationAudit(
+                "qq.owner_notification.delivery",
+                "system",
+                $"target={ownerUserId}",
+                false,
+                ex.Message);
+            return new QChatOwnerNotificationDeliveryResult(
+                ShouldNotify: true,
+                PrivateSentCount: privateSentCount,
+                GroupSummarySent: groupSummarySent,
+                Message: "Owner notification delivery failed.",
+                Error: ex.Message);
+        }
+    }
+
+    async Task SendTextOrMediaMessageAsync(OneBotMessageType type, long targetId, string message, bool streamText)
+    {
+        if (type == OneBotMessageType.Group)
+            OnAIGroupActivity(targetId);
+
+        if (streamText == false || Configuration?.EnableBalancedTextStreaming == false || ShouldStreamTextMessage(message) == false)
+        {
+            await SendSingleMessageAsync(type, targetId, message);
+            return;
+        }
+
+        StreamingOutputSegmenter segmenter = new(type == OneBotMessageType.Group
+            ? StreamingOutputPolicy.QqGroupText
+            : StreamingOutputPolicy.QqPrivateText);
+        List<string> segments = new();
+        segments.AddRange(segmenter.Push(message));
+        segments.AddRange(segmenter.Flush());
+
+        foreach (string segment in segments)
+            await SendSingleMessageAsync(type, targetId, segment);
+    }
+
+    async Task SendSingleMessageAsync(OneBotMessageType type, long targetId, string message)
+    {
+        if (type == OneBotMessageType.Group)
+            await GetOneBotClient().SendGroupMessage(targetId, message);
+        else
+            await GetOneBotClient().SendPrivateMessage(targetId, message);
+        Interlocked.Increment(ref outboundMessageVersion);
+    }
+
+    static bool ShouldStreamTextMessage(string message)
+    {
+        string lower = message.ToLowerInvariant();
+        return lower.Contains("[cq:image", StringComparison.Ordinal) == false
+               && lower.Contains("[cq:record", StringComparison.Ordinal) == false
+               && lower.Contains("[cq:video", StringComparison.Ordinal) == false
+               && lower.Contains("[cq:file", StringComparison.Ordinal) == false;
+    }
+
+    static string ComposeOwnerNotificationPrivateMessage(IReadOnlyList<string> privateMessages)
+    {
+        string[] messages = privateMessages
+            .Where(message => string.IsNullOrWhiteSpace(message) == false)
+            .Select(message => message.Trim())
+            .Take(8)
+            .ToArray();
+
+        if (messages.Length == 0)
+            return "Control-center owner review is required. Open the Agent Control Center for private details.";
+
+        StringBuilder builder = new();
+        builder.AppendLine("Agent control-center owner attention");
+        foreach (string message in messages)
+            builder.AppendLine($"- {message}");
+        return builder.ToString().Trim();
+    }
+
+    static bool TryParseQqSessionId(string? sessionId, string expectedKind, out long id)
+    {
+        id = 0;
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return false;
+
+        string[] parts = sessionId.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 3)
+            return false;
+        if (parts[0].Equals("qq", StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+        if (parts[1].Equals(expectedKind, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        return long.TryParse(parts[2], out id) && id > 0;
+    }
+
+    void RecordOwnerNotificationAudit(
+        string action,
+        string actor,
+        string detail,
+        bool succeeded,
+        string? error = null)
+    {
+        auditLog?.Record(
+            action,
+            actor,
+            detail,
+            AgentAuditRiskLevel.Low,
+            succeeded,
+            error);
     }
 
     [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
@@ -262,6 +456,34 @@ public class QChatService(
         [Description("本地绝对路径")] string file,
         [Description("可选展示文件名，留空则使用原文件名")] string? name = null)
     {
+        await ExecuteQGroupFileCore(groupId, file, name);
+    }
+
+    public async Task<QChatExternalActionResult> QGroupFile(
+        long groupId,
+        string file,
+        string? name,
+        AgentPermissionRequest request,
+        AgentPermissionConfig permissionConfig)
+    {
+        AgentPermissionRequest normalizedRequest = NormalizeExternalQqRequest(
+            request,
+            "qq.group_file_upload");
+        AgentActionGatewayResult<bool> gatewayResult = await actionGateway.ExecuteAsync(
+            normalizedRequest,
+            permissionConfig,
+            async () =>
+            {
+                await ExecuteQGroupFileCore(groupId, file, name);
+                return true;
+            },
+            detail: $"group={groupId}; file={Path.GetFileName(file)}; name={name}");
+
+        return ToExternalActionResult(gatewayResult, "QQ group file upload executed.");
+    }
+
+    async Task ExecuteQGroupFileCore(long groupId, string file, string? name)
+    {
         if (Configuration!.EnableGroupFileUpload == false)
             throw new InvalidOperationException("QQ group file upload is disabled.");
         if (groupId == 0)
@@ -291,6 +513,34 @@ public class QChatService(
         [Description("本地绝对路径")] string file,
         [Description("可选展示文件名，留空则使用原文件名")] string? name = null)
     {
+        await ExecuteQPrivateFileCore(userId, file, name);
+    }
+
+    public async Task<QChatExternalActionResult> QPrivateFile(
+        long userId,
+        string file,
+        string? name,
+        AgentPermissionRequest request,
+        AgentPermissionConfig permissionConfig)
+    {
+        AgentPermissionRequest normalizedRequest = NormalizeExternalQqRequest(
+            request,
+            "qq.private_file_upload");
+        AgentActionGatewayResult<bool> gatewayResult = await actionGateway.ExecuteAsync(
+            normalizedRequest,
+            permissionConfig,
+            async () =>
+            {
+                await ExecuteQPrivateFileCore(userId, file, name);
+                return true;
+            },
+            detail: $"user={userId}; file={Path.GetFileName(file)}; name={name}");
+
+        return ToExternalActionResult(gatewayResult, "QQ private file upload executed.");
+    }
+
+    async Task ExecuteQPrivateFileCore(long userId, string file, string? name)
+    {
         if (Configuration!.EnablePrivateFileUpload == false)
             throw new InvalidOperationException("QQ private file upload is disabled.");
         if (userId == 0)
@@ -317,6 +567,34 @@ public class QChatService(
     [Description("发送QQ视频消息。用于在聊天里发送视频，不等同于上传群文件。")]
     public async Task QVideo(OneBotMessageType type, long targetId,
         [Description("视频URL或本地绝对路径，建议mp4")] string video)
+    {
+        await ExecuteQVideoCore(type, targetId, video);
+    }
+
+    public async Task<QChatExternalActionResult> QVideo(
+        OneBotMessageType type,
+        long targetId,
+        string video,
+        AgentPermissionRequest request,
+        AgentPermissionConfig permissionConfig)
+    {
+        AgentPermissionRequest normalizedRequest = NormalizeExternalQqRequest(
+            request,
+            "qq.video_send");
+        AgentActionGatewayResult<bool> gatewayResult = await actionGateway.ExecuteAsync(
+            normalizedRequest,
+            permissionConfig,
+            async () =>
+            {
+                await ExecuteQVideoCore(type, targetId, video);
+                return true;
+            },
+            detail: $"type={type}; target={targetId}; video={Path.GetFileName(video)}");
+
+        return ToExternalActionResult(gatewayResult, "QQ video message executed.");
+    }
+
+    async Task ExecuteQVideoCore(OneBotMessageType type, long targetId, string video)
     {
         if (Configuration!.EnableVideoMessage == false)
             throw new InvalidOperationException("QQ video messages are disabled.");
@@ -349,6 +627,26 @@ public class QChatService(
         {
             Poke($"[QQ video send failed] {ex.Message}");
         }
+    }
+
+    AgentPermissionRequest NormalizeExternalQqRequest(
+        AgentPermissionRequest request,
+        string action)
+    {
+        return request with
+        {
+            RiskLevel = AgentRiskLevel.High,
+            Action = string.IsNullOrWhiteSpace(request.Action) ? action : request.Action.Trim()
+        };
+    }
+
+    static QChatExternalActionResult ToExternalActionResult(
+        AgentActionGatewayResult<bool> gatewayResult,
+        string successMessage)
+    {
+        return gatewayResult.Executed
+            ? new QChatExternalActionResult(true, gatewayResult.Decision, successMessage)
+            : new QChatExternalActionResult(false, gatewayResult.Decision, gatewayResult.Message);
     }
 
     [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
@@ -468,6 +766,7 @@ public class QChatService(
     public string Name => "QQ";
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Communication;
     public string SelfDescription => "Your QQ social communication channel for private chats, group chats, images, files, forwarded messages, and message context.";
+    public Func<QChatInboundMessage, Task>? InboundChatDispatcher { get; set; }
     public string? GetCurrentState() => Configuration == null
         ? "QQ configuration unavailable"
         : $"QQ channel configured; connected: {IsConnected}; bot id: {(Configuration.BotId == 0 ? "not set" : Configuration.BotId)}.";
@@ -486,10 +785,14 @@ public class QChatService(
     readonly IOneBotRuntime? injectedOneBotRuntime = oneBotRuntime;
     readonly AgentControlCenterService? agentControlCenter = agentControlCenter;
     readonly AgentActionAuthorizationService actionAuthorization = actionAuthorization ?? new AgentActionAuthorizationService();
+    readonly AgentActionGatewayService actionGateway = actionGateway ?? new AgentActionGatewayService(authorization: actionAuthorization);
+    readonly AgentAuditLogService? auditLog = auditLog;
     IOneBotRuntime? oneBotClient;
     string[] groupAwakingWords = [];
     string[] ignoredGroup = [];
     readonly Dictionary<long, GroupState> groupStates = new();
+    readonly AsyncLocal<QChatReplySession?> currentReplySession = new();
+    long outboundMessageVersion;
     readonly object permissionGate = new();
     AgentPermissionRequest? currentPermissionRequest;
     DateTime currentPermissionExpiresAt = DateTime.MinValue;
@@ -505,12 +808,18 @@ public class QChatService(
 
         // 注入函数和提示词
         xmlHandler = new(this);
-        functionService.RegisterHandlerWithoutDocument(xmlHandler);
+        functionService.RegisterHandler(xmlHandler);
         functionService.ExecutionPolicy.AuthorizeHighRiskFunction = AuthorizeHighRiskXmlFunction;
 
         Prompt($"""
                 此服务为你增加收发qq消息的能力，能够处理图片，文件，转发等各种丰富的qq功能。
                 当你需要用qq联系他人，或收到qq消息要处理时，先调用<{nameof(GetQChatGuide)}/>来学习如何使用qq工具，然后再以合适的方式回复。
+
+                收到 QQ 入站消息后，如果你决定回复，必须把面向 QQ 用户的内容发送到当前 QQ 会话：
+                - 私聊回复当前私聊：<qchat type="Private" targetId="对方QQ号">回复内容</qchat>
+                - 群聊回复当前群：<qchat type="Group" targetId="群号">[CQ:at,qq=发送者QQ号] 回复内容</qchat>
+                - 不要只输出普通文字来“说明你会回复”，普通文字不会自动出现在 QQ 里。
+                - 如果判断无需回复，可以保持沉默，不要输出解释。
                 """);
     }
     public override async Task StartAsync(Kernel kernel, ChatActivity chatActivity)
@@ -522,15 +831,32 @@ public class QChatService(
 
         oneBotClient.EventReceived += OnEventReceived;
         ChatBot.ChatOver += ClearPermissionRequest;
+        WriteQChatDiagnostic("start", "QChat service starting.", new {
+            Configuration!.Url,
+            tokenSet = string.IsNullOrWhiteSpace(Configuration.Token) == false,
+            Configuration.BotId,
+            Configuration.OwnerId,
+            Configuration.AllowGroupMemberChat,
+            Configuration.AllowGroupMemberMentions,
+            Configuration.AllowProactiveGroupChat,
+            Configuration.AllowPrivateGuestChat,
+            Configuration.ProactiveChatProbability,
+            Configuration.FlushInterval,
+            Configuration.WakingWords
+        });
 
         //初始尝试链接
         try
         {
             await oneBotClient.ConnectAsync();
+            WriteQChatDiagnostic("connect-succeeded", "OneBot connected.", new {
+                oneBotClient.BotId,
+                oneBotClient.IsConnected
+            });
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // ignored
+            WriteQChatDiagnostic("connect-failed", ex.Message, exception: ex);
         }
     }
     public async ValueTask DisposeAsync()
@@ -595,15 +921,40 @@ public class QChatService(
         try
         {
             if (oneBotEvent is not OneBotBasicMessageEvent basicMessageEvent)
+            {
+                WriteQChatDiagnostic("event-ignored", "Ignored non-message OneBot event.", new {
+                    eventType = oneBotEvent.GetType().Name
+                });
                 return;
+            }
+            WriteQChatDiagnostic("event-received", "Received OneBot basic message event.", new {
+                eventType = oneBotEvent.GetType().Name,
+                basicMessageEvent.MessageType,
+                basicMessageEvent.UserId,
+                basicMessageEvent.GroupId,
+                basicMessageEvent.SelfId
+            });
             if (ignoredGroup.Contains(basicMessageEvent.GroupId.ToString()))
+            {
+                WriteQChatDiagnostic("event-filtered", "Ignored configured group.", new {
+                    basicMessageEvent.GroupId
+                });
                 return;
+            }
             QChatConfig config = Configuration!;
             AgentControlCenterConfig? controlConfig = agentControlCenter?.Configuration;
             QChatSenderRole senderRole = QChatMessageSecurity.Classify(config, basicMessageEvent);
             if (basicMessageEvent.MessageType == OneBotMessageType.Private &&
                 QChatMessageSecurity.ShouldAcceptPrivateMessage(config, basicMessageEvent) == false)
+            {
+                WriteQChatDiagnostic("event-filtered", "Private message rejected by QChat security policy.", new {
+                    basicMessageEvent.UserId,
+                    senderRole,
+                    config.OwnerId,
+                    config.AllowPrivateGuestChat
+                });
                 return;
+            }
 
             if (basicMessageEvent is OneBotPokeEvent pokeEvent)
             {
@@ -640,12 +991,25 @@ public class QChatService(
                     messageEvent,
                     isMentionedOrWoken,
                     messageEvent.RawMessage);
+                WriteQChatDiagnostic("message-dispatching", "Dispatching message event to QChat.", new {
+                    messageEvent.MessageType,
+                    messageEvent.UserId,
+                    messageEvent.GroupId,
+                    messageEvent.RawMessage,
+                    readable = content,
+                    client.BotId,
+                    atId = messageEvent.GetAtID(),
+                    isMentionedOrWoken,
+                    isAwakening,
+                    senderRole
+                });
                 await HandleFormattedMessage(messageEvent, formatted, isAwakening, senderRole, permissionRequest);
             }
         }
         catch (Exception e)
         {
             logger.LogError(e, null);
+            WriteQChatDiagnostic("event-error", e.Message, exception: e);
         }
     }
     void OnAIGroupActivity(long groupId)
@@ -670,14 +1034,32 @@ public class QChatService(
         {
             if (senderRole == QChatSenderRole.Owner || Configuration!.AllowPrivateGuestChat)
             {
+                WriteQChatDiagnostic("private-dispatch", "Private message accepted for model dispatch.", new {
+                    messageEvent.UserId,
+                    senderRole
+                });
                 using IDisposable _ = PushPermissionRequest(permissionRequest, TimeSpan.FromMinutes(5));
-                await ChatAsync(formatted);
+                await DispatchInboundChatAsync(new QChatInboundMessage(
+                    messageEvent.MessageType,
+                    messageEvent.UserId,
+                    messageEvent.UserId,
+                    formatted,
+                    isAwakening,
+                    senderRole,
+                    permissionRequest));
             }
         }
         else//群聊消息
         {
             if (senderRole != QChatSenderRole.Owner && Configuration!.AllowGroupMemberChat == false)
+            {
+                WriteQChatDiagnostic("group-filtered", "Group member chat is disabled.", new {
+                    messageEvent.GroupId,
+                    messageEvent.UserId,
+                    senderRole
+                });
                 return;
+            }
 
             GroupState state = GetGroupInfo(messageEvent.GroupId);
             state.Tag = messageEvent.GetGroupTag();
@@ -692,12 +1074,26 @@ public class QChatService(
                     formatted,
                     senderRole == QChatSenderRole.Owner && Configuration!.OwnerPriorityMode,
                     permissionRequest);
+                WriteQChatDiagnostic("group-buffered", "Group message buffered for model dispatch.", new {
+                    state.GroupId,
+                    state.IsEnabled,
+                    bufferCount = state.MessageBuffer.Count,
+                    isAwakening,
+                    senderRole
+                });
+                if (isAwakening)
+                    FlushGroupBuffer(state);
             }
             else if (QChatMessageSecurity.ShouldAllowProactiveGroupChat(Configuration!, messageEvent, agentControlCenter?.Configuration) &&
                      Random.Shared.NextSingle() < QChatMessageSecurity.GetProactiveChatProbability(Configuration!, agentControlCenter?.Configuration))//群聊未激活时（概率接收）
             {
                 BufferGroupMessage(state, formatted, permissionRequest: permissionRequest);
                 state.LastFlushedTime = DateTime.Now;
+                WriteQChatDiagnostic("group-buffered-proactive", "Group message buffered by proactive probability.", new {
+                    state.GroupId,
+                    bufferCount = state.MessageBuffer.Count,
+                    Configuration!.ProactiveChatProbability
+                });
             }
         }
     }
@@ -725,7 +1121,12 @@ public class QChatService(
         state.LastFlushedTime = DateTime.Now;
 
         if (state.MessageBuffer.Count == 0)
+        {
+            WriteQChatDiagnostic("group-flush-skipped", "Group flush skipped because buffer is empty.", new {
+                state.GroupId
+            });
             return;
+        }
 
         string cachedMessage =
             $"""
@@ -735,12 +1136,15 @@ public class QChatService(
              """;
 
         state.MessageBuffer.Clear();
-        if (state.PermissionRequest != null)
-        {
-            SetPermissionRequest(state.PermissionRequest, TimeSpan.FromMinutes(5));
-            state.PermissionRequest = null;
-        }
-        Poke(cachedMessage);
+        AgentPermissionRequest? permissionRequest = state.PermissionRequest;
+        state.PermissionRequest = null;
+        WriteQChatDiagnostic("group-flush-dispatching", "Dispatching buffered group message to model.", new {
+            state.GroupId,
+            state.Tag,
+            permissionRequest?.ActorUserId,
+            permissionRequest?.IsMentioned
+        });
+        _ = DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest);
     }
 
     public void QGroup(long groupId, bool enabled)
@@ -764,12 +1168,168 @@ public class QChatService(
         if (groupStates.TryGetValue(groupId, out GroupState? groupInfo) == false)
         {
             groupInfo = new GroupState {
+                GroupId = groupId,
                 Tag = groupId.ToString()
             };
             groupStates[groupId] = groupInfo;
         }
 
         return groupInfo;
+    }
+
+    async Task DispatchBufferedGroupMessageAsync(
+        GroupState state,
+        string cachedMessage,
+        AgentPermissionRequest? permissionRequest)
+    {
+        try
+        {
+            AgentPermissionRequest request = permissionRequest ?? new AgentPermissionRequest(
+                ActorUserId: null,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: false,
+                Action: "qq.message");
+            using IDisposable _ = PushPermissionRequest(request, TimeSpan.FromMinutes(5));
+            await DispatchInboundChatAsync(new QChatInboundMessage(
+                OneBotMessageType.Group,
+                state.GroupId,
+                request.ActorUserId ?? 0,
+                cachedMessage,
+                request.IsMentioned,
+                request.ActorUserId == Configuration?.OwnerId ? QChatSenderRole.Owner : QChatSenderRole.GroupMember,
+                request));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to dispatch buffered QQ group message.");
+        }
+    }
+
+    Task DispatchInboundChatAsync(QChatInboundMessage message)
+    {
+        return DispatchInboundChatCoreAsync(message);
+    }
+
+    async Task DispatchInboundChatCoreAsync(QChatInboundMessage message)
+    {
+        QChatReplySession? previousSession = currentReplySession.Value;
+        currentReplySession.Value = new QChatReplySession(message.MessageType, message.TargetId);
+        WriteQChatDiagnostic("model-dispatch-start", "Dispatching inbound QQ message to model.", new {
+            message.MessageType,
+            message.TargetId,
+            message.SenderId,
+            message.IsAwakening,
+            message.SenderRole
+        });
+
+        try
+        {
+            long outboundBefore = Volatile.Read(ref outboundMessageVersion);
+            string modelResponse;
+            if (InboundChatDispatcher != null)
+            {
+                await InboundChatDispatcher(message);
+                modelResponse = "";
+            }
+            else
+            {
+                modelResponse = await DispatchToModelAsync(message);
+            }
+
+            if (Volatile.Read(ref outboundMessageVersion) == outboundBefore &&
+                TryBuildPlainTextFallbackResponse(modelResponse, out string fallbackMessage))
+            {
+                await SendTextOrMediaMessageAsync(message.MessageType, message.TargetId, fallbackMessage, streamText: true);
+                WriteQChatDiagnostic("plain-fallback-sent", "Model returned plain text without using qchat; sent it to the current QQ session.", new {
+                    message.MessageType,
+                    message.TargetId,
+                    fallbackMessage
+                });
+            }
+            WriteQChatDiagnostic("model-dispatch-completed", "Model dispatch completed.", new {
+                message.MessageType,
+                message.TargetId
+            });
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("model-dispatch-failed", ex.Message, new {
+                message.MessageType,
+                message.TargetId
+            }, ex);
+            throw;
+        }
+        finally
+        {
+            currentReplySession.Value = previousSession;
+        }
+    }
+
+    protected virtual Task<string> DispatchToModelAsync(QChatInboundMessage message)
+    {
+        return ChatBot.ChatAsync(ChatTextFilter(message.Formatted));
+    }
+
+    void EnsureQChatReplyTargetAllowed(OneBotMessageType type, long targetId)
+    {
+        QChatReplySession? replySession = currentReplySession.Value;
+        if (replySession == null)
+            return;
+
+        if (replySession.MessageType == type && replySession.TargetId == targetId)
+            return;
+
+        throw new InvalidOperationException("QChat replies from an inbound QQ message can only target the current QQ session.");
+    }
+
+    static void WriteQChatDiagnostic(
+        string eventName,
+        string detail,
+        object? data = null,
+        Exception? exception = null)
+    {
+        try
+        {
+            string path = Path.Combine(
+                AlifePath.StorageFolderPath,
+                "AgentWorkspace",
+                "qchat-diagnostics.jsonl");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            string line = JsonSerializer.Serialize(new {
+                timestamp = DateTimeOffset.Now,
+                eventName,
+                detail,
+                data,
+                exception = exception?.ToString()
+            });
+            File.AppendAllText(path, line + Environment.NewLine);
+        }
+        catch
+        {
+            // Diagnostics must never break QQ message handling.
+        }
+    }
+
+    static bool TryBuildPlainTextFallbackResponse(string? modelResponse, out string message)
+    {
+        message = "";
+        if (string.IsNullOrWhiteSpace(modelResponse))
+            return false;
+
+        string trimmed = modelResponse.Trim();
+        if (trimmed.Contains('<', StringComparison.Ordinal) ||
+            trimmed.Contains('>', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        const int MaxFallbackLength = 1200;
+        message = trimmed.Length <= MaxFallbackLength
+            ? trimmed
+            : trimmed[..MaxFallbackLength].TrimEnd() + "...";
+        return string.IsNullOrWhiteSpace(message) == false;
     }
 
     void PublishLifeEvent(string summary)

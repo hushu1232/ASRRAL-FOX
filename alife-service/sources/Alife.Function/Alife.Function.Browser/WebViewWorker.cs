@@ -46,6 +46,7 @@ public class WebViewWorker : IDisposable
     }
 
     Window? window;
+    BrowserWindowContent? browserContent;
     WebView2? webView;
     readonly BlockingCollection<Func<Task>> formTasks = new();
     readonly string? userDataFolderOverride;
@@ -68,8 +69,9 @@ public class WebViewWorker : IDisposable
                     ShowInTaskbar = true,
                     ResizeMode = ResizeMode.CanResize,
                 };
-                webView = new WebView2();
-                window.Content = webView;
+                browserContent = new BrowserWindowContent();
+                webView = browserContent.WebView;
+                window.Content = browserContent;
                 window.Loaded += OnWindowLoaded;
                 window.Closing += (_, _) => System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
 
@@ -119,8 +121,16 @@ public class WebViewWorker : IDisposable
                 processFailureError = new InvalidOperationException(message);
                 AlifeTerminal.LogError(message);
             };
-            webView.CoreWebView2.NavigationStarting += (_, ev) => isNavigating = true;
-            webView.CoreWebView2.NavigationCompleted += (_, ev) => isNavigating = false;
+            webView.CoreWebView2.NavigationStarting += (_, _) => {
+                isNavigating = true;
+                browserContent?.OnNavigationStateChanged();
+            };
+            webView.CoreWebView2.SourceChanged += (_, _) => browserContent?.OnNavigationStateChanged();
+            webView.CoreWebView2.NavigationCompleted += (_, _) => {
+                isNavigating = false;
+                browserContent?.OnNavigationStateChanged();
+            };
+            browserContent?.OnBrowserReady();
 
             isLoaded = true;
             await Task.Run(() => {

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.Agent;
@@ -17,7 +18,19 @@ public interface IQZoneRuntime
     Task Comment(long targetId, string postId, string content);
     Task ReplyComment(long targetId, string postId, string commentId, string content);
     Task LikePost(long targetId, string postId);
+    Task<QZonePostSnapshot?> GetLatestPost(long targetId);
+    Task<IReadOnlyList<QZoneCommentSnapshot>> GetLatestComments(long targetId, string postId, int count);
 }
+
+public sealed record QZonePostSnapshot(
+    [property: JsonPropertyName("post_id")] string PostId,
+    [property: JsonPropertyName("target_uin")] long TargetId,
+    [property: JsonPropertyName("content")] string Content);
+
+public sealed record QZoneCommentSnapshot(
+    [property: JsonPropertyName("comment_id")] string CommentId,
+    [property: JsonPropertyName("user_id")] long UserId,
+    [property: JsonPropertyName("content")] string Content);
 
 public record QZoneServiceConfig : QZoneInteractionConfig
 {
@@ -29,9 +42,16 @@ public record QZoneServiceConfig : QZoneInteractionConfig
     public string PostAction { get; set; } = "send_msg";
     public string CommentAction { get; set; } = "send_comment";
     public string LikeAction { get; set; } = "send_like";
+    public string LatestPostAction { get; set; } = "get_qzone_latest_post";
+    public string LatestCommentsAction { get; set; } = "get_qzone_comments";
 }
 
 public sealed record QZoneActionResult(string Action, bool Executed, string Reason);
+public sealed record QZoneQueryResult(
+    bool Succeeded,
+    string Reason,
+    QZonePostSnapshot? Post,
+    IReadOnlyList<QZoneCommentSnapshot> Comments);
 
 [Module("QQ空间", """
                 提供QQ空间互动能力的安全外壳。默认使用 dry-run，真实适配器接入前不会向外部空间发帖、评论、回复或点赞。
@@ -241,6 +261,31 @@ public class QZoneService(
         return Report(new QZoneActionResult("like", true, "liked QQ Zone post"));
     }
 
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.Low, budgetCost: 2)]
+    [Description("Query the latest QQ Zone post and latest comments for a configured target. This is read-only external content.")]
+    public async Task<QZoneQueryResult> QZoneLatestPostAndComments(long targetId, int commentCount = 20)
+    {
+        QZoneServiceConfig config = GetConfig();
+        QZoneQueryResult? skipped = BeforeTargetQuery(config, targetId);
+        if (skipped != null)
+            return ReportQuery(skipped);
+
+        commentCount = Math.Clamp(commentCount, 0, 50);
+        IQZoneRuntime liveRuntime = GetRuntime();
+        QZonePostSnapshot? post = await liveRuntime.GetLatestPost(targetId);
+        if (post == null)
+            return ReportQuery(new QZoneQueryResult(false, $"no latest QQ Zone post found for {targetId}", null, []));
+
+        IReadOnlyList<QZoneCommentSnapshot> comments = commentCount == 0
+            ? []
+            : await liveRuntime.GetLatestComments(targetId, post.PostId, commentCount);
+        return ReportQuery(new QZoneQueryResult(
+            true,
+            $"queried latest QQ Zone post {targetId}/{post.PostId} with {comments.Count} comments",
+            post,
+            comments));
+    }
+
     public bool CanExecute(AgentProactivePendingSuggestion pending)
     {
         return pending.Status == AgentProactivePendingStatus.Confirmed
@@ -262,7 +307,33 @@ public class QZoneService(
         return ExecuteConfirmedProactiveSuggestion(id, null);
     }
 
+    public Task<QZoneProactiveExecutionResult> ExecuteConfirmedProactiveSuggestion(
+        string id,
+        AgentPermissionRequest request,
+        AgentPermissionConfig permissionConfig)
+    {
+        return ExecuteConfirmedProactiveSuggestion(id, request, permissionConfig, null);
+    }
+
     public async Task<QZoneProactiveExecutionResult> ExecuteConfirmedProactiveSuggestion(string id, Func<double>? random)
+    {
+        return await ExecuteConfirmedProactiveSuggestionCore(id, random, null, null);
+    }
+
+    public async Task<QZoneProactiveExecutionResult> ExecuteConfirmedProactiveSuggestion(
+        string id,
+        AgentPermissionRequest request,
+        AgentPermissionConfig permissionConfig,
+        Func<double>? random)
+    {
+        return await ExecuteConfirmedProactiveSuggestionCore(id, random, request, permissionConfig);
+    }
+
+    async Task<QZoneProactiveExecutionResult> ExecuteConfirmedProactiveSuggestionCore(
+        string id,
+        Func<double>? random,
+        AgentPermissionRequest? request,
+        AgentPermissionConfig? permissionConfig)
     {
         if (proactiveBehavior == null)
             return ReportProactiveExecution(new QZoneProactiveExecutionResult(false, "Proactive behavior service is unavailable."), id);
@@ -277,7 +348,9 @@ public class QZoneService(
             return ReportProactiveExecution(new QZoneProactiveExecutionResult(false, "Proactive suggestion must be confirmed before execution."), normalizedId);
 
         QZoneProactiveExecutionService executor = new(this, random);
-        QZoneProactiveExecutionResult result = await executor.ExecuteAsync(pending);
+        QZoneProactiveExecutionResult result = request == null || permissionConfig == null
+            ? await executor.ExecuteAsync(pending)
+            : await executor.ExecuteAsync(pending, request, permissionConfig);
         if (result.Succeeded)
             proactiveBehavior.MarkSuggestionExecuted(normalizedId, "agent", result.Message);
 
@@ -335,7 +408,9 @@ public class QZoneService(
         return new OneBotQZoneRuntime(invoker, new OneBotQZoneRuntimeOptions {
             PostAction = config.PostAction,
             CommentAction = config.CommentAction,
-            LikeAction = config.LikeAction
+            LikeAction = config.LikeAction,
+            LatestPostAction = config.LatestPostAction,
+            LatestCommentsAction = config.LatestCommentsAction
         });
     }
 
@@ -364,6 +439,18 @@ public class QZoneService(
         result = BuildDailyLimitResult(action, config, targetId);
         if (result != null)
             return result;
+
+        return null;
+    }
+
+    static QZoneQueryResult? BeforeTargetQuery(QZoneServiceConfig config, long targetId)
+    {
+        if (config.EnableQZone == false)
+            return new QZoneQueryResult(false, "QQ Zone is disabled", null, []);
+        if (targetId == 0)
+            throw new ArgumentNullException(nameof(targetId));
+        if (IsAllowedTarget(config.AllowedQZoneTargetIds, targetId) == false)
+            return new QZoneQueryResult(false, $"QQ Zone target {targetId} is not in the allowlist", null, []);
 
         return null;
     }
@@ -437,6 +524,12 @@ public class QZoneService(
     QZoneActionResult Report(QZoneActionResult result)
     {
         TryPoke($"[QQ Zone {result.Action}] {(result.Executed ? "executed" : "skipped")}: {result.Reason}");
+        return result;
+    }
+
+    QZoneQueryResult ReportQuery(QZoneQueryResult result)
+    {
+        TryPoke($"[QQ Zone query] {(result.Succeeded ? "succeeded" : "skipped")}: {result.Reason}");
         return result;
     }
 

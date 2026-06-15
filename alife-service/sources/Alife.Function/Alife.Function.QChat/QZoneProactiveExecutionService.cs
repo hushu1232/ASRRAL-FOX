@@ -13,10 +13,12 @@ public sealed record QZoneProactiveExecutionResult(
 
 public sealed class QZoneProactiveExecutionService(
     QZoneService qZoneService,
-    Func<double>? random = null)
+    Func<double>? random = null,
+    AgentActionGatewayService? actionGateway = null)
 {
     readonly QZoneService qZoneService = qZoneService;
     readonly Func<double>? random = random;
+    readonly AgentActionGatewayService actionGateway = actionGateway ?? new AgentActionGatewayService();
 
     public async Task<QZoneProactiveExecutionResult> ExecuteAsync(AgentProactivePendingSuggestion pending)
     {
@@ -44,6 +46,31 @@ public sealed class QZoneProactiveExecutionService(
         {
             return new QZoneProactiveExecutionResult(false, exception.Message);
         }
+    }
+
+    public async Task<QZoneProactiveExecutionResult> ExecuteAsync(
+        AgentProactivePendingSuggestion pending,
+        AgentPermissionRequest request,
+        AgentPermissionConfig config)
+    {
+        AgentProactiveSuggestion suggestion = pending.Suggestion;
+        AgentPermissionRequest normalizedRequest = request with
+        {
+            RiskLevel = ToAgentRiskLevel(suggestion.RiskLevel),
+            Action = string.IsNullOrWhiteSpace(request.Action)
+                ? ToActionName(suggestion.Kind)
+                : request.Action.Trim()
+        };
+
+        AgentActionGatewayResult<QZoneProactiveExecutionResult> gatewayResult = await actionGateway.ExecuteAsync(
+            normalizedRequest,
+            config,
+            () => ExecuteAsync(pending),
+            detail: suggestion.DraftText ?? string.Empty);
+
+        return gatewayResult.Executed
+            ? gatewayResult.Value ?? new QZoneProactiveExecutionResult(false, gatewayResult.Message)
+            : new QZoneProactiveExecutionResult(false, gatewayResult.Message);
     }
 
     async Task<QZoneProactiveExecutionResult> ExecuteLikeAsync(string draft)
@@ -107,5 +134,25 @@ public sealed class QZoneProactiveExecutionService(
             return quoted.Groups[1].Value.Trim();
 
         return ReadToken(text, "content");
+    }
+
+    static AgentRiskLevel ToAgentRiskLevel(AgentAuditRiskLevel riskLevel)
+    {
+        return riskLevel switch
+        {
+            AgentAuditRiskLevel.Low => AgentRiskLevel.Low,
+            AgentAuditRiskLevel.Medium => AgentRiskLevel.Medium,
+            _ => AgentRiskLevel.High
+        };
+    }
+
+    static string ToActionName(AgentProactiveActionKind kind)
+    {
+        return kind switch
+        {
+            AgentProactiveActionKind.QZoneLike => "qzone.like",
+            AgentProactiveActionKind.QZoneReply => "qzone.reply",
+            _ => $"qzone.{kind.ToString().ToLowerInvariant()}"
+        };
     }
 }

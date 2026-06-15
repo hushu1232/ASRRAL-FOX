@@ -102,4 +102,26 @@ public class ChatBotLifecycleTests
         Assert.That(state.LastError, Is.Not.Null);
         Assert.That(state.RecentEvents.Any(runtimeEvent => runtimeEvent.Kind == "Error"), Is.True);
     }
+
+    [Test]
+    public async Task GetRuntimeStateReportsChatLatencyMetricsWhenChatFails()
+    {
+        await using ChatBot chatBot = new(null!, new ChatHistoryAgentThread());
+
+        try
+        {
+            await chatBot.ChatAsync("hello");
+        }
+        catch
+        {
+            // Expected: this test intentionally uses a null agent to exercise runtime metrics on failure.
+        }
+
+        ChatRuntimeState state = chatBot.GetRuntimeState();
+
+        Assert.That(state.Latency.LastChatStartedAt, Is.Not.Null);
+        Assert.That(state.Latency.LastChatEndedAt, Is.Not.Null);
+        Assert.That(state.Latency.LastChatDuration, Is.Not.Null);
+        Assert.That(state.Latency.LastFirstContentLatency, Is.Null);
+    }
 }

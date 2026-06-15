@@ -1,8 +1,30 @@
 using Alife.Function.Interpreter;
+using Alife.Function.FunctionCaller;
+using Microsoft.Extensions.Logging.Abstractions;
 
 [TestFixture]
 public class XmlFunctionPolicyTests
 {
+    [Test]
+    public void FunctionCallerRegistersImplicitHandlerDocumentTrigger()
+    {
+        XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
+        XmlHandler handler = new(new HiddenTool())
+        {
+            Name = "HiddenTool",
+            Description = "Hidden tool docs."
+        };
+
+        caller.RegisterHandler(handler, DocumentMode.Implicit);
+        string guide = caller.BuildFunctionGuide();
+
+        Assert.That(caller.CanHandleFunction("hiddentool"), Is.True);
+        Assert.That(caller.CanHandleFunction("hidden_ping"), Is.True);
+        Assert.That(guide, Does.Contain("### 隐式服务"));
+        Assert.That(guide, Does.Contain("<hiddentool />"));
+        Assert.That(guide, Does.Not.Contain("<hidden_ping"));
+    }
+
     [Test]
     public void Handle_BlocksHighRiskFunctionByDefault()
     {
@@ -86,5 +108,11 @@ public class XmlFunctionPolicyTests
         {
             PingCalls++;
         }
+    }
+
+    sealed class HiddenTool
+    {
+        [XmlFunction(FunctionMode.OneShot, name: "hidden_ping")]
+        public void Ping() {}
     }
 }

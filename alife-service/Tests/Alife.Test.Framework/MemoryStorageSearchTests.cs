@@ -5,6 +5,17 @@ namespace Alife.Test.Framework;
 public class MemoryStorageSearchTests
 {
     [Test]
+    public async Task ConstructorCreatesRootDirectoryBeforeOpeningDuckDb()
+    {
+        string rootPath = Path.Combine(Path.GetTempPath(), "alife-memory-search-tests", Guid.NewGuid().ToString("N"));
+
+        await using MemoryStorage storage = new(rootPath, new FakeVectorizer());
+
+        Assert.That(Directory.Exists(rootPath), Is.True);
+        Assert.That(File.Exists(Path.Combine(rootPath, "memory_index.duckdb")), Is.True);
+    }
+
+    [Test]
     public async Task SearchAsync_VectorModeCanRecallWithoutKeywordMatch()
     {
         string rootPath = CreateTempRoot();

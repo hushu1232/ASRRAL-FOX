@@ -32,6 +32,24 @@ public sealed record ContextContribution(
     int MaxLength = 1024,
     ContextTrustLevel TrustLevel = ContextTrustLevel.Trusted);
 
+public sealed record ContextBudgetProfile(
+    int MaxLength,
+    int MaxContributionLength,
+    IReadOnlyList<string> ExcludedKeyPrefixes)
+{
+    public static ContextBudgetProfile FastConversation { get; } = new(
+        MaxLength: 2048,
+        MaxContributionLength: 512,
+        ExcludedKeyPrefixes:
+        [
+            "logs.",
+            "diagnostics.full",
+            "tool-manual",
+            "memory.raw",
+            "qq-relation-cache-details",
+        ]);
+}
+
 public interface IContextContributor
 {
     IEnumerable<ContextContribution> GetContextContributions();
@@ -39,6 +57,19 @@ public interface IContextContributor
 
 public static class ContextBudgetComposer
 {
+    public static string Compose(IEnumerable<ContextContribution> contributions, ContextBudgetProfile profile)
+    {
+        int maxContributionLength = Math.Max(1, profile.MaxContributionLength);
+        IEnumerable<ContextContribution> filtered = contributions
+            .Where(contribution => IsExcluded(contribution, profile) == false)
+            .Select(contribution => contribution with
+            {
+                MaxLength = Math.Min(Math.Max(1, contribution.MaxLength), maxContributionLength)
+            });
+
+        return Compose(filtered, profile.MaxLength);
+    }
+
     public static string Compose(IEnumerable<ContextContribution> contributions, int maxLength)
     {
         if (maxLength <= 0)
@@ -66,6 +97,19 @@ public static class ContextBudgetComposer
         }
 
         return string.Join('\n', parts);
+    }
+
+    static bool IsExcluded(ContextContribution contribution, ContextBudgetProfile profile)
+    {
+        foreach (string prefix in profile.ExcludedKeyPrefixes)
+        {
+            if (string.IsNullOrWhiteSpace(prefix))
+                continue;
+            if (contribution.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     static string TrimTo(string content, int maxLength)

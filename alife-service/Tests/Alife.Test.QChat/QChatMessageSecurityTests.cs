@@ -1,6 +1,7 @@
 using Alife.Function.QChat;
 using Alife.Function.Agent;
 using Alife.Function.Interpreter;
+using Alife.Framework;
 using NUnit.Framework;
 
 namespace Alife.Test.QChat;
@@ -246,6 +247,60 @@ public class QChatMessageSecurityTests
             table.Register(new XmlHandler(handler ?? ownerHandler));
             return table;
         }
+    }
+
+    [Test]
+    public void QChatAgentEventAdapter_NormalizesOwnerMessageAndPermissionContext()
+    {
+        QChatConfig config = new() { OwnerId = 10001 };
+        OneBotBasicMessageEvent messageEvent = new() {
+            UserId = 10001,
+            GroupId = 20002,
+        };
+
+        AgentEvent agentEvent = QChatAgentEventAdapter.ToAgentEvent(
+            config,
+            messageEvent,
+            isMentionedOrWoken: false,
+            text: "hello",
+            rawMessage: "confirm execute");
+
+        AgentPermissionRequest request = (AgentPermissionRequest)agentEvent.State[QChatAgentEventAdapter.PermissionRequestKey]!;
+        AgentPermissionConfig permissionConfig = (AgentPermissionConfig)agentEvent.State[QChatAgentEventAdapter.PermissionConfigKey]!;
+        AgentPermissionDecision decision = new AgentPermissionPolicy(permissionConfig).Evaluate(request);
+
+        Assert.That(agentEvent.Type, Is.EqualTo("qq.message.group"));
+        Assert.That(agentEvent.Source, Is.EqualTo("qq"));
+        Assert.That(agentEvent.SessionId, Is.EqualTo("qq:group:20002"));
+        Assert.That(agentEvent.ActorId, Is.EqualTo("qq:10001"));
+        Assert.That(agentEvent.Text, Is.EqualTo("hello"));
+        Assert.That(agentEvent.State[QChatAgentEventAdapter.SenderRoleKey], Is.EqualTo(QChatSenderRole.Owner));
+        Assert.That(agentEvent.State[QChatAgentEventAdapter.ShouldActivateKey], Is.EqualTo(true));
+        Assert.That(decision.Priority, Is.EqualTo(AgentActorPriority.Owner));
+    }
+
+    [Test]
+    public void QChatAgentEventAdapter_MarksUnmentionedGroupMemberAsInactive()
+    {
+        QChatConfig config = new() {
+            OwnerId = 10001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+        };
+        OneBotBasicMessageEvent messageEvent = new() {
+            UserId = 30003,
+            GroupId = 20002,
+        };
+
+        AgentEvent agentEvent = QChatAgentEventAdapter.ToAgentEvent(
+            config,
+            messageEvent,
+            isMentionedOrWoken: false,
+            text: "ordinary group noise",
+            rawMessage: "ordinary group noise");
+
+        Assert.That(agentEvent.State[QChatAgentEventAdapter.SenderRoleKey], Is.EqualTo(QChatSenderRole.GroupMember));
+        Assert.That(agentEvent.State[QChatAgentEventAdapter.ShouldActivateKey], Is.EqualTo(false));
     }
 
     static XmlContext OneShotContext() => new()

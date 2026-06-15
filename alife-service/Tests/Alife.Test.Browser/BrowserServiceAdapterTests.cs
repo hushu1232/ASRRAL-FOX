@@ -29,6 +29,7 @@ public class BrowserServiceAdapterTests
 
         await service.Navigate("https://example.com");
         await service.Observe(2);
+        await service.GetElementInfo(7);
         await service.RunJs(new XmlExecutorContext
         {
             CallMode = CallMode.Closing,
@@ -39,6 +40,7 @@ public class BrowserServiceAdapterTests
 
         Assert.Equal(["https://example.com"], runtime.NavigatedUrls);
         Assert.Equal([2], runtime.ObservedPages);
+        Assert.Equal([7], runtime.ElementInfoIds);
         Assert.Contains("return 1;", runtime.ExecutedScripts.Single());
         Assert.Equal(ModuleHealthStatus.Healthy, service.GetHealth().Status);
     }
@@ -65,10 +67,21 @@ public class BrowserServiceAdapterTests
         Assert.Contains("confirm execute <qzone_proactive_execute id=\"x\" />", formatted);
     }
 
+    [Fact]
+    public void BrowserWindowContent_NormalizesToolbarUrlsAndRejectsUnsafeSchemes()
+    {
+        Assert.Equal("https://example.com/", BrowserWindowContent.NormalizeUserUrl("example.com"));
+        Assert.Equal("http://example.com/path", BrowserWindowContent.NormalizeUserUrl("http://example.com/path"));
+        Assert.Equal("about:blank", BrowserWindowContent.NormalizeUserUrl("about:blank"));
+        Assert.Null(BrowserWindowContent.NormalizeUserUrl("javascript:alert(1)"));
+        Assert.Null(BrowserWindowContent.NormalizeUserUrl(""));
+    }
+
     sealed class FakeBrowserRuntime : IBrowserRuntime
     {
         public List<string> NavigatedUrls { get; } = new();
         public List<int> ObservedPages { get; } = new();
+        public List<int> ElementInfoIds { get; } = new();
         public List<string> ExecutedScripts { get; } = new();
         public bool IsReady { get; private set; }
 
@@ -88,6 +101,12 @@ public class BrowserServiceAdapterTests
         {
             ObservedPages.Add(page);
             return Task.FromResult("observed");
+        }
+
+        public Task<string> GetElementInfoAsync(int id)
+        {
+            ElementInfoIds.Add(id);
+            return Task.FromResult($$"""{ "found": true, "id": {{id}} }""");
         }
 
         public Task<string> ExecuteScriptAsync(string code)

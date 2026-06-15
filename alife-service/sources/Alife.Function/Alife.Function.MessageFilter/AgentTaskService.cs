@@ -192,6 +192,16 @@ public class AgentTaskService(
         }
     }
 
+    public IReadOnlyList<AgentTaskState> GetTasks()
+    {
+        lock (syncRoot)
+        {
+            return tasks.Values
+                .OrderByDescending(task => task.UpdatedAt)
+                .ToArray();
+        }
+    }
+
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);

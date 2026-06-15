@@ -231,6 +231,72 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void WorkspaceApplyProposalUsesSecurityGatewayForExternalRequests()
+    {
+        string root = CreateTempWorkspace();
+        string file = Path.Combine(root, "src", "AgentNote.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "class AgentNote {}\n");
+        AgentWorkspaceService workspace = new(new AgentWorkspacePolicy([root]));
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [10001],
+            RequireConfirmationForHighRisk = true
+        };
+        AgentWorkspacePatchProposal blockedProposal = workspace.ProposeReplace(
+            "src/AgentNote.cs",
+            "AgentNote",
+            "BlockedAgentNote");
+        AgentWorkspacePatchProposal ownerProposal = workspace.ProposeReplace(
+            "src/AgentNote.cs",
+            "AgentNote",
+            "GeneratedAgentNote");
+
+        AgentWorkspaceApplyProposalResult blocked = workspace.ApplyProposedReplace(
+            blockedProposal.Id,
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: true,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "workspace.apply"),
+            config);
+        AgentWorkspaceApplyProposalResult needsConfirmation = workspace.ApplyProposedReplace(
+            ownerProposal.Id,
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: false,
+                Action: "workspace.apply"),
+            config);
+        AgentWorkspaceApplyProposalResult applied = workspace.ApplyProposedReplace(
+            ownerProposal.Id,
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "workspace.apply"),
+            config);
+
+        Assert.That(blocked.Applied, Is.False);
+        Assert.That(blocked.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+        Assert.That(blocked.GatewayDecision.RiskLevel, Is.EqualTo(AgentRiskLevel.High));
+        Assert.That(needsConfirmation.Applied, Is.False);
+        Assert.That(needsConfirmation.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
+        Assert.That(applied.Applied, Is.True);
+        Assert.That(applied.Result?.ReplacedCount, Is.EqualTo(1));
+        Assert.That(File.ReadAllText(file), Does.Contain("GeneratedAgentNote"));
+        Assert.That(File.ReadAllText(file), Does.Not.Contain("BlockedAgentNote"));
+        Assert.That(workspace.GetPendingProposals().Select(item => item.Id), Does.Contain(blockedProposal.Id));
+        Assert.That(workspace.GetPendingProposals().Select(item => item.Id), Does.Not.Contain(ownerProposal.Id));
+    }
+
+    [Test]
     public void WorkspaceServiceListsPendingReplaceProposals()
     {
         string root = CreateTempWorkspace();
@@ -250,6 +316,53 @@ public class AgentCapabilityServiceTests
         Assert.That(proposals[0].RelativePath, Is.EqualTo("src/AgentNote.cs"));
         Assert.That(proposals[0].Preview, Does.Contain("- AgentNote"));
         Assert.That(File.ReadAllText(file), Does.Contain("class AgentNote {}"));
+    }
+
+    [Test]
+    public void GitHubUploadPlanUsesSecurityGatewayAndDoesNotExecuteUpload()
+    {
+        AgentGitHubUploadService service = new();
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [10001],
+            RequireConfirmationForHighRisk = true
+        };
+
+        AgentGitHubUploadPlanResult blocked = service.BuildUploadPlan(
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: true,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "github.upload"),
+            config);
+        AgentGitHubUploadPlanResult needsConfirmation = service.BuildUploadPlan(
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: false,
+                Action: "github.upload"),
+            config);
+        AgentGitHubUploadPlanResult allowed = service.BuildUploadPlan(
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "github.upload"),
+            config);
+
+        Assert.That(blocked.ReadyToRun, Is.False);
+        Assert.That(blocked.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+        Assert.That(blocked.GatewayDecision.RiskLevel, Is.EqualTo(AgentRiskLevel.High));
+        Assert.That(needsConfirmation.ReadyToRun, Is.False);
+        Assert.That(needsConfirmation.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
+        Assert.That(allowed.ReadyToRun, Is.True);
+        Assert.That(allowed.Command, Does.Contain("upload-alife-service-via-foxd.ps1"));
     }
 
     [Test]
@@ -439,6 +552,144 @@ public class AgentCapabilityServiceTests
         Assert.That(ownerDecision.IsAllowed, Is.True);
         Assert.That(memberDecision.IsAllowed, Is.False);
         Assert.That(memberDecision.Reason, Does.Contain("owner authority"));
+    }
+
+    [Test]
+    public void ActionAuthorizationGatewayClassifiesAutomaticConfirmationAndBlockedDecisions()
+    {
+        AgentActionAuthorizationService service = new();
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [10001],
+            AllowGroupLowRisk = true,
+            RequireConfirmationForHighRisk = true
+        };
+
+        AgentExecutionGatewayDecision lowRiskGroup = service.EvaluateExecution(
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: false,
+                Action: "qq.reply"),
+            config);
+        AgentExecutionGatewayDecision ownerNeedsConfirmation = service.EvaluateExecution(
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.High,
+                HasExplicitConfirmation: false,
+                Action: "workspace.apply"),
+            config);
+        AgentExecutionGatewayDecision memberBlocked = service.EvaluateExecution(
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: true,
+                RiskLevel: AgentRiskLevel.High,
+                HasExplicitConfirmation: true,
+                Action: "github.upload"),
+            config);
+        AgentExecutionGatewayDecision ownerConfirmed = service.EvaluateExecution(
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.High,
+                HasExplicitConfirmation: true,
+                Action: "workspace.apply"),
+            config);
+
+        Assert.That(lowRiskGroup.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
+        Assert.That(lowRiskGroup.AllowedNow, Is.True);
+        Assert.That(ownerNeedsConfirmation.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
+        Assert.That(ownerNeedsConfirmation.RequiresOwnerConfirmation, Is.True);
+        Assert.That(memberBlocked.Status, Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+        Assert.That(memberBlocked.AllowedNow, Is.False);
+        Assert.That(ownerConfirmed.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
+        Assert.That(ownerConfirmed.AllowedNow, Is.True);
+    }
+
+    [Test]
+    public async Task ActionGatewayBlocksUnauthorizedExternalActionAndAuditsDecision()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentActionGatewayService gateway = new(auditLog: audit);
+        bool externalActionCalled = false;
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [10001],
+            RequireConfirmationForHighRisk = true
+        };
+
+        AgentActionGatewayResult<string> result = await gateway.ExecuteAsync(
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: true,
+                RiskLevel: AgentRiskLevel.High,
+                HasExplicitConfirmation: true,
+                Action: "qzone.like"),
+            config,
+            async () =>
+            {
+                externalActionCalled = true;
+                await Task.Yield();
+                return "liked";
+            },
+            detail: "target=1001 post=post-a");
+        AgentAuditLogEntry entry = audit.GetRecentEntries(1).Single();
+
+        Assert.That(result.Executed, Is.False);
+        Assert.That(result.Decision.Status, Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+        Assert.That(externalActionCalled, Is.False);
+        Assert.That(entry.Action, Is.EqualTo("qzone.like"));
+        Assert.That(entry.Succeeded, Is.False);
+        Assert.That(entry.Detail, Does.Contain("target=1001"));
+        Assert.That(entry.Error, Does.Contain("Blocked"));
+    }
+
+    [Test]
+    public async Task ActionGatewayExecutesAuthorizedExternalActionAndAuditsSuccess()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentActionGatewayService gateway = new(auditLog: audit);
+        int externalActionCalls = 0;
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [10001],
+            RequireConfirmationForHighRisk = true
+        };
+
+        AgentActionGatewayResult<string> result = await gateway.ExecuteAsync(
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.High,
+                HasExplicitConfirmation: true,
+                Action: "qzone.reply"),
+            config,
+            () =>
+            {
+                externalActionCalls++;
+                return Task.FromResult("replied");
+            },
+            detail: "target=1001 post=post-a comment=comment-a");
+        AgentAuditLogEntry entry = audit.GetRecentEntries(1).Single();
+
+        Assert.That(result.Executed, Is.True);
+        Assert.That(result.Value, Is.EqualTo("replied"));
+        Assert.That(result.Decision.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
+        Assert.That(externalActionCalls, Is.EqualTo(1));
+        Assert.That(entry.Action, Is.EqualTo("qzone.reply"));
+        Assert.That(entry.Actor, Is.EqualTo("owner:10001"));
+        Assert.That(entry.Succeeded, Is.True);
+        Assert.That(entry.Error, Is.Null);
     }
 
     [Test]
@@ -707,6 +958,42 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void MaintenanceServiceInspectsIssueReportWithDuplicateCooldown()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T10:00:00Z");
+        AgentIssueReportSnapshot issueReport = new(
+            now,
+            "Browser runtime failed",
+            [new ChatRuntimeEvent(now.AddMinutes(-1), "Error", "Browser runtime failed")],
+            [],
+            [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]);
+        AgentMaintenanceService service = new(
+            proposalStorePath: Path.Combine(root, "maintenance-proposals.json"),
+            clock: () => now);
+
+        AgentMaintenanceInspectionResult first = service.InspectIssueReport(
+            issueReport,
+            "agent",
+            duplicateCooldown: TimeSpan.FromHours(2));
+        AgentMaintenanceInspectionResult duplicate = service.InspectIssueReport(
+            issueReport,
+            "agent",
+            duplicateCooldown: TimeSpan.FromHours(2));
+        now = now.AddHours(3);
+        AgentMaintenanceInspectionResult afterCooldown = service.InspectIssueReport(
+            issueReport,
+            "agent",
+            duplicateCooldown: TimeSpan.FromHours(2));
+
+        Assert.That(first.Created, Is.True);
+        Assert.That(duplicate.Created, Is.False);
+        Assert.That(duplicate.Proposal?.Id, Is.EqualTo(first.Proposal?.Id));
+        Assert.That(afterCooldown.Created, Is.True);
+        Assert.That(service.GetPendingProposals(), Has.Count.EqualTo(2));
+    }
+
+    [Test]
     public void AgentControlCenterBuildsReadOnlySnapshot()
     {
         string root = CreateTempWorkspace();
@@ -805,6 +1092,562 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void AgentControlCenterBuildsAttentionSummaryForOwnerAndAutonomousWork()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentWorkspaceService workspace = new(new AgentWorkspacePolicy([root]), auditLog: audit);
+        string file = Path.Combine(root, "src", "AgentNote.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "class AgentNote {}\n");
+        workspace.ProposeReplace("src/AgentNote.cs", "AgentNote", "GeneratedAgentNote");
+        AgentMaintenanceService maintenance = new(auditLog: audit, proposalStorePath: Path.Combine(root, "maintenance.json"));
+        maintenance.ProposeFromIssueReport(
+            new AgentIssueReportSnapshot(
+                DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+                "Browser runtime failed",
+                [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T09:59:00Z"), "Error", "Browser runtime failed")],
+                [],
+                [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            "agent");
+        AgentProactiveBehaviorService proactive = new();
+        proactive.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneReply,
+            "reply to qzone comment",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001,
+            DraftText: "reply target=1001 post=post-a"));
+        AgentControlCenterService service = new(workspace: workspace, auditLog: audit, maintenance: maintenance)
+        {
+            ProactiveBehavior = proactive
+        };
+        service.ProposeConfigurationChange("OwnerUserIds", "10001", "agent", "attempt to claim owner access");
+        service.ApplyConfigurationChange(
+            "MaintenanceDuplicateCooldownMinutes",
+            "90",
+            "agent",
+            "autonomously reduce repeated maintenance proposal noise");
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        Assert.That(snapshot.AttentionSummary.OwnerConfirmationRequiredCount, Is.EqualTo(4));
+        Assert.That(snapshot.AttentionSummary.OwnerConfirmationItems, Has.Some.Contains("Configuration: OwnerUserIds"));
+        Assert.That(snapshot.AttentionSummary.OwnerConfirmationItems, Has.Some.Contains("Workspace: src/AgentNote.cs"));
+        Assert.That(snapshot.AttentionSummary.OwnerConfirmationItems, Has.Some.Contains("Maintenance:"));
+        Assert.That(snapshot.AttentionSummary.OwnerConfirmationItems, Has.Some.Contains("Proactive: QZoneReply"));
+        Assert.That(snapshot.AttentionSummary.AutonomousLowRiskActivityCount, Is.EqualTo(1));
+        Assert.That(snapshot.AttentionSummary.AutonomousLowRiskItems, Has.Some.Contains("agent.config.applied"));
+    }
+
+    [Test]
+    public void AgentControlCenterBuildsOwnerNotificationSummaryWithoutLowRiskNoise()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        audit.Record("agent.command.test", "agent", "dotnet test", AgentAuditRiskLevel.High, false, "exit 1");
+        audit.Record("agent.command.test", "agent", "dotnet test", AgentAuditRiskLevel.High, false, "exit 1");
+        audit.Record("agent.command.test", "agent", "dotnet test", AgentAuditRiskLevel.High, false, "exit 1");
+        AgentControlCenterService service = new(
+            issueReports: new AgentIssueReportService(
+                audit,
+                [new StubHealthReporter("QChat", ModuleHealthStatus.Unavailable, "OneBot disconnected.")]),
+            auditLog: audit);
+        service.ProposeConfigurationChange("OwnerUserIds", "10001", "agent", "attempt to claim owner access");
+        service.ApplyConfigurationChange(
+            "MaintenanceDuplicateCooldownMinutes",
+            "90",
+            "agent",
+            "autonomously reduce repeated maintenance proposal noise");
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        Assert.That(snapshot.NotificationSummary.ShouldNotifyOwner, Is.True);
+        Assert.That(snapshot.NotificationSummary.Items, Has.Count.EqualTo(3));
+        Assert.That(snapshot.NotificationSummary.Items.Select(item => item.Kind), Does.Contain("owner-confirmation"));
+        Assert.That(snapshot.NotificationSummary.Items.Select(item => item.Kind), Does.Contain("repeated-failure"));
+        Assert.That(snapshot.NotificationSummary.Items.Select(item => item.Kind), Does.Contain("qq-environment"));
+        Assert.That(snapshot.NotificationSummary.Items.Select(item => item.Message), Has.Some.Contains("OwnerUserIds"));
+        Assert.That(snapshot.NotificationSummary.Items.Select(item => item.Message), Has.Some.Contains("agent.command.test failed 3 times"));
+        Assert.That(snapshot.NotificationSummary.Items.Select(item => item.Message), Has.Some.Contains("QChat"));
+        Assert.That(snapshot.NotificationSummary.Items.Select(item => item.Message), Has.None.Contains("agent.config.applied"));
+    }
+
+    [Test]
+    public void AgentControlCenterExposesSecurityGatewayPreview()
+    {
+        AgentControlCenterService service = new();
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        Assert.That(snapshot.SecurityGatewayPreview.Select(item => item.Action), Does.Contain("maintenance.inspect"));
+        Assert.That(snapshot.SecurityGatewayPreview.Single(item => item.Action == "maintenance.inspect").Status,
+            Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
+        Assert.That(snapshot.SecurityGatewayPreview.Single(item => item.Action == "workspace.apply").Status,
+            Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
+        Assert.That(snapshot.SecurityGatewayPreview.Single(item => item.Action == "qzone.reply").Status,
+            Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+        Assert.That(snapshot.SecurityGatewayPreview.Single(item => item.Action == "github.upload").Status,
+            Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+    }
+
+    [Test]
+    public void AgentControlCenterExposesRuntimeVisibilityForStreamingLatencyEventsAndBackgroundWork()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        audit.Record("qzone.like", "group:20002", "target=1001 post=post-a", AgentAuditRiskLevel.High, false, "Blocked: owner authority required");
+        audit.Record("qzone.reply", "owner:10001", "target=1001 post=post-b", AgentAuditRiskLevel.High, true);
+        AgentEventPipeline eventPipeline = new();
+        eventPipeline.Register(new AgentEventMatcher(
+            Name: "owner-command",
+            Priority: 100,
+            Rule: _ => true,
+            Permission: _ => true,
+            Handler: _ => Task.CompletedTask,
+            Block: true));
+        AgentControlCenterService service = new(auditLog: audit, eventPipeline: eventPipeline);
+        service.RecordBackgroundTaskResult(AgentBackgroundTaskResult.Completed(
+            "task-1",
+            "browser-scan",
+            "qq:group:1000",
+            "found 2 pages",
+            DateTimeOffset.Parse("2026-06-15T12:00:00Z")));
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 3,
+            LastError: null,
+            RecentEvents: [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T12:00:01Z"), "ChatEnd", "Chat streaming ended.")])
+        {
+            Latency = new ChatLatencySnapshot(
+                DateTimeOffset.Parse("2026-06-15T12:00:00Z"),
+                DateTimeOffset.Parse("2026-06-15T12:00:00.420Z"),
+                DateTimeOffset.Parse("2026-06-15T12:00:02Z"),
+                TimeSpan.FromMilliseconds(420),
+                TimeSpan.FromSeconds(2))
+        };
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+
+        Assert.That(snapshot.RuntimeVisibility.StreamingPolicies.Select(policy => policy.Name),
+            Is.SupersetOf(new[] { "QQ group", "QQ private", "DeskPet/UI" }));
+        Assert.That(snapshot.RuntimeVisibility.ChatLatency.LastFirstContentLatencyMs, Is.EqualTo(420));
+        Assert.That(snapshot.RuntimeVisibility.ChatLatency.LastChatDurationMs, Is.EqualTo(2000));
+        Assert.That(snapshot.RuntimeVisibility.EventPipeline.MatcherCount, Is.EqualTo(1));
+        Assert.That(snapshot.RuntimeVisibility.EventPipeline.Matchers[0].Name, Is.EqualTo("owner-command"));
+        Assert.That(snapshot.RuntimeVisibility.BackgroundTasks[0].TaskName, Is.EqualTo("browser-scan"));
+        Assert.That(snapshot.RuntimeVisibility.ActionGatewayAudit.BlockedCount, Is.EqualTo(1));
+        Assert.That(snapshot.RuntimeVisibility.ActionGatewayAudit.SucceededCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void AgentControlCenterBuildsAgentReadableSelfCheckRecommendations()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        audit.Record("qzone.like", "group:20002", "target=1001 post=post-a", AgentAuditRiskLevel.High, false, "Blocked: owner authority required");
+        AgentControlCenterService service = new(auditLog: audit)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = true,
+                MaintenanceInspectionIntervalMinutes = 1
+            }
+        };
+        service.ProposeConfigurationChange("OwnerUserIds", "10001", "agent", "owner identity is protected");
+        service.RecordBackgroundTaskResult(AgentBackgroundTaskResult.Failed(
+            "task-1",
+            "browser-scan",
+            "qq:group:1000",
+            "Browser page timed out",
+            DateTimeOffset.Parse("2026-06-15T12:00:00Z")));
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 3,
+            LastError: "Browser runtime failed",
+            RecentEvents: [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T12:00:01Z"), "Error", "Browser runtime failed")])
+        {
+            Latency = new ChatLatencySnapshot(
+                DateTimeOffset.Parse("2026-06-15T12:00:00Z"),
+                DateTimeOffset.Parse("2026-06-15T12:00:04.250Z"),
+                DateTimeOffset.Parse("2026-06-15T12:00:06Z"),
+                TimeSpan.FromMilliseconds(4250),
+                TimeSpan.FromSeconds(6))
+        };
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+        string report = AgentControlCenterService.FormatSelfCheckForAgent(snapshot.SelfCheck);
+
+        Assert.That(snapshot.SelfCheck.Items.Select(item => item.Category), Does.Contain("owner-confirmation"));
+        Assert.That(snapshot.SelfCheck.Items.Select(item => item.Category), Does.Contain("runtime-error"));
+        Assert.That(snapshot.SelfCheck.Items.Select(item => item.Category), Does.Contain("background-task"));
+        Assert.That(snapshot.SelfCheck.Items.Select(item => item.Category), Does.Contain("streaming-latency"));
+        Assert.That(snapshot.SelfCheck.Items.Select(item => item.Category), Does.Contain("security-gateway"));
+        Assert.That(snapshot.SelfCheck.OwnerReviewCount, Is.GreaterThanOrEqualTo(1));
+        Assert.That(snapshot.SelfCheck.AutonomousRecommendationCount, Is.GreaterThanOrEqualTo(2));
+        Assert.That(snapshot.SelfCheck.Items
+            .Where(item => item.Category == "owner-confirmation")
+            .All(item => item.CanAgentHandleAutonomously == false), Is.True);
+        Assert.That(snapshot.SelfCheck.Items.Single(item => item.Category == "runtime-error").CanAgentHandleAutonomously, Is.True);
+        Assert.That(report, Does.Contain("Agent self-check"));
+        Assert.That(report, Does.Contain("OwnerUserIds"));
+        Assert.That(report, Does.Contain("Browser runtime failed"));
+        Assert.That(report, Does.Contain("Browser page timed out"));
+    }
+
+    [Test]
+    public void AgentControlCenterAppliesAllowlistedLowRiskSelfCheckActionAndAudits()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(auditLog: audit)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = false
+            }
+        };
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 3,
+            LastError: "Browser runtime failed",
+            RecentEvents: [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T12:00:01Z"), "Error", "Browser runtime failed")]);
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+        string actionId = snapshot.SelfCheck.Items.Single(item => item.Category == "maintenance-disabled").ActionId!;
+
+        AgentControlCenterSelfCheckActionResult result = service.ApplySelfCheckAction(actionId, runtime, "agent");
+
+        Assert.That(result.Applied, Is.True);
+        Assert.That(result.RequiresOwnerConfirmation, Is.False);
+        Assert.That(result.Key, Is.EqualTo("AllowAutomaticMaintenanceInspection"));
+        Assert.That(service.Configuration!.AllowAutomaticMaintenanceInspection, Is.True);
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.config.applied"));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.self_check.action"));
+    }
+
+    [Test]
+    public void AgentControlCenterSelfCheckActionKeepsProtectedConfigurationBehindOwnerConfirmation()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(auditLog: audit);
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 0,
+            LastError: null,
+            RecentEvents: []);
+
+        AgentControlCenterSelfCheckActionResult result = service.ApplySelfCheckAction(
+            "set-owner-user-ids",
+            runtime,
+            "agent");
+
+        Assert.That(result.Applied, Is.False);
+        Assert.That(result.RequiresOwnerConfirmation, Is.True);
+        Assert.That(result.Key, Is.EqualTo("OwnerUserIds"));
+        Assert.That(service.GetPendingConfigurationProposals().Select(item => item.Key), Does.Contain("OwnerUserIds"));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.config.proposed"));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.self_check.action"));
+    }
+
+    [Test]
+    public void AgentControlCenterAutomaticSelfCheckSkipsWhileChatting()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T12:00:00Z");
+        AgentControlCenterService service = new(clock: () => now)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = true,
+                MaintenanceInspectionIntervalMinutes = 1
+            }
+        };
+        ChatRuntimeState runtime = new(
+            IsChatting: true,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 3,
+            LastError: "Browser runtime failed",
+            RecentEvents: [new ChatRuntimeEvent(now, "Error", "Browser runtime failed")]);
+
+        AgentControlCenterSelfCheckLoopResult? result = service.TryAutomaticSelfCheck(
+            runtime,
+            "Kira",
+            "qq:group:1000");
+
+        Assert.That(result, Is.Null);
+        Assert.That(service.BuildSnapshot(runtime with { IsChatting = false }, "Kira").RuntimeVisibility.BackgroundTasks, Is.Empty);
+    }
+
+    [Test]
+    public void AgentControlCenterAutomaticSelfCheckWakesOnlyForMeaningfulChangesAfterIntervalAndCooldown()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T12:00:00Z");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentTaskService tasks = new(audit, taskStorePath: Path.Combine(root, "tasks.json"));
+        AgentMaintenanceService maintenance = new(
+            auditLog: audit,
+            proposalStorePath: Path.Combine(root, "maintenance.json"),
+            clock: () => now);
+        AgentWorkspaceService workspace = new(new AgentWorkspacePolicy([root]), auditLog: audit);
+        AgentControlCenterService service = new(
+            tasks: tasks,
+            workspace: workspace,
+            auditLog: audit,
+            maintenance: maintenance,
+            clock: () => now)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = true,
+                MaintenanceInspectionIntervalMinutes = 1,
+                MaintenanceDuplicateCooldownMinutes = 120
+            }
+        };
+        service.ProposeConfigurationChange("OwnerUserIds", "10001", "agent", "owner identity is protected");
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 3,
+            LastError: null,
+            RecentEvents: []);
+
+        AgentControlCenterSelfCheckLoopResult? first = service.TryAutomaticSelfCheck(runtime, "Kira", "qq:private:10001");
+        AgentControlCenterSelfCheckLoopResult? immediate = service.TryAutomaticSelfCheck(runtime, "Kira", "qq:private:10001");
+        now = now.AddMinutes(2);
+        AgentControlCenterSelfCheckLoopResult? duplicate = service.TryAutomaticSelfCheck(runtime, "Kira", "qq:private:10001");
+        now = now.AddMinutes(121);
+        AgentControlCenterSelfCheckLoopResult? afterCooldown = service.TryAutomaticSelfCheck(runtime, "Kira", "qq:private:10001");
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+
+        Assert.That(first, Is.Not.Null);
+        Assert.That(first!.WakeRecommended, Is.True);
+        Assert.That(first.WakeEvent, Is.Not.Null);
+        Assert.That(first.WakeEvent!.Type, Is.EqualTo("agent.background.completed"));
+        Assert.That(first.BackgroundResult.TaskName, Is.EqualTo("agent-self-check"));
+        Assert.That(first.BackgroundResult.ResultText, Does.Contain("OwnerUserIds"));
+        Assert.That(immediate, Is.Null);
+        Assert.That(duplicate, Is.Not.Null);
+        Assert.That(duplicate!.WakeRecommended, Is.False);
+        Assert.That(duplicate.WakeEvent, Is.Null);
+        Assert.That(afterCooldown, Is.Not.Null);
+        Assert.That(afterCooldown!.WakeRecommended, Is.True);
+        Assert.That(snapshot.RuntimeVisibility.BackgroundTasks.Count(task => task.TaskName == "agent-self-check"), Is.EqualTo(3));
+    }
+
+    [Test]
+    public void AgentControlCenterAutomaticSelfCheckRunsMaintenanceInspectionWithoutDuplicateNoise()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T12:00:00Z");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentMaintenanceService maintenance = new(
+            auditLog: audit,
+            proposalStorePath: Path.Combine(root, "maintenance.json"),
+            clock: () => now);
+        AgentTaskService tasks = new(audit, taskStorePath: Path.Combine(root, "tasks.json"));
+        AgentControlCenterService service = new(
+            auditLog: audit,
+            tasks: tasks,
+            maintenance: maintenance,
+            clock: () => now)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = true,
+                MaintenanceInspectionIntervalMinutes = 1,
+                MaintenanceDuplicateCooldownMinutes = 120
+            }
+        };
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 3,
+            LastError: "Browser runtime failed",
+            RecentEvents: [new ChatRuntimeEvent(now.AddSeconds(-10), "Error", "Browser runtime failed")]);
+
+        AgentControlCenterSelfCheckLoopResult? first = service.TryAutomaticSelfCheck(runtime, "Kira", "qq:group:1000");
+        now = now.AddMinutes(2);
+        AgentControlCenterSelfCheckLoopResult? duplicate = service.TryAutomaticSelfCheck(runtime, "Kira", "qq:group:1000");
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+
+        Assert.That(first, Is.Not.Null);
+        Assert.That(first!.MaintenanceInspection?.Created, Is.True);
+        Assert.That(first.WakeRecommended, Is.True);
+        Assert.That(snapshot.PendingMaintenanceProposals, Has.Count.EqualTo(1));
+        Assert.That(snapshot.ActiveTasks, Has.Count.EqualTo(1));
+        Assert.That(duplicate, Is.Not.Null);
+        Assert.That(duplicate!.MaintenanceInspection?.Created, Is.False);
+        Assert.That(duplicate.WakeRecommended, Is.False);
+        Assert.That(service.BuildSnapshot(runtime, "Kira").PendingMaintenanceProposals, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void AgentControlCenterReportsSelfCheckSchedulerStatus()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T12:00:00Z");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(auditLog: audit, clock: () => now)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = true,
+                MaintenanceInspectionIntervalMinutes = 5,
+                MaintenanceDuplicateCooldownMinutes = 120
+            }
+        };
+        ChatRuntimeState chatting = new(
+            IsChatting: true,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 3,
+            LastError: null,
+            RecentEvents: []);
+        ChatRuntimeState idle = chatting with { IsChatting = false };
+
+        AgentControlCenterSelfCheckLoopResult? skipped = service.TryAutomaticSelfCheck(chatting, "Kira", "qq:group:1000");
+        AgentControlCenterSelfCheckLoopResult? first = service.TryAutomaticSelfCheck(idle, "Kira", "qq:group:1000");
+        AgentControlCenterSelfCheckLoopResult? intervalSkipped = service.TryAutomaticSelfCheck(idle, "Kira", "qq:group:1000");
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(idle, "Kira");
+
+        Assert.That(skipped, Is.Null);
+        Assert.That(first, Is.Not.Null);
+        Assert.That(intervalSkipped, Is.Null);
+        Assert.That(snapshot.SelfCheckScheduler.LastSkipReason, Is.EqualTo("interval"));
+        Assert.That(snapshot.SelfCheckScheduler.LastCheckedAt, Is.EqualTo(now));
+        Assert.That(snapshot.SelfCheckScheduler.NextCheckAt, Is.EqualTo(now.AddMinutes(5)));
+        Assert.That(snapshot.SelfCheckScheduler.LastWakeAt, Is.EqualTo(now));
+    }
+
+    [Test]
+    public void AgentControlCenterBuildsOwnerNotificationPlanForPrivateOwnerReminder()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(auditLog: audit);
+        service.ProposeConfigurationChange("OwnerUserIds", "10001", "agent", "owner identity is protected");
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 0,
+            LastError: null,
+            RecentEvents: []);
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+
+        AgentOwnerNotificationPlan plan = AgentControlCenterService.BuildOwnerNotificationPlan(
+            snapshot,
+            ownerPrivateSessionId: "qq:private:3045846738",
+            sourceGroupSessionId: "qq:group:867165927");
+
+        Assert.That(plan.ShouldNotifyOwner, Is.True);
+        Assert.That(plan.TargetSessionId, Is.EqualTo("qq:private:3045846738"));
+        Assert.That(plan.PrivateMessages, Has.Some.Contains("OwnerUserIds"));
+        Assert.That(plan.PublicGroupSummary, Does.Not.Contain("OwnerUserIds"));
+        Assert.That(plan.PublicGroupSummary, Does.Contain("owner attention"));
+    }
+
+    [Test]
+    public void AgentControlCenterLinksAutomaticSelfCheckWakeToRunSession()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T12:00:00Z");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(auditLog: audit, clock: () => now)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = true,
+                MaintenanceInspectionIntervalMinutes = 1,
+                MaintenanceDuplicateCooldownMinutes = 120
+            }
+        };
+        service.ProposeConfigurationChange("OwnerUserIds", "10001", "agent", "owner identity is protected");
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 0,
+            LastError: null,
+            RecentEvents: []);
+
+        AgentControlCenterSelfCheckLoopResult? result = service.TryAutomaticSelfCheck(
+            runtime,
+            "Kira",
+            "qq:private:3045846738");
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+
+        Assert.That(result?.WakeRecommended, Is.True);
+        Assert.That(snapshot.RuntimeVisibility.RecentRunSessions, Has.Count.EqualTo(1));
+        Assert.That(snapshot.RuntimeVisibility.RecentRunSessions[0].SourceEventType, Is.EqualTo("agent.background.completed"));
+        Assert.That(snapshot.RuntimeVisibility.RecentRunSessions[0].SourceSessionId, Is.EqualTo("qq:private:3045846738"));
+        Assert.That(snapshot.RuntimeVisibility.RecentRunSessions[0].ToolSteps.Select(step => step.ToolName), Does.Contain("agent-self-check"));
+        Assert.That(snapshot.RuntimeVisibility.RecentRunSessions[0].ToolSteps.Select(step => step.ToolName), Does.Contain("owner-notification-plan"));
+    }
+
+    [Test]
+    public void AgentControlCenterAppliesExpandedLowRiskSelfCheckActions()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T12:00:00Z");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentProactiveBehaviorService proactive = new(
+            auditLog: audit,
+            clock: () => now,
+            persistencePath: Path.Combine(root, "proactive.json"));
+        proactive.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneReply,
+            "old reply suggestion",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001));
+        now = now.AddDays(2);
+        AgentControlCenterService service = new(auditLog: audit, clock: () => now)
+        {
+            ProactiveBehavior = proactive,
+            Configuration = new AgentControlCenterConfig
+            {
+                ProactiveChatIntensity = 5,
+                MaintenanceDuplicateCooldownMinutes = 15
+            }
+        };
+        ChatRuntimeState runtime = new(false, 0, 0, null, []);
+
+        AgentControlCenterSelfCheckActionResult reduce = service.ApplySelfCheckAction(
+            "reduce-proactive-intensity",
+            runtime,
+            "agent");
+        AgentControlCenterSelfCheckActionResult cooldown = service.ApplySelfCheckAction(
+            "extend-maintenance-cooldown",
+            runtime,
+            "agent");
+        AgentControlCenterSelfCheckActionResult cleanup = service.ApplySelfCheckAction(
+            "cleanup-proactive-suggestions",
+            runtime,
+            "agent");
+
+        Assert.That(reduce.Applied, Is.True);
+        Assert.That(service.Configuration!.ProactiveChatIntensity, Is.EqualTo(4));
+        Assert.That(cooldown.Applied, Is.True);
+        Assert.That(service.Configuration.MaintenanceDuplicateCooldownMinutes, Is.EqualTo(30));
+        Assert.That(cleanup.Applied, Is.True);
+        Assert.That(cleanup.Message, Does.Contain("expired_pending=1"));
+        Assert.That(proactive.GetPendingSuggestions(), Is.Empty);
+        Assert.That(audit.GetRecentEntries(20).Select(entry => entry.Action), Does.Contain("agent.proactive.cleanup"));
+        Assert.That(audit.GetRecentEntries(20).Count(entry => entry.Action == "agent.self_check.action"), Is.GreaterThanOrEqualTo(3));
+    }
+
+    [Test]
     public void AgentControlCenterTaskActionsUpdateStateAndAudit()
     {
         string root = CreateTempWorkspace();
@@ -847,6 +1690,163 @@ public class AgentCapabilityServiceTests
         Assert.That(service.BuildSnapshot(new ChatRuntimeState(false, 0, 0, null, []), "Kira").PendingMaintenanceProposals, Is.Empty);
         Assert.That(maintenance.GetArchivedProposals().Single().Resolution, Does.Contain("fixed after tests"));
         Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Actor), Does.Contain("agent-control-ui"));
+    }
+
+    [Test]
+    public void AgentControlCenterInspectsIssueReportForMaintenanceProposal()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentMaintenanceService maintenance = new(auditLog: audit, proposalStorePath: Path.Combine(root, "maintenance.json"));
+        AgentControlCenterService service = new(
+            issueReports: new AgentIssueReportService(
+                audit,
+                [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            auditLog: audit,
+            maintenance: maintenance);
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 0,
+            LastError: "Browser runtime failed",
+            RecentEvents: [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T09:59:00Z"), "Error", "Browser runtime failed")]);
+
+        AgentMaintenanceInspectionResult first = service.InspectMaintenanceFromControlCenter(
+            runtime,
+            TimeSpan.FromHours(2));
+        AgentMaintenanceInspectionResult duplicate = service.InspectMaintenanceFromControlCenter(
+            runtime,
+            TimeSpan.FromHours(2));
+
+        Assert.That(first.Created, Is.True);
+        Assert.That(duplicate.Created, Is.False);
+        Assert.That(duplicate.Proposal?.Id, Is.EqualTo(first.Proposal?.Id));
+        Assert.That(service.BuildSnapshot(runtime, "Kira").PendingMaintenanceProposals, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void AgentControlCenterAutomaticMaintenanceInspectionUsesConfigurationAndInterval()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T10:00:00Z");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentMaintenanceService maintenance = new(
+            auditLog: audit,
+            proposalStorePath: Path.Combine(root, "maintenance.json"),
+            clock: () => now);
+        AgentControlCenterService service = new(
+            issueReports: new AgentIssueReportService(
+                audit,
+                [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            auditLog: audit,
+            maintenance: maintenance,
+            clock: () => now)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = true,
+                MaintenanceInspectionIntervalMinutes = 15,
+                MaintenanceDuplicateCooldownMinutes = 120
+            }
+        };
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 0,
+            LastError: "Browser runtime failed",
+            RecentEvents: [new ChatRuntimeEvent(now.AddMinutes(-1), "Error", "Browser runtime failed")]);
+
+        AgentMaintenanceInspectionResult? first = service.TryAutomaticMaintenanceInspection(runtime);
+        AgentMaintenanceInspectionResult? skipped = service.TryAutomaticMaintenanceInspection(runtime);
+        now = now.AddMinutes(16);
+        AgentMaintenanceInspectionResult? duplicate = service.TryAutomaticMaintenanceInspection(runtime);
+
+        Assert.That(first?.Created, Is.True);
+        Assert.That(skipped, Is.Null);
+        Assert.That(duplicate?.Created, Is.False);
+        Assert.That(duplicate?.Proposal?.Id, Is.EqualTo(first?.Proposal?.Id));
+        Assert.That(service.BuildSnapshot(runtime, "Kira").PendingMaintenanceProposals, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void AgentControlCenterAutomaticMaintenanceInspectionCanBeDisabled()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T10:00:00Z");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentMaintenanceService maintenance = new(auditLog: audit, proposalStorePath: Path.Combine(root, "maintenance.json"));
+        AgentControlCenterService service = new(
+            issueReports: new AgentIssueReportService(
+                audit,
+                [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            auditLog: audit,
+            maintenance: maintenance,
+            clock: () => now)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = false
+            }
+        };
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 0,
+            LastError: "Browser runtime failed",
+            RecentEvents: [new ChatRuntimeEvent(now.AddMinutes(-1), "Error", "Browser runtime failed")]);
+
+        AgentMaintenanceInspectionResult? result = service.TryAutomaticMaintenanceInspection(runtime);
+
+        Assert.That(result, Is.Null);
+        Assert.That(service.BuildSnapshot(runtime, "Kira").PendingMaintenanceProposals, Is.Empty);
+    }
+
+    [Test]
+    public void AgentControlCenterCreatesMaintenanceTaskFromAutomaticInspectionAndDeduplicates()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T10:00:00Z");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentTaskService tasks = new(audit, taskStorePath: Path.Combine(root, "tasks.json"));
+        AgentMaintenanceService maintenance = new(
+            auditLog: audit,
+            proposalStorePath: Path.Combine(root, "maintenance.json"),
+            clock: () => now);
+        AgentControlCenterService service = new(
+            issueReports: new AgentIssueReportService(
+                audit,
+                [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            tasks: tasks,
+            auditLog: audit,
+            maintenance: maintenance,
+            clock: () => now)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = true,
+                MaintenanceInspectionIntervalMinutes = 1,
+                MaintenanceDuplicateCooldownMinutes = 120
+            }
+        };
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 0,
+            LastError: "Browser runtime failed",
+            RecentEvents: [new ChatRuntimeEvent(now.AddMinutes(-1), "Error", "Browser runtime failed")]);
+
+        AgentMaintenanceInspectionResult? first = service.TryAutomaticMaintenanceInspection(runtime);
+        now = now.AddMinutes(2);
+        AgentMaintenanceInspectionResult? duplicate = service.TryAutomaticMaintenanceInspection(runtime);
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+
+        Assert.That(first?.Created, Is.True);
+        Assert.That(duplicate?.Created, Is.False);
+        Assert.That(snapshot.ActiveTasks, Has.Count.EqualTo(1));
+        Assert.That(snapshot.ActiveTasks[0].Goal, Does.Contain("Resolve maintenance proposal"));
+        Assert.That(snapshot.ActiveTasks[0].Steps, Has.Some.Contains("Record repair evidence"));
+        Assert.That(snapshot.ActiveTasks[0].Events.Select(taskEvent => taskEvent.Detail), Has.Some.Contains(first!.Proposal!.Id));
+        Assert.That(audit.GetRecentEntries(20).Select(entry => entry.Action), Does.Contain("agent.maintenance.task.created"));
     }
 
     [Test]
@@ -916,6 +1916,69 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public async Task AgentControlCenterProactiveExecutionUsesSecurityGatewayForExternalRequests()
+    {
+        AgentProactiveBehaviorService proactive = new();
+        StubProactiveExecutor executor = new();
+        AgentControlCenterService service = new()
+        {
+            ProactiveBehavior = proactive,
+            ProactiveExecutors = [executor]
+        };
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [10001],
+            RequireConfirmationForHighRisk = true
+        };
+        AgentProactivePendingSuggestion blockedPending = proactive.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneReply,
+            "reply to qzone comment",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001,
+            DraftText: "reply target=1001 post=post-a comment=comment-a"));
+        proactive.ConfirmPendingSuggestion(blockedPending.Id, "owner");
+        AgentProactivePendingSuggestion ownerPending = proactive.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneLike,
+            "like qzone post",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001,
+            DraftText: "like target=1001 post=post-a"));
+        proactive.ConfirmPendingSuggestion(ownerPending.Id, "owner");
+
+        AgentProactiveExternalExecutionResult blocked = await service.ExecuteProactiveSuggestionFromControlCenter(
+            blockedPending.Id,
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: true,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "qzone.reply"),
+            config);
+        AgentProactiveExternalExecutionResult executed = await service.ExecuteProactiveSuggestionFromControlCenter(
+            ownerPending.Id,
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "qzone.like"),
+            config);
+
+        Assert.That(blocked.Succeeded, Is.False);
+        Assert.That(blocked.Message, Does.Contain("Blocked"));
+        Assert.That(executed.Succeeded, Is.True);
+        Assert.That(executor.ExecutedIds, Is.EqualTo(new[] { ownerPending.Id }));
+        Assert.That(proactive.GetCompletedSuggestion(blockedPending.Id)?.Status, Is.EqualTo(AgentProactivePendingStatus.Confirmed));
+        Assert.That(proactive.GetCompletedSuggestion(ownerPending.Id)?.Status, Is.EqualTo(AgentProactivePendingStatus.Executed));
+    }
+
+    [Test]
     public void AgentControlCenterBuildsOwnerConfirmationTextForWorkspaceProposal()
     {
         AgentWorkspacePatchProposal proposal = new(
@@ -945,6 +2008,12 @@ public class AgentCapabilityServiceTests
 
         Assert.That(snapshot.Configuration.AllowAgentLowRiskSelfConfiguration, Is.True);
         Assert.That(snapshot.Configuration.AllowMentionWakeup, Is.True);
+        Assert.That(snapshot.Configuration.AllowAutomaticMaintenanceInspection, Is.True);
+        Assert.That(snapshot.Configuration.MaintenanceInspectionIntervalMinutes, Is.EqualTo(15));
+        Assert.That(snapshot.Configuration.MaintenanceDuplicateCooldownMinutes, Is.EqualTo(120));
+        Assert.That(snapshot.EnvironmentCheck.Items.Select(item => item.Name), Does.Contain("Storage folder"));
+        Assert.That(snapshot.EnvironmentCheck.Items.Select(item => item.Name), Does.Contain(".NET runtime"));
+        Assert.That(snapshot.EnvironmentCheck.HasBlockingIssues, Is.False);
         Assert.That(snapshot.PendingConfigurationProposals, Is.Empty);
     }
 
@@ -963,6 +2032,27 @@ public class AgentCapabilityServiceTests
 
         Assert.That(result.Applied, Is.True);
         Assert.That(service.Configuration!.ProactiveChatIntensity, Is.EqualTo(4));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.config.applied"));
+    }
+
+    [Test]
+    public void AgentControlCenterAppliesAllowedMaintenanceInspectionConfigurationAndAudits()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(auditLog: audit);
+
+        AgentConfigurationChangeResult result = service.ApplyConfigurationChange(
+            "MaintenanceDuplicateCooldownMinutes",
+            "90",
+            "agent",
+            "reduce repeated maintenance proposal noise");
+
+        Assert.That(result.Applied, Is.True);
+        Assert.That(result.RequiresOwnerConfirmation, Is.False);
+        Assert.That(result.Proposal, Is.Null);
+        Assert.That(service.Configuration!.MaintenanceDuplicateCooldownMinutes, Is.EqualTo(90));
+        Assert.That(service.GetPendingConfigurationProposals(), Is.Empty);
         Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.config.applied"));
     }
 
@@ -1084,6 +2174,8 @@ public class AgentCapabilityServiceTests
             .ToArray();
 
         Assert.That(xmlFunctionNames, Does.Contain("agent_config_status"));
+        Assert.That(xmlFunctionNames, Does.Contain("agent_self_check"));
+        Assert.That(xmlFunctionNames, Does.Contain("agent_self_check_apply"));
         Assert.That(xmlFunctionNames, Does.Contain("agent_config_apply"));
         Assert.That(xmlFunctionNames, Does.Contain("agent_config_propose"));
         Assert.That(xmlFunctionNames, Does.Contain("agent_config_confirmation_text"));

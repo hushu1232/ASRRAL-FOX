@@ -65,14 +65,64 @@ public class OneBotQZoneRuntimeTests
         Assert.That(invoker.Calls[0].Json, Does.Contain("\"target_tid\":\"post-a\""));
     }
 
+    [Test]
+    public async Task GetLatestPost_UsesConfiguredReadAction()
+    {
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(new QZonePostSnapshot("post-a", 1001, "latest"));
+        OneBotQZoneRuntime runtime = new(invoker, new OneBotQZoneRuntimeOptions
+        {
+            LatestPostAction = "get_qzone_latest_post"
+        });
+
+        QZonePostSnapshot? post = await runtime.GetLatestPost(1001);
+
+        Assert.That(post?.PostId, Is.EqualTo("post-a"));
+        Assert.That(invoker.Calls, Has.Count.EqualTo(1));
+        Assert.That(invoker.Calls[0].Action, Is.EqualTo("get_qzone_latest_post"));
+        Assert.That(invoker.Calls[0].Json, Does.Contain("\"target_uin\":1001"));
+    }
+
+    [Test]
+    public async Task GetLatestComments_UsesConfiguredReadAction()
+    {
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(new List<QZoneCommentSnapshot>
+        {
+            new("comment-a", 2001, "first")
+        });
+        OneBotQZoneRuntime runtime = new(invoker, new OneBotQZoneRuntimeOptions
+        {
+            LatestCommentsAction = "get_qzone_comments"
+        });
+
+        IReadOnlyList<QZoneCommentSnapshot> comments = await runtime.GetLatestComments(1001, "post-a", 5);
+
+        Assert.That(comments.Select(comment => comment.CommentId), Is.EqualTo(new[] { "comment-a" }));
+        Assert.That(invoker.Calls, Has.Count.EqualTo(1));
+        Assert.That(invoker.Calls[0].Action, Is.EqualTo("get_qzone_comments"));
+        Assert.That(invoker.Calls[0].Json, Does.Contain("\"target_uin\":1001"));
+        Assert.That(invoker.Calls[0].Json, Does.Contain("\"target_tid\":\"post-a\""));
+        Assert.That(invoker.Calls[0].Json, Does.Contain("\"count\":5"));
+    }
+
     sealed class FakeActionInvoker : IOneBotActionInvoker
     {
         public List<(string Action, string Json)> Calls { get; } = new();
+        readonly Queue<object?> responses = new();
+
+        public void Enqueue(object? response)
+        {
+            responses.Enqueue(response);
+        }
 
         public Task<T?> CallActionAsync<T>(string action, object? parameters = null)
         {
             Calls.Add((action, JsonSerializer.Serialize(parameters)));
-            return Task.FromResult<T?>(default);
+            if (responses.Count == 0)
+                return Task.FromResult<T?>(default);
+
+            return Task.FromResult((T?)responses.Dequeue());
         }
     }
 }

@@ -52,6 +52,9 @@ public class MemoryStorage : IAsyncDisposable
     {
         this.rootPath = rootPath;
         this.vectorizer = vectorizer;
+        if (!Directory.Exists(rootPath))
+            Directory.CreateDirectory(rootPath);
+
         dbPath = Path.Combine(rootPath, "memory_index.duckdb");
         connection = new DuckDBConnection($"Data Source={dbPath}");
         connection.Open();
@@ -60,9 +63,6 @@ public class MemoryStorage : IAsyncDisposable
 
         void InitializeDatabase()
         {
-            if (!Directory.Exists(rootPath))
-                Directory.CreateDirectory(rootPath);
-
             using DuckDBCommand command = connection.CreateCommand();
 
             // 1. 尝试以 Name 为唯一主键创建表

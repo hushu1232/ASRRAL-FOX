@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
+using Alife.Platform;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 
 namespace Alife.Framework;
 
@@ -40,10 +43,12 @@ public class ChatActivitySystem
         {
             Progress<(string, float)> progress = new(tuple => {
                 ActivatingProcess?.Invoke(character, tuple);
+                WriteActivationDiagnostic(character, "activation-progress", tuple.Item1, progress: tuple.Item2);
             });
 
             characterSystem.LoadCharacter(character);
 
+            WriteActivationDiagnostic(character, "activation-start", "Character activation started.");
             Activating?.Invoke(character);
             ChatActivity chatActivity = await ChatActivity.Create(
                 character, configurationSystem, moduleSystem, progress,
@@ -52,10 +57,12 @@ public class ChatActivitySystem
             ActivatingCreated?.Invoke(chatActivity);
             await chatActivity.Launch(progress);
             activities.Add(character.Name, chatActivity);
+            WriteActivationDiagnostic(character, "activation-succeeded", "Character activation completed.");
             Activated?.Invoke(chatActivity);
         }
         catch (Exception ex)
         {
+            WriteActivationDiagnostic(character, "activation-failed", ex.Message, ex);
             ActivationFailed?.Invoke(character, ex);
         }
     }
@@ -88,11 +95,46 @@ public class ChatActivitySystem
         this.characterSystem = characterSystem;
         this.moduleSystem = moduleSystem;
         this.configurationSystem = configurationSystem;
+        this.storageSystem = storageSystem;
     }
 
     readonly CharacterSystem characterSystem;
     readonly ModuleSystem moduleSystem;
     readonly ConfigurationSystem configurationSystem;
+    readonly StorageSystem storageSystem;
     readonly List<object> appendObjects = new();
     readonly Dictionary<string, ChatActivity> activities = new();
+
+    void WriteActivationDiagnostic(
+        Character character,
+        string eventName,
+        string detail,
+        Exception? exception = null,
+        float? progress = null)
+    {
+        try
+        {
+            string path = Path.Combine(
+                AlifePath.StorageFolderPath,
+                "AgentWorkspace",
+                "activation-diagnostics.jsonl");
+            string? directory = Path.GetDirectoryName(path);
+            if (string.IsNullOrWhiteSpace(directory) == false)
+                Directory.CreateDirectory(directory);
+
+            string line = JsonConvert.SerializeObject(new {
+                timestamp = DateTimeOffset.Now,
+                character = character.Name,
+                eventName,
+                detail,
+                progress,
+                exception = exception?.ToString()
+            });
+            File.AppendAllText(path, line + Environment.NewLine);
+        }
+        catch (Exception ex)
+        {
+            AlifeTerminal.LogWarning($"Failed to write activation diagnostics: {ex.Message}");
+        }
+    }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace Alife.Function.QChat;
@@ -39,6 +40,8 @@ public sealed record OneBotQZoneRuntimeOptions
     public string PostAction { get; init; } = "send_msg";
     public string CommentAction { get; init; } = "send_comment";
     public string LikeAction { get; init; } = "send_like";
+    public string LatestPostAction { get; init; } = "get_qzone_latest_post";
+    public string LatestCommentsAction { get; init; } = "get_qzone_comments";
 }
 
 public sealed class OneBotQZoneRuntime(
@@ -79,5 +82,22 @@ public sealed class OneBotQZoneRuntime(
             target_uin = targetId,
             target_tid = postId
         });
+    }
+
+    public Task<QZonePostSnapshot?> GetLatestPost(long targetId)
+    {
+        return invoker.CallActionAsync<QZonePostSnapshot>(options.LatestPostAction, new {
+            target_uin = targetId
+        });
+    }
+
+    public async Task<IReadOnlyList<QZoneCommentSnapshot>> GetLatestComments(long targetId, string postId, int count)
+    {
+        List<QZoneCommentSnapshot>? comments = await invoker.CallActionAsync<List<QZoneCommentSnapshot>>(options.LatestCommentsAction, new {
+            target_uin = targetId,
+            target_tid = postId,
+            count
+        });
+        return comments ?? [];
     }
 }

@@ -2,6 +2,7 @@ using Alife.Function.Agent;
 using Alife.Function.QChat;
 using Alife.Framework;
 using Autofac;
+using System.IO;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using NUnit.Framework;
@@ -179,6 +180,161 @@ public class QZoneProactiveExecutionServiceTests
     }
 
     [Test]
+    public async Task ExecuteConfirmedSuggestionUsesSecurityGatewayForExternalRequests()
+    {
+        FakeQZoneRuntime runtime = new();
+        QZoneService qzone = new(runtime)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                DryRunExternalActions = false,
+                PrivateChatContactIds = "1001",
+                PrivateContactLikeProbability = 1.0
+            }
+        };
+        QZoneProactiveExecutionService executor = new(qzone, random: () => 0.0);
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [10001],
+            RequireConfirmationForHighRisk = true
+        };
+        AgentProactivePendingSuggestion blockedPending = CreatePending(
+            AgentProactivePendingStatus.Confirmed,
+            AgentProactiveActionKind.QZoneLike,
+            "like target=1001 post=post-a");
+        AgentProactivePendingSuggestion allowedPending = CreatePending(
+            AgentProactivePendingStatus.Confirmed,
+            AgentProactiveActionKind.QZoneLike,
+            "like target=1001 post=post-b");
+
+        QZoneProactiveExecutionResult blocked = await executor.ExecuteAsync(
+            blockedPending,
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: true,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "qzone.like"),
+            config);
+        QZoneProactiveExecutionResult allowed = await executor.ExecuteAsync(
+            allowedPending,
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "qzone.like"),
+            config);
+
+        Assert.That(blocked.Succeeded, Is.False);
+        Assert.That(blocked.Message, Does.Contain("Blocked"));
+        Assert.That(allowed.Succeeded, Is.True);
+        Assert.That(runtime.Likes, Is.EqualTo(new[] { (1001L, "post-b") }));
+    }
+
+    [Test]
+    public async Task ExecuteConfirmedSuggestionSecurityGatewayAuditsBlockedAndAllowedActions()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "alife-qzone-gateway-tests", Guid.NewGuid().ToString("N"));
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentActionGatewayService gateway = new(auditLog: audit);
+        FakeQZoneRuntime runtime = new();
+        QZoneService qzone = new(runtime)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                DryRunExternalActions = false,
+                PrivateChatContactIds = "1001",
+                PrivateContactLikeProbability = 1.0
+            }
+        };
+        QZoneProactiveExecutionService executor = new(qzone, random: () => 0.0, actionGateway: gateway);
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [10001],
+            RequireConfirmationForHighRisk = true
+        };
+
+        QZoneProactiveExecutionResult blocked = await executor.ExecuteAsync(
+            CreatePending(AgentProactivePendingStatus.Confirmed, AgentProactiveActionKind.QZoneLike, "like target=1001 post=post-a"),
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: true,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "qzone.like"),
+            config);
+        QZoneProactiveExecutionResult allowed = await executor.ExecuteAsync(
+            CreatePending(AgentProactivePendingStatus.Confirmed, AgentProactiveActionKind.QZoneLike, "like target=1001 post=post-b"),
+            new AgentPermissionRequest(
+                ActorUserId: 10001,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "qzone.like"),
+            config);
+        AgentAuditLogEntry[] entries = audit.GetRecentEntries(10).ToArray();
+
+        Assert.That(blocked.Succeeded, Is.False);
+        Assert.That(allowed.Succeeded, Is.True);
+        Assert.That(entries.Select(entry => entry.Action), Is.EqualTo(new[] { "qzone.like", "qzone.like" }));
+        Assert.That(entries[0].Succeeded, Is.False);
+        Assert.That(entries[0].Error, Does.Contain("Blocked"));
+        Assert.That(entries[1].Succeeded, Is.True);
+        Assert.That(runtime.Likes, Is.EqualTo(new[] { (1001L, "post-b") }));
+    }
+
+    [Test]
+    public async Task ExecuteConfirmedProactiveSuggestionByIdCanUseSecurityGateway()
+    {
+        AgentProactiveBehaviorService proactiveBehavior = new(clock: () => DateTimeOffset.Parse("2026-06-14T12:00:00Z"));
+        AgentProactivePendingSuggestion pending = proactiveBehavior.EnqueuePendingSuggestion(new AgentProactiveSuggestion(
+            AgentProactiveActionKind.QZoneLike,
+            "test qzone suggestion",
+            AgentAuditRiskLevel.High,
+            RequiresOwnerConfirmation: true,
+            TargetType: "qzone",
+            TargetId: 1001,
+            DraftText: "like target=1001 post=post-a"));
+        proactiveBehavior.ConfirmPendingSuggestion(pending.Id, "owner");
+        FakeQZoneRuntime runtime = new();
+        QZoneService qzone = new(runtime, proactiveBehavior: proactiveBehavior)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                DryRunExternalActions = false,
+                PrivateChatContactIds = "1001",
+                PrivateContactLikeProbability = 1.0
+            }
+        };
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [10001],
+            RequireConfirmationForHighRisk = true
+        };
+
+        QZoneProactiveExecutionResult blocked = await qzone.ExecuteConfirmedProactiveSuggestion(
+            pending.Id,
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: true,
+                RiskLevel: AgentRiskLevel.Low,
+                HasExplicitConfirmation: true,
+                Action: "qzone.like"),
+            config);
+
+        Assert.That(blocked.Succeeded, Is.False);
+        Assert.That(blocked.Message, Does.Contain("Blocked"));
+        Assert.That(runtime.Likes, Is.Empty);
+        Assert.That(proactiveBehavior.GetCompletedSuggestion(pending.Id)?.Status, Is.EqualTo(AgentProactivePendingStatus.Confirmed));
+    }
+
+    [Test]
     public async Task ExecuteConfirmedReplySuggestionRequiresExplicitContent()
     {
         FakeQZoneRuntime runtime = new();
@@ -292,6 +448,16 @@ public class QZoneProactiveExecutionServiceTests
         {
             Likes.Add((targetId, postId));
             return Task.CompletedTask;
+        }
+
+        public Task<QZonePostSnapshot?> GetLatestPost(long targetId)
+        {
+            return Task.FromResult<QZonePostSnapshot?>(null);
+        }
+
+        public Task<IReadOnlyList<QZoneCommentSnapshot>> GetLatestComments(long targetId, string postId, int count)
+        {
+            return Task.FromResult<IReadOnlyList<QZoneCommentSnapshot>>([]);
         }
     }
 }

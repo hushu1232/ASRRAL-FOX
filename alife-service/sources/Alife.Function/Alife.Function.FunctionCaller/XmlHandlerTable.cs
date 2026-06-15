@@ -37,6 +37,12 @@ public class XmlHandlerTable
         }
     }
 
+    public bool ContainsFunction(string name)
+    {
+        return xmlFunctions.TryGetValue(name.ToLower(), out SortedSet<XmlFunction>? xmlFunctionGroup)
+               && xmlFunctionGroup.Count > 0;
+    }
+
     public string Document()
     {
         StringBuilder sb = new();

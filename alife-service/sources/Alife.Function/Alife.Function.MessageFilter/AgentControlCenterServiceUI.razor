@@ -60,9 +60,9 @@
                 </GridCol>
                 <GridCol Xs="24" Md="6">
                     <Card Size="CardSize.Small" Class="agent-control-card metric-card">
-                        <Text Type="TextElementType.Secondary">Risk</Text>
-                        <div class="metric-value">@(snapshot.PendingWorkspaceProposals.Count + snapshot.PendingProactiveSuggestions.Count + snapshot.PendingMaintenanceProposals.Count) proposals</div>
-                        <div class="metric-caption">@HighRiskAuditCount high-risk recent entries</div>
+                        <Text Type="TextElementType.Secondary">Attention</Text>
+                        <div class="metric-value">@snapshot.AttentionSummary.OwnerConfirmationRequiredCount confirm</div>
+                        <div class="metric-caption">@snapshot.AttentionSummary.AutonomousLowRiskActivityCount autonomous low-risk</div>
                     </Card>
                 </GridCol>
             </GridRow>
@@ -70,57 +70,167 @@
             <GridRow Gutter="16">
                 <GridCol Xs="24" Lg="15">
                     <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
-                        <Card Size="CardSize.Small" Title="Current task" Class="agent-control-card">
-                            @if (snapshot.LatestTask == null)
+                        @if (snapshot.NotificationSummary.ShouldNotifyOwner)
+                        {
+                            <Card Size="CardSize.Small" Title="Owner notifications" Class="agent-control-card">
+                                <div class="audit-list compact-list">
+                                    @foreach (AgentControlCenterNotification notification in snapshot.NotificationSummary.Items)
+                                    {
+                                        <div class="notification-line">
+                                            <Tag Color="@GetRiskColor(notification.RiskLevel)">@notification.Kind</Tag>
+                                            <span>@Truncate(notification.Message, 140)</span>
+                                        </div>
+                                    }
+                                </div>
+                            </Card>
+                        }
+
+                        <Card Size="CardSize.Small" Title="Attention summary" Class="agent-control-card">
+                            <GridRow Gutter="12">
+                                <GridCol Xs="24" Md="12">
+                                    <Text Strong>Needs your confirmation</Text>
+                                    @if (snapshot.AttentionSummary.OwnerConfirmationItems.Count == 0)
+                                    {
+                                        <div class="empty-state">No owner confirmation needed</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="audit-list compact-list">
+                                            @foreach (string item in snapshot.AttentionSummary.OwnerConfirmationItems.Take(6))
+                                            {
+                                                <div class="summary-line">
+                                                    <Tag Color="@("orange")">Review</Tag>
+                                                    <span>@Truncate(item, 96)</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </GridCol>
+                                <GridCol Xs="24" Md="12">
+                                    <Text Strong>Autonomous low-risk work</Text>
+                                    @if (snapshot.AttentionSummary.AutonomousLowRiskItems.Count == 0)
+                                    {
+                                        <div class="empty-state">No recent autonomous low-risk work</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="audit-list compact-list">
+                                            @foreach (string item in snapshot.AttentionSummary.AutonomousLowRiskItems.Take(6))
+                                            {
+                                                <div class="summary-line">
+                                                    <Tag Color="@("green")">Done</Tag>
+                                                    <span>@Truncate(item, 96)</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </GridCol>
+                            </GridRow>
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Agent self-check" Class="agent-control-card">
+                            <GridRow Gutter="12">
+                                <GridCol Xs="24" Md="12">
+                                    <Text Type="TextElementType.Secondary">Owner review</Text>
+                                    <div class="metric-value compact">@snapshot.SelfCheck.OwnerReviewCount</div>
+                                </GridCol>
+                                <GridCol Xs="24" Md="12">
+                                    <Text Type="TextElementType.Secondary">Autonomous</Text>
+                                    <div class="metric-value compact">@snapshot.SelfCheck.AutonomousRecommendationCount</div>
+                                </GridCol>
+                            </GridRow>
+                            <Divider Style="margin: 10px 0;" />
+                            @if (snapshot.SelfCheck.Items.Count == 0)
                             {
-                                <div class="empty-state">No tracked task</div>
+                                <div class="empty-state compact">No self-check items</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list compact-list">
+                                    @foreach (AgentControlCenterSelfCheckItem item in snapshot.SelfCheck.Items.Take(6))
+                                    {
+                                        <div class="audit-line">
+                                            <div>
+                                                <Text Strong>@item.Category</Text>
+                                                <div class="muted">@Truncate(item.Summary, 120)</div>
+                                                <div class="muted">Action: @Truncate(item.RecommendedAction, 140)</div>
+                                                @if (string.IsNullOrWhiteSpace(item.ActionId) == false)
+                                                {
+                                                    <div class="confirmation-text">agent_self_check_apply actionId="@item.ActionId"</div>
+                                                }
+                                            </div>
+                                            <Space>
+                                                <SpaceItem>
+                                                    <Tag Color="@GetRiskColor(item.RiskLevel)">@item.RiskLevel</Tag>
+                                                </SpaceItem>
+                                                <SpaceItem>
+                                                    <Tag Color="@GetSelfCheckHandlingColor(item.CanAgentHandleAutonomously)">
+                                                        @(item.CanAgentHandleAutonomously ? "Agent" : "Owner")
+                                                    </Tag>
+                                                </SpaceItem>
+                                            </Space>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Active task queue" Class="agent-control-card">
+                            @if (snapshot.ActiveTasks.Count == 0)
+                            {
+                                <div class="empty-state">No active tasks</div>
                             }
                             else
                             {
                                 <Flex Direction="FlexDirection.Vertical" Gap="@("10")">
-                                    <div>
-                                        <Text Strong>@snapshot.LatestTask.Goal</Text>
-                                        <Tag Color="@GetTaskColor(snapshot.LatestTask.Status)" Style="margin-left: 8px;">
-                                            @snapshot.LatestTask.Status
-                                        </Tag>
-                                    </div>
-                                    <Space>
-                                        <SpaceItem>
-                                            <Button Size="@ButtonSize.Small"
-                                                    Disabled="@(snapshot.LatestTask.Status != AgentTaskStatus.Planned)"
-                                                    OnClick="@(() => StartTask(snapshot.LatestTask.Id))">
-                                                Start
-                                            </Button>
-                                        </SpaceItem>
-                                        <SpaceItem>
-                                            <Button Size="@ButtonSize.Small"
-                                                    Type="@ButtonType.Primary"
-                                                    Disabled="@(snapshot.LatestTask.Status is AgentTaskStatus.Completed or AgentTaskStatus.Failed or AgentTaskStatus.Cancelled)"
-                                                    OnClick="@(() => CompleteTask(snapshot.LatestTask.Id))">
-                                                Complete
-                                            </Button>
-                                        </SpaceItem>
-                                    </Space>
-                                    @if (snapshot.LatestTask.Steps.Count > 0)
+                                    @foreach (AgentTaskState task in snapshot.ActiveTasks.Take(4))
                                     {
-                                        <div class="step-list">
-                                            @foreach (string step in snapshot.LatestTask.Steps)
+                                        <div class="task-queue-item">
+                                            <div>
+                                                <Text Strong>@task.Goal</Text>
+                                                <Tag Color="@GetTaskColor(task.Status)" Style="margin-left: 8px;">
+                                                    @task.Status
+                                                </Tag>
+                                            </div>
+                                            <Space>
+                                                <SpaceItem>
+                                                    <Button Size="@ButtonSize.Small"
+                                                            Disabled="@(task.Status != AgentTaskStatus.Planned)"
+                                                            OnClick="@(() => StartTask(task.Id))">
+                                                        Start
+                                                    </Button>
+                                                </SpaceItem>
+                                                <SpaceItem>
+                                                    <Button Size="@ButtonSize.Small"
+                                                            Type="@ButtonType.Primary"
+                                                            Disabled="@(task.Status is AgentTaskStatus.Completed or AgentTaskStatus.Failed or AgentTaskStatus.Cancelled)"
+                                                            OnClick="@(() => CompleteTask(task.Id))">
+                                                        Complete
+                                                    </Button>
+                                                </SpaceItem>
+                                            </Space>
+                                            @if (task.Steps.Count > 0)
                                             {
-                                                <div class="step-line">@step</div>
+                                                <div class="step-list">
+                                                    @foreach (string step in task.Steps)
+                                                    {
+                                                        <div class="step-line">@step</div>
+                                                    }
+                                                </div>
                                             }
+                                            <div class="event-list">
+                                                @foreach (AgentTaskEvent taskEvent in task.Events.TakeLast(3))
+                                                {
+                                                    <div class="event-line">
+                                                        <span class="event-time">@taskEvent.Timestamp.ToString("HH:mm:ss")</span>
+                                                        <span>@taskEvent.Kind</span>
+                                                        <span>@taskEvent.Actor</span>
+                                                        <span>@taskEvent.Detail</span>
+                                                    </div>
+                                                }
+                                            </div>
                                         </div>
                                     }
-                                    <div class="event-list">
-                                        @foreach (AgentTaskEvent taskEvent in snapshot.LatestTask.Events.TakeLast(5))
-                                        {
-                                            <div class="event-line">
-                                                <span class="event-time">@taskEvent.Timestamp.ToString("HH:mm:ss")</span>
-                                                <span>@taskEvent.Kind</span>
-                                                <span>@taskEvent.Actor</span>
-                                                <span>@taskEvent.Detail</span>
-                                            </div>
-                                        }
-                                    </div>
                                 </Flex>
                             }
                         </Card>
@@ -149,6 +259,15 @@
                         </Card>
 
                         <Card Size="CardSize.Small" Title="Maintenance proposals" Class="agent-control-card">
+                            <Space Style="margin-bottom: 10px;">
+                                <SpaceItem>
+                                    <Button Size="@ButtonSize.Small"
+                                            Type="@ButtonType.Primary"
+                                            OnClick="@InspectMaintenance">
+                                        Inspect
+                                    </Button>
+                                </SpaceItem>
+                            </Space>
                             @if (string.IsNullOrWhiteSpace(lastMaintenanceActionMessage) == false)
                             {
                                 <Alert Type="AlertType.Info"
@@ -339,20 +458,150 @@
                                         @GetEnabledText(snapshot.Configuration.AllowPassiveGroupListening)
                                     </Tag>
                                 </div>
-                                <div class="command-line">
-                                    <span>Proactive chat</span>
-                                    <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowProactiveChat)">
-                                        @GetEnabledText(snapshot.Configuration.AllowProactiveChat)
-                                    </Tag>
+                            <div class="command-line">
+                                <span>Proactive chat</span>
+                                <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowProactiveChat)">
+                                    @GetEnabledText(snapshot.Configuration.AllowProactiveChat)
+                                </Tag>
                                 </div>
                                 <div class="command-line">
-                                    <span>Proactive intensity</span>
-                                    <Tag Color="@("blue")">@snapshot.Configuration.ProactiveChatIntensity</Tag>
-                                </div>
+                                <span>Proactive intensity</span>
+                                <Tag Color="@("blue")">@snapshot.Configuration.ProactiveChatIntensity</Tag>
+                            </div>
+                            <div class="command-line">
+                                <span>Auto maintenance</span>
+                                <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowAutomaticMaintenanceInspection)">
+                                    @GetEnabledText(snapshot.Configuration.AllowAutomaticMaintenanceInspection)
+                                </Tag>
+                            </div>
+                            <div class="command-line">
+                                <span>Maintenance interval</span>
+                                <Tag Color="@("blue")">@snapshot.Configuration.MaintenanceInspectionIntervalMinutes min</Tag>
+                            </div>
+                            <div class="command-line">
+                                <span>Duplicate cooldown</span>
+                                <Tag Color="@("blue")">@snapshot.Configuration.MaintenanceDuplicateCooldownMinutes min</Tag>
+                            </div>
+                            <div class="command-line">
+                                <span>Self-config limit</span>
+                                <Tag Color="@("blue")">@snapshot.Configuration.MaxSelfConfigChangesPerHour / hour</Tag>
+                            </div>
+                        </Flex>
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Security gateway" Class="agent-control-card">
+                            <div class="command-list">
+                                @foreach (AgentExecutionGatewayDecision decision in snapshot.SecurityGatewayPreview)
+                                {
+                                    <div class="command-line">
+                                        <div>
+                                            <Text Strong>@decision.Action</Text>
+                                            <div class="muted">@Truncate(decision.Reason, 96)</div>
+                                        </div>
+                                        <Tag Color="@GetExecutionStatusColor(decision.Status)">
+                                            @decision.Status
+                                        </Tag>
+                                    </div>
+                                }
+                            </div>
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Runtime visibility" Class="agent-control-card">
+                            <Flex Direction="FlexDirection.Vertical" Gap="@("10")">
                                 <div class="command-line">
-                                    <span>Self-config limit</span>
-                                    <Tag Color="@("blue")">@snapshot.Configuration.MaxSelfConfigChangesPerHour / hour</Tag>
+                                    <div>
+                                        <Text Strong>Latency</Text>
+                                        <div class="muted">
+                                            first content @FormatMs(snapshot.RuntimeVisibility.ChatLatency.LastFirstContentLatencyMs),
+                                            duration @FormatMs(snapshot.RuntimeVisibility.ChatLatency.LastChatDurationMs)
+                                        </div>
+                                    </div>
+                                    <Tag Color="@("blue")">stream</Tag>
                                 </div>
+
+                                <div>
+                                    <Text Strong>Streaming policies</Text>
+                                    <div class="policy-grid">
+                                        @foreach (AgentStreamingPolicyVisibility policy in snapshot.RuntimeVisibility.StreamingPolicies)
+                                        {
+                                            <div class="policy-line">
+                                                <span>@policy.Name</span>
+                                                <Tag Color="@("blue")">@policy.Mode</Tag>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="command-line">
+                                    <div>
+                                        <Text Strong>Event pipeline</Text>
+                                        <div class="muted">
+                                            @snapshot.RuntimeVisibility.EventPipeline.MatcherCount matcher(s)
+                                            @if (snapshot.RuntimeVisibility.EventPipeline.Matchers.Count > 0)
+                                            {
+                                                <span>: @string.Join(", ", snapshot.RuntimeVisibility.EventPipeline.Matchers.Take(3).Select(matcher => matcher.Name))</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <Tag Color="@("purple")">events</Tag>
+                                </div>
+
+                                <div class="command-line">
+                                    <div>
+                                        <Text Strong>Action gateway audit</Text>
+                                        <div class="muted">
+                                            @snapshot.RuntimeVisibility.ActionGatewayAudit.SucceededCount succeeded /
+                                            @snapshot.RuntimeVisibility.ActionGatewayAudit.BlockedCount blocked /
+                                            @snapshot.RuntimeVisibility.ActionGatewayAudit.FailedCount failed
+                                        </div>
+                                    </div>
+                                    <Tag Color="@("orange")">guard</Tag>
+                                </div>
+
+                                <div class="command-line">
+                                    <div>
+                                        <Text Strong>Self-check scheduler</Text>
+                                        <div class="muted">
+                                            last @FormatTime(snapshot.SelfCheckScheduler.LastCheckedAt),
+                                            next @FormatTime(snapshot.SelfCheckScheduler.NextCheckAt),
+                                            skip @snapshot.SelfCheckScheduler.LastSkipReason
+                                        </div>
+                                    </div>
+                                    <Tag Color="@GetSchedulerColor(snapshot.SelfCheckScheduler.LastSkipReason)">loop</Tag>
+                                </div>
+
+                                @if (snapshot.RuntimeVisibility.BackgroundTasks.Count == 0)
+                                {
+                                    <div class="empty-state compact">No recent background task results</div>
+                                }
+                                else
+                                {
+                                    <div class="audit-list compact-list">
+                                        @foreach (AgentBackgroundTaskResult result in snapshot.RuntimeVisibility.BackgroundTasks.Take(3))
+                                        {
+                                            <div class="summary-line">
+                                                <Tag Color="@(result.Status == AgentBackgroundTaskStatus.Completed ? "green" : "red")">@result.Status</Tag>
+                                                <span>@result.TaskName: @Truncate(result.Error ?? result.ResultText, 90)</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                                @if (snapshot.RuntimeVisibility.RecentRunSessions.Count > 0)
+                                {
+                                    <div>
+                                        <Text Strong>Recent run sessions</Text>
+                                        <div class="audit-list compact-list">
+                                            @foreach (AgentRunSnapshot run in snapshot.RuntimeVisibility.RecentRunSessions.Take(3))
+                                            {
+                                                <div class="summary-line">
+                                                    <Tag Color="@GetRunStatusColor(run.Status)">@run.Status</Tag>
+                                                    <span>@run.SourceEventType: @run.ToolSteps.Count tool step(s)</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
                             </Flex>
                         </Card>
 
@@ -531,6 +780,22 @@
         return Task.CompletedTask;
     }
 
+    Task InspectMaintenance()
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        ChatRuntimeState runtime = ChatActivity?.ChatBot.GetRuntimeState()
+                                   ?? new ChatRuntimeState(false, 0, 0, null, []);
+        int cooldownMinutes = Module.Configuration?.MaintenanceDuplicateCooldownMinutes ?? 120;
+        AgentMaintenanceInspectionResult result = Module.InspectMaintenanceFromControlCenter(
+            runtime,
+            TimeSpan.FromMinutes(Math.Max(1, cooldownMinutes)));
+        lastMaintenanceActionMessage = result.Message;
+        Refresh();
+        return Task.CompletedTask;
+    }
+
     void RefreshSnapshot()
     {
         if (Module == null)
@@ -542,6 +807,15 @@
         ChatRuntimeState runtime = ChatActivity?.ChatBot.GetRuntimeState()
                                    ?? new ChatRuntimeState(false, 0, 0, null, []);
         string characterName = Character?.Name ?? "Agent";
+        AgentControlCenterSelfCheckLoopResult? automaticSelfCheck = Module.TryAutomaticSelfCheck(
+            runtime,
+            characterName,
+            "agent:control-center");
+        if (automaticSelfCheck?.MaintenanceInspection is { Created: true } or { Proposal: not null })
+            lastMaintenanceActionMessage = $"Automatic inspection: {automaticSelfCheck.MaintenanceInspection.Message}";
+        else if (automaticSelfCheck?.WakeRecommended == true)
+            lastMaintenanceActionMessage = "Automatic self-check found new items for agent attention.";
+
         snapshot = Module.BuildSnapshot(runtime, characterName);
     }
 
@@ -600,12 +874,49 @@
 
     static string GetEnabledText(bool enabled) => enabled ? "enabled" : "disabled";
 
+    static string GetSelfCheckHandlingColor(bool canAgentHandleAutonomously) =>
+        canAgentHandleAutonomously ? "green" : "orange";
+
     static string GetProactiveStatusColor(AgentProactivePendingStatus status) => status switch
     {
         AgentProactivePendingStatus.Confirmed => "blue",
         AgentProactivePendingStatus.Executed => "green",
         AgentProactivePendingStatus.Dismissed => "default",
         _ => "orange"
+    };
+
+    static string GetExecutionStatusColor(AgentExecutionDecisionStatus status) => status switch
+    {
+        AgentExecutionDecisionStatus.AllowedAutomatically => "green",
+        AgentExecutionDecisionStatus.OwnerConfirmationRequired => "orange",
+        _ => "red"
+    };
+
+    static string FormatMs(long? milliseconds)
+    {
+        return milliseconds == null ? "n/a" : $"{milliseconds.Value} ms";
+    }
+
+    static string FormatTime(DateTimeOffset? timestamp)
+    {
+        return timestamp?.ToString("HH:mm:ss") ?? "n/a";
+    }
+
+    static string GetSchedulerColor(string reason) => reason switch
+    {
+        "none" => "green",
+        "interval" => "blue",
+        "chatting" => "orange",
+        "disabled" => "default",
+        _ => "default"
+    };
+
+    static string GetRunStatusColor(AgentRunStatus status) => status switch
+    {
+        AgentRunStatus.Completed => "green",
+        AgentRunStatus.Failed => "red",
+        AgentRunStatus.Cancelled => "default",
+        _ => "blue"
     };
 
     static string Truncate(string value, int maxLength)
@@ -692,6 +1003,63 @@
         background: #fff2f0;
     }
 
+    .compact-list {
+        margin-top: 8px;
+    }
+
+    .summary-line {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 8px;
+        overflow-wrap: anywhere;
+    }
+
+    .notification-line {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        border: 1px solid #ffe7ba;
+        border-radius: 6px;
+        background: #fffaf0;
+        padding: 8px;
+        overflow-wrap: anywhere;
+    }
+
+    .policy-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 8px;
+    }
+
+    .policy-line {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 7px 8px;
+        overflow-wrap: anywhere;
+    }
+
+    .task-queue-item {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 10px;
+        overflow-wrap: anywhere;
+    }
+
+    .task-queue-item + .task-queue-item {
+        margin-top: 8px;
+    }
+
     .audit-error {
         color: #cf1322;
         font-size: 12px;
@@ -751,5 +1119,10 @@
         border: 1px dashed #d9d9d9;
         border-radius: 6px;
         background: #fff;
+    }
+
+    .empty-state.compact {
+        padding: 12px;
+        font-size: 12px;
     }
 </style>
