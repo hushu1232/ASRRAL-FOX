@@ -61,7 +61,7 @@
                 <GridCol Xs="24" Md="6">
                     <Card Size="CardSize.Small" Class="agent-control-card metric-card">
                         <Text Type="TextElementType.Secondary">Risk</Text>
-                        <div class="metric-value">@(snapshot.PendingWorkspaceProposals.Count + snapshot.PendingProactiveSuggestions.Count) proposals</div>
+                        <div class="metric-value">@(snapshot.PendingWorkspaceProposals.Count + snapshot.PendingProactiveSuggestions.Count + snapshot.PendingMaintenanceProposals.Count) proposals</div>
                         <div class="metric-caption">@HighRiskAuditCount high-risk recent entries</div>
                     </Card>
                 </GridCol>
@@ -145,6 +145,31 @@
                                         </Panel>
                                     }
                                 </Collapse>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Maintenance proposals" Class="agent-control-card">
+                            @if (snapshot.PendingMaintenanceProposals.Count == 0)
+                            {
+                                <div class="empty-state">No pending maintenance proposals</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list">
+                                    @foreach (AgentMaintenanceProposal proposal in snapshot.PendingMaintenanceProposals.Take(6))
+                                    {
+                                        <div class="audit-line">
+                                            <div>
+                                                <Text Strong>@proposal.Title</Text>
+                                                <div class="muted">@Truncate(proposal.Evidence, 140)</div>
+                                                <div class="confirmation-text">Use workspace_propose_replace first; execute workspace_apply_proposal only after owner confirmation.</div>
+                                            </div>
+                                            <Tag Color="@GetRiskColor(proposal.RiskLevel)">
+                                                @proposal.RiskLevel
+                                            </Tag>
+                                        </div>
+                                    }
+                                </div>
                             }
                         </Card>
 

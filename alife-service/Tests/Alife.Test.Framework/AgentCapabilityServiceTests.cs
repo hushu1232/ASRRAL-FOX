@@ -583,6 +583,46 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void MaintenanceServiceCreatesOwnerConfirmedRepairProposalFromIssueReport()
+    {
+        AgentIssueReportSnapshot issueReport = new(
+            DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+            "System.InvalidOperationException: Browser runtime failed",
+            [
+                new ChatRuntimeEvent(
+                    DateTimeOffset.Parse("2026-06-15T09:59:00Z"),
+                    "Error",
+                    "System.InvalidOperationException: Browser runtime failed")
+            ],
+            [
+                new AgentAuditLogEntry(
+                    DateTimeOffset.Parse("2026-06-15T09:58:00Z"),
+                    "agent.command.test",
+                    "agent",
+                    "dotnet test failed",
+                    AgentAuditRiskLevel.High,
+                    false,
+                    "1 failed test")
+            ],
+            [
+                new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")
+            ]);
+        AgentMaintenanceService service = new();
+
+        AgentMaintenanceProposal proposal = service.ProposeFromIssueReport(issueReport, "agent");
+        string formatted = AgentMaintenanceService.FormatProposal(proposal);
+
+        Assert.That(proposal.CanApplyAutomatically, Is.False);
+        Assert.That(proposal.RequiresOwnerConfirmationForExecution, Is.True);
+        Assert.That(proposal.RiskLevel, Is.EqualTo(AgentAuditRiskLevel.High));
+        Assert.That(proposal.Evidence, Does.Contain("Browser runtime failed"));
+        Assert.That(proposal.SuggestedNextSteps, Has.Some.Contains("workspace_propose_replace"));
+        Assert.That(formatted, Does.Contain("No files or configuration were changed"));
+        Assert.That(formatted, Does.Contain("workspace_apply_proposal"));
+        Assert.That(service.GetPendingProposals().Select(item => item.Id), Does.Contain(proposal.Id));
+    }
+
+    [Test]
     public void AgentControlCenterBuildsReadOnlySnapshot()
     {
         string root = CreateTempWorkspace();
@@ -597,6 +637,15 @@ public class AgentCapabilityServiceTests
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         File.WriteAllText(file, "class AgentNote {}\n");
         workspace.ProposeReplace("src/AgentNote.cs", "AgentNote", "GeneratedAgentNote");
+        AgentMaintenanceService maintenance = new(auditLog: audit);
+        AgentMaintenanceProposal maintenanceProposal = maintenance.ProposeFromIssueReport(
+            new AgentIssueReportSnapshot(
+                DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+                "Browser runtime failed",
+                [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T09:59:00Z"), "Error", "Browser runtime failed")],
+                [],
+                [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            "agent");
         AgentCommandPolicy commandPolicy = new([
             new AgentCommandDefinition("test", "Run tests", "dotnet", "test", root, TimeSpan.FromSeconds(30))
         ]);
@@ -612,7 +661,8 @@ public class AgentCapabilityServiceTests
             workspace,
             new AgentWorkspacePolicy([root]),
             commandPolicy,
-            audit)
+            audit,
+            maintenance: maintenance)
         {
             ProactiveBehavior = proactive
         };
@@ -655,6 +705,8 @@ public class AgentCapabilityServiceTests
         Assert.That(snapshot.PendingProactiveSuggestions[0].Suggestion.Kind, Is.EqualTo(AgentProactiveActionKind.QZoneReply));
         Assert.That(snapshot.CompletedProactiveSuggestions, Has.Count.EqualTo(1));
         Assert.That(snapshot.CompletedProactiveSuggestions[0].Status, Is.EqualTo(AgentProactivePendingStatus.Confirmed));
+        Assert.That(snapshot.PendingMaintenanceProposals.Select(proposal => proposal.Id), Does.Contain(maintenanceProposal.Id));
+        Assert.That(snapshot.PendingMaintenanceProposals[0].CanApplyAutomatically, Is.False);
     }
 
     [Test]

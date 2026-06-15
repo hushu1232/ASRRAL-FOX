@@ -54,6 +54,7 @@ public sealed record AgentControlCenterSnapshot(
     IReadOnlyList<AgentWorkspacePatchProposal> PendingWorkspaceProposals,
     IReadOnlyList<AgentProactivePendingSuggestion> PendingProactiveSuggestions,
     IReadOnlyList<AgentProactivePendingSuggestion> CompletedProactiveSuggestions,
+    IReadOnlyList<AgentMaintenanceProposal> PendingMaintenanceProposals,
     IReadOnlyList<string> WorkspaceRoots,
     IReadOnlyList<AgentCommandDefinition> AllowedCommands,
     IReadOnlyList<AgentAuditLogEntry> RecentAuditEntries);
@@ -73,7 +74,8 @@ public class AgentControlCenterService(
     AgentCommandPolicy? commandPolicy = null,
     AgentAuditLogService? auditLog = null,
     XmlFunctionCaller? functionCaller = null,
-    ConfigurationSystem? configurationSystem = null)
+    ConfigurationSystem? configurationSystem = null,
+    AgentMaintenanceService? maintenance = null)
     : InteractiveModule<AgentControlCenterService>, IConfigurable<AgentControlCenterConfig>
 {
     readonly AgentAuditLogService auditLog = auditLog ?? new AgentAuditLogService(
@@ -81,6 +83,7 @@ public class AgentControlCenterService(
     readonly AgentCommandPolicy commandPolicy = NormalizeCommandPolicy(commandPolicy ?? CreateDefaultCommandPolicy());
     readonly AgentDiagnosticsService diagnostics = diagnostics ?? new AgentDiagnosticsService();
     readonly AgentIssueReportService issueReports = issueReports ?? new AgentIssueReportService(auditLog);
+    readonly AgentMaintenanceService maintenance = maintenance ?? new AgentMaintenanceService(issueReports, auditLog);
     readonly AgentTaskService tasks = tasks ?? new AgentTaskService(auditLog);
     readonly AgentWorkspaceService workspace = workspace ?? new AgentWorkspaceService(
         workspacePolicy,
@@ -188,6 +191,7 @@ public class AgentControlCenterService(
             workspace.GetPendingProposals(),
             proactiveBehavior?.GetPendingSuggestions() ?? [],
             proactiveBehavior?.GetCompletedSuggestions() ?? [],
+            maintenance.GetPendingProposals(),
             workspacePolicy.AllowedRoots,
             commandPolicy.AllowedCommands,
             auditLog.GetRecentEntries(12));
