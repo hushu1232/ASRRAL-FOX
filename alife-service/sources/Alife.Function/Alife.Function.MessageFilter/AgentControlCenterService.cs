@@ -224,6 +224,13 @@ public class AgentControlCenterService(
         return GetProactiveBehavior().CleanupSuggestions(maxPendingAge, maxCompletedAge, "agent-control-ui");
     }
 
+    public AgentMaintenanceArchiveResult ArchiveMaintenanceProposalFromControlCenter(
+        string id,
+        string resolution = "handled from Agent Control Center")
+    {
+        return maintenance.ArchiveProposal(id, "agent-control-ui", resolution);
+    }
+
     public async Task<AgentProactiveExternalExecutionResult> ExecuteProactiveSuggestionFromControlCenter(string id)
     {
         AgentProactiveBehaviorService proactive = GetProactiveBehavior();

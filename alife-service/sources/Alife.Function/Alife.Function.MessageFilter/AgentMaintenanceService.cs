@@ -24,6 +24,23 @@ public sealed record AgentMaintenanceProposal(
     bool RequiresOwnerConfirmationForExecution,
     bool CanApplyAutomatically);
 
+public sealed record AgentMaintenanceArchivedProposal(
+    AgentMaintenanceProposal Proposal,
+    DateTimeOffset ArchivedAt,
+    string Actor,
+    string Resolution);
+
+public sealed record AgentMaintenanceArchiveResult(
+    bool Archived,
+    string Message,
+    AgentMaintenanceArchivedProposal? ArchivedProposal = null);
+
+public sealed class AgentMaintenanceProposalPersistenceState
+{
+    public List<AgentMaintenanceProposal> Pending { get; set; } = [];
+    public List<AgentMaintenanceArchivedProposal> Archived { get; set; } = [];
+}
+
 [Module(
     "Agent Maintenance",
     "Turns runtime issue reports into owner-confirmed self-maintenance proposals without directly changing files or configuration.",
@@ -43,6 +60,8 @@ public class AgentMaintenanceService(
     readonly AgentAuditLogService auditLog = auditLog ?? new AgentAuditLogService(
         Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-audit.jsonl"));
     readonly Dictionary<string, AgentMaintenanceProposal> proposals = LoadProposals(
+        proposalStorePath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-maintenance-proposals.json"));
+    readonly Dictionary<string, AgentMaintenanceArchivedProposal> archivedProposals = LoadArchivedProposals(
         proposalStorePath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-maintenance-proposals.json"));
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_maintenance_propose", budgetCost: 4)]
@@ -70,6 +89,32 @@ public class AgentMaintenanceService(
         builder.AppendLine("Pending agent maintenance proposals:");
         foreach (AgentMaintenanceProposal proposal in pending)
             builder.AppendLine($"- {proposal.Id}: {proposal.Title} [{proposal.RiskLevel}]");
+        Poke(builder.ToString().TrimEnd());
+    }
+
+    [XmlFunction(FunctionMode.OneShot, name: "agent_maintenance_archive")]
+    [Description("Archive a pending self-maintenance proposal after it has been handled. This only updates local maintenance state and audit log.")]
+    public void ArchiveMaintenanceProposal(string id, string resolution = "", string actor = "owner")
+    {
+        AgentMaintenanceArchiveResult result = ArchiveProposal(id, actor, resolution);
+        Poke(result.Message);
+    }
+
+    [XmlFunction(FunctionMode.OneShot, name: "agent_maintenance_archived")]
+    [Description("List recently archived self-maintenance proposals.")]
+    public void ShowArchivedMaintenanceProposals()
+    {
+        IReadOnlyList<AgentMaintenanceArchivedProposal> archived = GetArchivedProposals();
+        if (archived.Count == 0)
+        {
+            Poke("No archived agent maintenance proposals.");
+            return;
+        }
+
+        StringBuilder builder = new();
+        builder.AppendLine("Archived agent maintenance proposals:");
+        foreach (AgentMaintenanceArchivedProposal item in archived.Take(8))
+            builder.AppendLine($"- {item.Proposal.Id}: {item.Proposal.Title} [{item.Proposal.RiskLevel}] resolution={item.Resolution}");
         Poke(builder.ToString().TrimEnd());
     }
 
@@ -112,6 +157,48 @@ public class AgentMaintenanceService(
                 .OrderByDescending(proposal => proposal.CreatedAt)
                 .ToArray();
         }
+    }
+
+    public IReadOnlyList<AgentMaintenanceArchivedProposal> GetArchivedProposals()
+    {
+        lock (proposalGate)
+        {
+            return archivedProposals.Values
+                .OrderByDescending(proposal => proposal.ArchivedAt)
+                .ToArray();
+        }
+    }
+
+    public AgentMaintenanceArchiveResult ArchiveProposal(string id, string actor, string resolution = "")
+    {
+        string normalizedId = (id ?? string.Empty).Trim();
+        string normalizedActor = string.IsNullOrWhiteSpace(actor) ? "owner" : actor.Trim();
+        string normalizedResolution = string.IsNullOrWhiteSpace(resolution) ? "handled" : resolution.Trim();
+
+        AgentMaintenanceProposal proposal;
+        AgentMaintenanceArchivedProposal archived;
+        lock (proposalGate)
+        {
+            if (proposals.TryGetValue(normalizedId, out proposal!) == false)
+                return new AgentMaintenanceArchiveResult(false, "Maintenance proposal was not found.");
+
+            archived = new AgentMaintenanceArchivedProposal(
+                proposal,
+                DateTimeOffset.Now,
+                normalizedActor,
+                normalizedResolution);
+            proposals.Remove(normalizedId);
+            archivedProposals[normalizedId] = archived;
+        }
+        SaveProposals();
+
+        auditLog.Record(
+            "agent.maintenance.archived",
+            normalizedActor,
+            $"{proposal.Title}; resolution={normalizedResolution}",
+            proposal.RiskLevel,
+            succeeded: true);
+        return new AgentMaintenanceArchiveResult(true, "Maintenance proposal archived.", archived);
     }
 
     public static string FormatProposal(AgentMaintenanceProposal proposal)
@@ -190,15 +277,21 @@ public class AgentMaintenanceService(
     void SaveProposals()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(proposalStorePath)!);
-        AgentMaintenanceProposal[] snapshot;
+        AgentMaintenanceProposalPersistenceState state;
         lock (proposalGate)
         {
-            snapshot = proposals.Values
-                .OrderByDescending(proposal => proposal.CreatedAt)
-                .ToArray();
+            state = new AgentMaintenanceProposalPersistenceState
+            {
+                Pending = proposals.Values
+                    .OrderByDescending(proposal => proposal.CreatedAt)
+                    .ToList(),
+                Archived = archivedProposals.Values
+                    .OrderByDescending(proposal => proposal.ArchivedAt)
+                    .ToList()
+            };
         }
 
-        File.WriteAllText(proposalStorePath, JsonSerializer.Serialize(snapshot, JsonOptions));
+        File.WriteAllText(proposalStorePath, JsonSerializer.Serialize(state, JsonOptions));
     }
 
     static Dictionary<string, AgentMaintenanceProposal> LoadProposals(string path)
@@ -210,15 +303,48 @@ public class AgentMaintenanceService(
         try
         {
             string json = File.ReadAllText(fullPath);
-            AgentMaintenanceProposal[]? restored = JsonSerializer.Deserialize<AgentMaintenanceProposal[]>(json, JsonOptions);
-            return (restored ?? [])
-                .Where(proposal => string.IsNullOrWhiteSpace(proposal.Id) == false)
-                .ToDictionary(proposal => proposal.Id, StringComparer.OrdinalIgnoreCase);
+            AgentMaintenanceProposal[] restored = json.TrimStart().StartsWith("[", StringComparison.Ordinal)
+                ? JsonSerializer.Deserialize<AgentMaintenanceProposal[]>(json, JsonOptions) ?? []
+                : JsonSerializer.Deserialize<AgentMaintenanceProposalPersistenceState>(json, JsonOptions)?.Pending.ToArray() ?? [];
+            return ToProposalDictionary(restored);
         }
         catch
         {
             return new Dictionary<string, AgentMaintenanceProposal>(StringComparer.OrdinalIgnoreCase);
         }
+    }
+
+    static Dictionary<string, AgentMaintenanceArchivedProposal> LoadArchivedProposals(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        if (File.Exists(fullPath) == false)
+            return new Dictionary<string, AgentMaintenanceArchivedProposal>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            string json = File.ReadAllText(fullPath);
+            if (json.TrimStart().StartsWith("[", StringComparison.Ordinal))
+                return new Dictionary<string, AgentMaintenanceArchivedProposal>(StringComparer.OrdinalIgnoreCase);
+
+            AgentMaintenanceArchivedProposal[] restored =
+                JsonSerializer.Deserialize<AgentMaintenanceProposalPersistenceState>(json, JsonOptions)?.Archived.ToArray() ?? [];
+            return restored
+                .Where(item => string.IsNullOrWhiteSpace(item.Proposal.Id) == false)
+                .GroupBy(item => item.Proposal.Id, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new Dictionary<string, AgentMaintenanceArchivedProposal>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    static Dictionary<string, AgentMaintenanceProposal> ToProposalDictionary(IEnumerable<AgentMaintenanceProposal> restored)
+    {
+        return restored
+            .Where(proposal => string.IsNullOrWhiteSpace(proposal.Id) == false)
+            .GroupBy(proposal => proposal.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
     }
 
     static readonly JsonSerializerOptions JsonOptions = new()

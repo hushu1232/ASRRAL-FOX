@@ -646,6 +646,33 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void MaintenanceServiceArchivesProposalAndPersistsResolution()
+    {
+        string root = CreateTempWorkspace();
+        string storePath = Path.Combine(root, "maintenance-proposals.json");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentMaintenanceService writer = new(auditLog: audit, proposalStorePath: storePath);
+        AgentMaintenanceProposal proposal = writer.ProposeFromIssueReport(
+            new AgentIssueReportSnapshot(
+                DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+                "Browser runtime failed",
+                [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T09:59:00Z"), "Error", "Browser runtime failed")],
+                [],
+                [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            "agent");
+
+        AgentMaintenanceArchiveResult result = writer.ArchiveProposal(proposal.Id, "owner", "fixed by workspace proposal and tests");
+        AgentMaintenanceService reader = new(proposalStorePath: storePath);
+
+        Assert.That(result.Archived, Is.True);
+        Assert.That(writer.GetPendingProposals(), Is.Empty);
+        Assert.That(reader.GetPendingProposals(), Is.Empty);
+        Assert.That(reader.GetArchivedProposals().Select(item => item.Proposal.Id), Does.Contain(proposal.Id));
+        Assert.That(reader.GetArchivedProposals().Single().Resolution, Does.Contain("fixed by workspace proposal"));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.maintenance.archived"));
+    }
+
+    [Test]
     public void AgentControlCenterBuildsReadOnlySnapshot()
     {
         string root = CreateTempWorkspace();
@@ -748,6 +775,32 @@ public class AgentCapabilityServiceTests
         Assert.That(completed.Status, Is.EqualTo(AgentTaskStatus.Completed));
         Assert.That(tasks.GetLatestTask()?.Status, Is.EqualTo(AgentTaskStatus.Completed));
         Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.task.completed"));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Actor), Does.Contain("agent-control-ui"));
+    }
+
+    [Test]
+    public void AgentControlCenterArchivesMaintenanceProposal()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentMaintenanceService maintenance = new(auditLog: audit, proposalStorePath: Path.Combine(root, "maintenance.json"));
+        AgentMaintenanceProposal proposal = maintenance.ProposeFromIssueReport(
+            new AgentIssueReportSnapshot(
+                DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+                "Browser runtime failed",
+                [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T09:59:00Z"), "Error", "Browser runtime failed")],
+                [],
+                [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            "agent");
+        AgentControlCenterService service = new(auditLog: audit, maintenance: maintenance);
+
+        AgentMaintenanceArchiveResult result = service.ArchiveMaintenanceProposalFromControlCenter(
+            proposal.Id,
+            "fixed after tests passed");
+
+        Assert.That(result.Archived, Is.True);
+        Assert.That(service.BuildSnapshot(new ChatRuntimeState(false, 0, 0, null, []), "Kira").PendingMaintenanceProposals, Is.Empty);
+        Assert.That(maintenance.GetArchivedProposals().Single().Resolution, Does.Contain("fixed after tests"));
         Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Actor), Does.Contain("agent-control-ui"));
     }
 

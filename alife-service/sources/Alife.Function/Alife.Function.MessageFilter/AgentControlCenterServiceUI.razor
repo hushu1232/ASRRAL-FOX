@@ -149,6 +149,13 @@
                         </Card>
 
                         <Card Size="CardSize.Small" Title="Maintenance proposals" Class="agent-control-card">
+                            @if (string.IsNullOrWhiteSpace(lastMaintenanceActionMessage) == false)
+                            {
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="@lastMaintenanceActionMessage"
+                                       Style="margin-bottom: 10px;" />
+                            }
                             @if (snapshot.PendingMaintenanceProposals.Count == 0)
                             {
                                 <div class="empty-state">No pending maintenance proposals</div>
@@ -163,6 +170,11 @@
                                                 <Text Strong>@proposal.Title</Text>
                                                 <div class="muted">@Truncate(proposal.Evidence, 140)</div>
                                                 <div class="confirmation-text">Use workspace_propose_replace first; execute workspace_apply_proposal only after owner confirmation.</div>
+                                                <Button Size="@ButtonSize.Small"
+                                                        Style="margin-top: 8px;"
+                                                        OnClick="@(() => ArchiveMaintenance(proposal.Id))">
+                                                    Archive
+                                                </Button>
                                             </div>
                                             <Tag Color="@GetRiskColor(proposal.RiskLevel)">
                                                 @proposal.RiskLevel
@@ -420,6 +432,7 @@
 @code {
     AgentControlCenterSnapshot? snapshot;
     string? lastProactiveActionMessage;
+    string? lastMaintenanceActionMessage;
 
     int HighRiskAuditCount => snapshot?.RecentAuditEntries.Count(entry => entry.RiskLevel == AgentAuditRiskLevel.High) ?? 0;
 
@@ -494,6 +507,19 @@
             TimeSpan.FromDays(30));
         lastProactiveActionMessage =
             $"Cleanup expired {result.ExpiredPendingCount} pending and removed {result.RemovedCompletedCount} completed.";
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    Task ArchiveMaintenance(string id)
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        AgentMaintenanceArchiveResult result = Module.ArchiveMaintenanceProposalFromControlCenter(
+            id,
+            "archived from Agent Control Center");
+        lastMaintenanceActionMessage = result.Message;
         Refresh();
         return Task.CompletedTask;
     }
