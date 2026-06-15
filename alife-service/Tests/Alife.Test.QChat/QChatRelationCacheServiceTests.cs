@@ -27,6 +27,7 @@ public class QChatRelationCacheServiceTests
         Assert.That(contribution.Content, Does.Contain("Alice-card"));
         Assert.That(contribution.Content, Does.Contain("Bob"));
         Assert.That(contribution.Priority, Is.GreaterThanOrEqualTo(700));
+        Assert.That(contribution.TrustLevel, Is.EqualTo(ContextTrustLevel.UntrustedExternal));
     }
 
     [Test]

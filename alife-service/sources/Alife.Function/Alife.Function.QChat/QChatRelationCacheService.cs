@@ -125,7 +125,8 @@ public class QChatRelationCacheService(
                 "qchat-relation-cache",
                 builder.ToString(),
                 Priority: 720,
-                MaxLength: 1800)
+                MaxLength: 1800,
+                TrustLevel: ContextTrustLevel.UntrustedExternal)
         ];
     }
 

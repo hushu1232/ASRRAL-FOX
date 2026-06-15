@@ -36,7 +36,7 @@ public class BrowserService(
     {
         string result = await browser.ObserveAsync(page);
         PublishLifeEvent($"You observed browser page segment {page}.");
-        Poke($"页面结果如下（注意！网站页面大多不能一次全显示，必须通过 page 翻页来查看完整内容。此外若遇到人机验证或登录，可请求主人协助）：\n{result}");
+        Poke(FormatObservedPageResult(page, result));
     }
 
     [XmlFunction(FunctionMode.Content, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
@@ -48,7 +48,7 @@ public class BrowserService(
             string code = context.FullContent.Trim();
             string result = await browser.ExecuteScriptAsync(code);
             PublishLifeEvent("You executed JavaScript in your browser.");
-            Poke($"[RunJS] 执行结果：\n{result}");
+            Poke(FormatScriptResult(result));
         }
     }
 
@@ -62,6 +62,22 @@ public class BrowserService(
     }
 
     readonly IBrowserRuntime browser = browserRuntime ?? new BrowserEngine();
+
+    public static string FormatObservedPageResult(int page, string result)
+    {
+        return $"""
+                页面结果如下（注意！网站页面大多不能一次全显示，必须通过 page 翻页来查看完整内容。此外若遇到人机验证或登录，可请求主人协助）：
+                {ExternalContextFormatter.WrapUntrusted($"browser-page-{page}", result)}
+                """;
+    }
+
+    public static string FormatScriptResult(string result)
+    {
+        return $"""
+                [RunJS] 执行结果：
+                {ExternalContextFormatter.WrapUntrusted("browser-script-result", result)}
+                """;
+    }
 
     public string Name => "Browser";
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Sense;
