@@ -35,10 +35,20 @@ public sealed record AgentMaintenanceArchiveResult(
     string Message,
     AgentMaintenanceArchivedProposal? ArchivedProposal = null);
 
+public sealed record AgentMaintenanceRepairEvidence(
+    string ProposalId,
+    DateTimeOffset RecordedAt,
+    string Actor,
+    string WorkspaceProposalId,
+    string VerificationCommandId,
+    string VerificationSummary,
+    string Notes);
+
 public sealed class AgentMaintenanceProposalPersistenceState
 {
     public List<AgentMaintenanceProposal> Pending { get; set; } = [];
     public List<AgentMaintenanceArchivedProposal> Archived { get; set; } = [];
+    public List<AgentMaintenanceRepairEvidence> RepairEvidence { get; set; } = [];
 }
 
 [Module(
@@ -62,6 +72,8 @@ public class AgentMaintenanceService(
     readonly Dictionary<string, AgentMaintenanceProposal> proposals = LoadProposals(
         proposalStorePath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-maintenance-proposals.json"));
     readonly Dictionary<string, AgentMaintenanceArchivedProposal> archivedProposals = LoadArchivedProposals(
+        proposalStorePath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-maintenance-proposals.json"));
+    readonly List<AgentMaintenanceRepairEvidence> repairEvidence = LoadRepairEvidence(
         proposalStorePath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-maintenance-proposals.json"));
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_maintenance_propose", budgetCost: 4)]
@@ -116,6 +128,26 @@ public class AgentMaintenanceService(
         foreach (AgentMaintenanceArchivedProposal item in archived.Take(8))
             builder.AppendLine($"- {item.Proposal.Id}: {item.Proposal.Title} [{item.Proposal.RiskLevel}] resolution={item.Resolution}");
         Poke(builder.ToString().TrimEnd());
+    }
+
+    [XmlFunction(FunctionMode.OneShot, name: "agent_maintenance_record_repair_evidence")]
+    [Description("Record repair evidence for a maintenance proposal, such as linked workspace proposal and verification result. This does not execute changes.")]
+    public void RecordRepairEvidenceFromXml(
+        string proposalId,
+        string workspaceProposalId = "",
+        string verificationCommandId = "",
+        string verificationSummary = "",
+        string notes = "",
+        string actor = "agent")
+    {
+        AgentMaintenanceRepairEvidence evidence = RecordRepairEvidence(
+            proposalId,
+            workspaceProposalId,
+            verificationCommandId,
+            verificationSummary,
+            actor,
+            notes);
+        Poke($"Recorded repair evidence for maintenance proposal: {evidence.ProposalId}");
     }
 
     public AgentMaintenanceProposal ProposeFromIssueReport(AgentIssueReportSnapshot issueReport, string actor)
@@ -199,6 +231,72 @@ public class AgentMaintenanceService(
             proposal.RiskLevel,
             succeeded: true);
         return new AgentMaintenanceArchiveResult(true, "Maintenance proposal archived.", archived);
+    }
+
+    public AgentMaintenanceRepairEvidence RecordRepairEvidence(
+        string proposalId,
+        string workspaceProposalId,
+        string verificationCommandId,
+        string verificationSummary,
+        string actor,
+        string notes = "")
+    {
+        string normalizedProposalId = (proposalId ?? string.Empty).Trim();
+        string normalizedActor = string.IsNullOrWhiteSpace(actor) ? "agent" : actor.Trim();
+
+        AgentMaintenanceRepairEvidence evidence = new(
+            normalizedProposalId,
+            DateTimeOffset.Now,
+            normalizedActor,
+            (workspaceProposalId ?? string.Empty).Trim(),
+            (verificationCommandId ?? string.Empty).Trim(),
+            (verificationSummary ?? string.Empty).Trim(),
+            (notes ?? string.Empty).Trim());
+
+        lock (proposalGate)
+        {
+            if (proposals.ContainsKey(normalizedProposalId) == false
+                && archivedProposals.ContainsKey(normalizedProposalId) == false)
+                throw new InvalidOperationException("Maintenance proposal was not found.");
+
+            repairEvidence.Add(evidence);
+        }
+        SaveProposals();
+
+        auditLog.Record(
+            "agent.maintenance.repair_evidence",
+            normalizedActor,
+            $"proposal={normalizedProposalId}; workspace_proposal={evidence.WorkspaceProposalId}; verification={evidence.VerificationCommandId}; {evidence.VerificationSummary}",
+            AgentAuditRiskLevel.Low,
+            succeeded: true);
+        return evidence;
+    }
+
+    public IReadOnlyList<AgentMaintenanceRepairEvidence> GetRepairEvidence(string proposalId)
+    {
+        string normalizedProposalId = (proposalId ?? string.Empty).Trim();
+        lock (proposalGate)
+        {
+            return repairEvidence
+                .Where(evidence => string.Equals(evidence.ProposalId, normalizedProposalId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(evidence => evidence.RecordedAt)
+                .ToArray();
+        }
+    }
+
+    public IReadOnlyDictionary<string, IReadOnlyList<AgentMaintenanceRepairEvidence>> GetRepairEvidenceByProposalId()
+    {
+        lock (proposalGate)
+        {
+            return repairEvidence
+                .GroupBy(evidence => evidence.ProposalId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => (IReadOnlyList<AgentMaintenanceRepairEvidence>)group
+                        .OrderByDescending(evidence => evidence.RecordedAt)
+                        .ToArray(),
+                    StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     public static string FormatProposal(AgentMaintenanceProposal proposal)
@@ -287,6 +385,9 @@ public class AgentMaintenanceService(
                     .ToList(),
                 Archived = archivedProposals.Values
                     .OrderByDescending(proposal => proposal.ArchivedAt)
+                    .ToList(),
+                RepairEvidence = repairEvidence
+                    .OrderByDescending(evidence => evidence.RecordedAt)
                     .ToList()
             };
         }
@@ -336,6 +437,27 @@ public class AgentMaintenanceService(
         catch
         {
             return new Dictionary<string, AgentMaintenanceArchivedProposal>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    static List<AgentMaintenanceRepairEvidence> LoadRepairEvidence(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        if (File.Exists(fullPath) == false)
+            return [];
+
+        try
+        {
+            string json = File.ReadAllText(fullPath);
+            if (json.TrimStart().StartsWith("[", StringComparison.Ordinal))
+                return [];
+
+            return JsonSerializer.Deserialize<AgentMaintenanceProposalPersistenceState>(json, JsonOptions)?.RepairEvidence
+                   ?? [];
+        }
+        catch
+        {
+            return [];
         }
     }
 

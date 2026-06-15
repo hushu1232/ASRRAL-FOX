@@ -55,6 +55,7 @@ public sealed record AgentControlCenterSnapshot(
     IReadOnlyList<AgentProactivePendingSuggestion> PendingProactiveSuggestions,
     IReadOnlyList<AgentProactivePendingSuggestion> CompletedProactiveSuggestions,
     IReadOnlyList<AgentMaintenanceProposal> PendingMaintenanceProposals,
+    IReadOnlyDictionary<string, IReadOnlyList<AgentMaintenanceRepairEvidence>> MaintenanceRepairEvidenceByProposalId,
     IReadOnlyList<string> WorkspaceRoots,
     IReadOnlyList<AgentCommandDefinition> AllowedCommands,
     IReadOnlyList<AgentAuditLogEntry> RecentAuditEntries);
@@ -192,6 +193,7 @@ public class AgentControlCenterService(
             proactiveBehavior?.GetPendingSuggestions() ?? [],
             proactiveBehavior?.GetCompletedSuggestions() ?? [],
             maintenance.GetPendingProposals(),
+            maintenance.GetRepairEvidenceByProposalId(),
             workspacePolicy.AllowedRoots,
             commandPolicy.AllowedCommands,
             auditLog.GetRecentEntries(12));

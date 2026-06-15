@@ -169,6 +169,13 @@
                                             <div>
                                                 <Text Strong>@proposal.Title</Text>
                                                 <div class="muted">@Truncate(proposal.Evidence, 140)</div>
+                                                @foreach (AgentMaintenanceRepairEvidence evidence in GetMaintenanceEvidence(proposal.Id).Take(2))
+                                                {
+                                                    <div class="maintenance-evidence">
+                                                        <div>Workspace: @Truncate(evidence.WorkspaceProposalId, 48)</div>
+                                                        <div>Verification: @Truncate(evidence.VerificationCommandId, 48) / @Truncate(evidence.VerificationSummary, 72)</div>
+                                                    </div>
+                                                }
                                                 <div class="confirmation-text">Use workspace_propose_replace first; execute workspace_apply_proposal only after owner confirmation.</div>
                                                 <Button Size="@ButtonSize.Small"
                                                         Style="margin-top: 8px;"
@@ -563,6 +570,16 @@
         return $"{snapshot.LatestTask.Status}";
     }
 
+    IReadOnlyList<AgentMaintenanceRepairEvidence> GetMaintenanceEvidence(string proposalId)
+    {
+        if (snapshot == null)
+            return [];
+
+        return snapshot.MaintenanceRepairEvidenceByProposalId.TryGetValue(proposalId, out IReadOnlyList<AgentMaintenanceRepairEvidence>? evidence)
+            ? evidence
+            : [];
+    }
+
     static string GetTaskColor(AgentTaskStatus status) => status switch
     {
         AgentTaskStatus.Running => "processing",
@@ -710,6 +727,16 @@
         font-size: 12px;
         overflow-wrap: anywhere;
         color: #1d4ed8;
+    }
+
+    .maintenance-evidence {
+        margin-top: 8px;
+        border-left: 3px solid #1677ff;
+        padding: 6px 8px;
+        background: #f0f7ff;
+        color: #334155;
+        font-size: 12px;
+        overflow-wrap: anywhere;
     }
 
     .issue-text {

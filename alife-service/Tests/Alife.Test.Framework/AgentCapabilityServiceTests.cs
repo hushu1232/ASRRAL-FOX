@@ -673,6 +673,40 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void MaintenanceServiceRecordsRepairEvidenceAndPersistsLinks()
+    {
+        string root = CreateTempWorkspace();
+        string storePath = Path.Combine(root, "maintenance-proposals.json");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentMaintenanceService writer = new(auditLog: audit, proposalStorePath: storePath);
+        AgentMaintenanceProposal proposal = writer.ProposeFromIssueReport(
+            new AgentIssueReportSnapshot(
+                DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+                "Browser runtime failed",
+                [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T09:59:00Z"), "Error", "Browser runtime failed")],
+                [],
+                [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            "agent");
+
+        AgentMaintenanceRepairEvidence evidence = writer.RecordRepairEvidence(
+            proposal.Id,
+            workspaceProposalId: "workspace-proposal-1",
+            verificationCommandId: "dotnet-test-solution",
+            verificationSummary: "0 failed; 122 passed",
+            actor: "agent",
+            notes: "Patched AgentMaintenanceService and reran full solution tests.");
+        AgentMaintenanceService reader = new(proposalStorePath: storePath);
+
+        AgentMaintenanceRepairEvidence restored = reader.GetRepairEvidence(proposal.Id).Single();
+        Assert.That(evidence.ProposalId, Is.EqualTo(proposal.Id));
+        Assert.That(restored.WorkspaceProposalId, Is.EqualTo("workspace-proposal-1"));
+        Assert.That(restored.VerificationCommandId, Is.EqualTo("dotnet-test-solution"));
+        Assert.That(restored.VerificationSummary, Does.Contain("122 passed"));
+        Assert.That(restored.Notes, Does.Contain("Patched AgentMaintenanceService"));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.maintenance.repair_evidence"));
+    }
+
+    [Test]
     public void AgentControlCenterBuildsReadOnlySnapshot()
     {
         string root = CreateTempWorkspace();
@@ -696,6 +730,13 @@ public class AgentCapabilityServiceTests
                 [],
                 [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
             "agent");
+        maintenance.RecordRepairEvidence(
+            maintenanceProposal.Id,
+            "workspace-proposal-1",
+            "dotnet-test-solution",
+            "0 failed; focused tests passed",
+            "agent",
+            "linked repair evidence for control center");
         AgentCommandPolicy commandPolicy = new([
             new AgentCommandDefinition("test", "Run tests", "dotnet", "test", root, TimeSpan.FromSeconds(30))
         ]);
@@ -757,6 +798,10 @@ public class AgentCapabilityServiceTests
         Assert.That(snapshot.CompletedProactiveSuggestions[0].Status, Is.EqualTo(AgentProactivePendingStatus.Confirmed));
         Assert.That(snapshot.PendingMaintenanceProposals.Select(proposal => proposal.Id), Does.Contain(maintenanceProposal.Id));
         Assert.That(snapshot.PendingMaintenanceProposals[0].CanApplyAutomatically, Is.False);
+        Assert.That(snapshot.MaintenanceRepairEvidenceByProposalId[maintenanceProposal.Id][0].WorkspaceProposalId,
+            Is.EqualTo("workspace-proposal-1"));
+        Assert.That(snapshot.MaintenanceRepairEvidenceByProposalId[maintenanceProposal.Id][0].VerificationSummary,
+            Does.Contain("focused tests passed"));
     }
 
     [Test]
