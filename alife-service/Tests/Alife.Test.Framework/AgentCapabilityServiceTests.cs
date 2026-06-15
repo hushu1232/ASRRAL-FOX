@@ -623,6 +623,29 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void MaintenanceServicePersistsPendingProposalsAcrossRestart()
+    {
+        string root = CreateTempWorkspace();
+        string storePath = Path.Combine(root, "maintenance-proposals.json");
+        AgentIssueReportSnapshot issueReport = new(
+            DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+            "Browser runtime failed",
+            [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T09:59:00Z"), "Error", "Browser runtime failed")],
+            [],
+            [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]);
+        AgentMaintenanceService writer = new(proposalStorePath: storePath);
+
+        AgentMaintenanceProposal proposal = writer.ProposeFromIssueReport(issueReport, "agent");
+        AgentMaintenanceService reader = new(proposalStorePath: storePath);
+
+        AgentMaintenanceProposal restored = reader.GetPendingProposals().Single();
+        Assert.That(restored.Id, Is.EqualTo(proposal.Id));
+        Assert.That(restored.Title, Does.Contain("Browser runtime failed"));
+        Assert.That(restored.CanApplyAutomatically, Is.False);
+        Assert.That(restored.RequiresOwnerConfirmationForExecution, Is.True);
+    }
+
+    [Test]
     public void AgentControlCenterBuildsReadOnlySnapshot()
     {
         string root = CreateTempWorkspace();

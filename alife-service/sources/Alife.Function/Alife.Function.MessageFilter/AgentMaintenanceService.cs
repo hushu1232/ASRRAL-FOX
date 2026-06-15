@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.FunctionCaller;
@@ -31,13 +32,18 @@ public sealed record AgentMaintenanceProposal(
 public class AgentMaintenanceService(
     AgentIssueReportService? issueReports = null,
     AgentAuditLogService? auditLog = null,
-    XmlFunctionCaller? functionCaller = null)
+    XmlFunctionCaller? functionCaller = null,
+    string? proposalStorePath = null)
     : InteractiveModule<AgentMaintenanceService>
 {
+    readonly object proposalGate = new();
+    readonly string proposalStorePath = Path.GetFullPath(
+        proposalStorePath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-maintenance-proposals.json"));
     readonly AgentIssueReportService issueReports = issueReports ?? new AgentIssueReportService();
     readonly AgentAuditLogService auditLog = auditLog ?? new AgentAuditLogService(
         Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-audit.jsonl"));
-    readonly Dictionary<string, AgentMaintenanceProposal> proposals = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, AgentMaintenanceProposal> proposals = LoadProposals(
+        proposalStorePath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-maintenance-proposals.json"));
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_maintenance_propose", budgetCost: 4)]
     [Description("Create a self-maintenance proposal from recent runtime errors and failed audit entries. This does not modify files or configuration.")]
@@ -84,7 +90,11 @@ public class AgentMaintenanceService(
             RequiresOwnerConfirmationForExecution: true,
             CanApplyAutomatically: false);
 
-        proposals[proposal.Id] = proposal;
+        lock (proposalGate)
+        {
+            proposals[proposal.Id] = proposal;
+        }
+        SaveProposals();
         auditLog.Record(
             "agent.maintenance.propose",
             proposal.Actor,
@@ -96,9 +106,12 @@ public class AgentMaintenanceService(
 
     public IReadOnlyList<AgentMaintenanceProposal> GetPendingProposals()
     {
-        return proposals.Values
-            .OrderByDescending(proposal => proposal.CreatedAt)
-            .ToArray();
+        lock (proposalGate)
+        {
+            return proposals.Values
+                .OrderByDescending(proposal => proposal.CreatedAt)
+                .ToArray();
+        }
     }
 
     public static string FormatProposal(AgentMaintenanceProposal proposal)
@@ -173,5 +186,43 @@ public class AgentMaintenanceService(
             return value;
         return value[..(maxLength - 3)] + "...";
     }
-}
 
+    void SaveProposals()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(proposalStorePath)!);
+        AgentMaintenanceProposal[] snapshot;
+        lock (proposalGate)
+        {
+            snapshot = proposals.Values
+                .OrderByDescending(proposal => proposal.CreatedAt)
+                .ToArray();
+        }
+
+        File.WriteAllText(proposalStorePath, JsonSerializer.Serialize(snapshot, JsonOptions));
+    }
+
+    static Dictionary<string, AgentMaintenanceProposal> LoadProposals(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        if (File.Exists(fullPath) == false)
+            return new Dictionary<string, AgentMaintenanceProposal>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            string json = File.ReadAllText(fullPath);
+            AgentMaintenanceProposal[]? restored = JsonSerializer.Deserialize<AgentMaintenanceProposal[]>(json, JsonOptions);
+            return (restored ?? [])
+                .Where(proposal => string.IsNullOrWhiteSpace(proposal.Id) == false)
+                .ToDictionary(proposal => proposal.Id, StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new Dictionary<string, AgentMaintenanceProposal>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true
+    };
+}
