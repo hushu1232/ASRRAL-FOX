@@ -200,6 +200,48 @@ public class QChatMessageSecurityTests
     }
 
     [Test]
+    public void ControlCenterLowIntensityForcesRandomProactiveGroupProbabilityToZero()
+    {
+        QChatConfig config = new() {
+            ProactiveChatProbability = 1.0f,
+        };
+        AgentControlCenterConfig control = new() {
+            AllowProactiveChat = true,
+            ProactiveChatIntensity = 1,
+        };
+
+        float probability = QChatMessageSecurity.GetProactiveChatProbability(config, control);
+
+        Assert.That(probability, Is.EqualTo(0f));
+    }
+
+    [Test]
+    public void ControlCenterBalancedIntensityDampensRandomProactiveGroupProbability()
+    {
+        QChatConfig config = new() {
+            ProactiveChatProbability = 0.15f,
+        };
+        AgentControlCenterConfig control = new() {
+            AllowProactiveChat = true,
+            ProactiveChatIntensity = 2,
+        };
+
+        float probability = QChatMessageSecurity.GetProactiveChatProbability(config, control);
+
+        Assert.That(probability, Is.EqualTo(0.075f).Within(0.0001f));
+    }
+
+    [Test]
+    public void MediaOnlyPassiveGroupProbabilityDefaultsToRecommendedValueAndCanBeConfigured()
+    {
+        Assert.That(QChatMessageSecurity.GetMediaOnlyPassiveGroupReplyProbability(new QChatConfig()), Is.EqualTo(0.15f).Within(0.0001f));
+        Assert.That(QChatMessageSecurity.GetMediaOnlyPassiveGroupReplyProbability(new QChatConfig
+        {
+            MediaOnlyPassiveGroupReplyProbability = 1.5f
+        }), Is.EqualTo(1f));
+    }
+
+    [Test]
     public void ControlCenterConfig_FlowsIntoHighRiskPermissionConfig()
     {
         QChatConfig config = new() { OwnerId = 10001 };

@@ -1552,6 +1552,175 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void AgentControlCenterExposesQChatRuntimeVisibility()
+    {
+        string root = CreateTempWorkspace();
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        File.WriteAllLines(diagnosticsPath, [
+            """{"timestamp":"2026-06-16T10:00:00+08:00","eventName":"start","detail":"QChat service starting.","data":{"BotId":3340947887},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:01+08:00","eventName":"connect-succeeded","detail":"OneBot connected.","data":{"BotId":3340947887,"IsConnected":true},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:02+08:00","eventName":"message-dispatching","detail":"Dispatching message event to QChat.","data":{"MessageType":"Private","UserId":3045846738,"GroupId":0,"isMentionedOrWoken":true},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:03+08:00","eventName":"qchat-sent","detail":"QChat XML tool sent a QQ message.","data":{"type":"Private","targetId":3045846738,"message":"ok"},"exception":null}"""
+        ]);
+        AgentControlCenterService service = new(qchatDiagnosticsPath: diagnosticsPath);
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentConnectSucceededCount, Is.EqualTo(1));
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentInboundMessageCount, Is.EqualTo(1));
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentOutboundMessageCount, Is.EqualTo(1));
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentFailureCount, Is.Zero);
+        Assert.That(snapshot.RuntimeVisibility.QChat.LastConnectSucceededAt,
+            Is.EqualTo(DateTimeOffset.Parse("2026-06-16T10:00:01+08:00")));
+    }
+
+    [Test]
+    public void AgentControlCenterReportsQChatFailuresInSelfCheck()
+    {
+        string root = CreateTempWorkspace();
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        File.WriteAllLines(diagnosticsPath, [
+            """{"timestamp":"2026-06-16T10:00:01+08:00","eventName":"connect-succeeded","detail":"OneBot connected.","data":{"BotId":3340947887,"IsConnected":true},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:02+08:00","eventName":"qchat-send-failed","detail":"network unavailable","data":{"type":"Group","targetId":867165927},"exception":"System.InvalidOperationException: network unavailable"}""",
+            """{"timestamp":"2026-06-16T10:00:03+08:00","eventName":"model-dispatch-failed","detail":"model timeout","data":{"MessageType":"Private","TargetId":3045846738},"exception":"System.TimeoutException: model timeout"}"""
+        ]);
+        AgentControlCenterService service = new(qchatDiagnosticsPath: diagnosticsPath);
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        AgentControlCenterSelfCheckItem failure = snapshot.SelfCheck.Items
+            .Single(item => item.Category == "qq-runtime-failure");
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentFailureCount, Is.EqualTo(2));
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentFailures, Has.Some.Contains("network unavailable"));
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentFailures, Has.Some.Contains("model timeout"));
+        Assert.That(failure.CanAgentHandleAutonomously, Is.False);
+        Assert.That(failure.RecommendedAction, Does.Contain("Do not retry noisy QQ output automatically"));
+    }
+
+    [Test]
+    public void AgentControlCenterFlagsQChatOutputVolumeAsLowRiskSelfCheck()
+    {
+        string root = CreateTempWorkspace();
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        List<string> lines = [
+            """{"timestamp":"2026-06-16T10:00:01+08:00","eventName":"connect-succeeded","detail":"OneBot connected.","data":{"BotId":3340947887,"IsConnected":true},"exception":null}"""
+        ];
+        for (int i = 0; i < 6; i++)
+        {
+            lines.Add($$"""{"timestamp":"2026-06-16T10:00:0{{i + 2}}+08:00","eventName":"qchat-sent","detail":"QChat XML tool sent a QQ message.","data":{"type":"Group","targetId":867165927,"message":"reply {{i}}"},"exception":null}""");
+        }
+        File.WriteAllLines(diagnosticsPath, lines);
+        AgentControlCenterService service = new(qchatDiagnosticsPath: diagnosticsPath)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                ProactiveChatIntensity = 5
+            }
+        };
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        AgentControlCenterSelfCheckItem item = snapshot.SelfCheck.Items
+            .Single(item => item.Category == "qq-output-volume");
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentOutboundMessageCount, Is.EqualTo(6));
+        Assert.That(item.ActionId, Is.EqualTo("reduce-proactive-intensity"));
+        Assert.That(item.CanAgentHandleAutonomously, Is.True);
+        Assert.That(item.RiskLevel, Is.EqualTo(AgentAuditRiskLevel.Low));
+    }
+
+    [Test]
+    public void AgentControlCenterTreatsQChatQuietSuppressionAsInformational()
+    {
+        string root = CreateTempWorkspace();
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        File.WriteAllLines(diagnosticsPath, [
+            """{"timestamp":"2026-06-16T10:00:01+08:00","eventName":"qchat-quiet-message-suppressed","detail":"QQ inbound message suppressed because owner quiet mode is enabled.","data":{"MessageType":"Group","UserId":2001,"GroupId":867165927,"senderRole":1,"isMentionedOrWoken":false},"exception":null}"""
+        ]);
+        AgentControlCenterService service = new(qchatDiagnosticsPath: diagnosticsPath);
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentQuietSuppressionCount, Is.EqualTo(1));
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentFailureCount, Is.Zero);
+        Assert.That(snapshot.SelfCheck.Items.Select(item => item.Category), Does.Not.Contain("qq-runtime-failure"));
+        Assert.That(snapshot.SelfCheck.Items.Select(item => item.Category), Does.Not.Contain("qq-output-volume"));
+    }
+
+    [Test]
+    public void AgentControlCenterBuildsQChatAntiSpamVisibility()
+    {
+        string root = CreateTempWorkspace();
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        File.WriteAllLines(diagnosticsPath, [
+            """{"timestamp":"2026-06-16T10:00:00+08:00","eventName":"start","detail":"QChat service starting.","data":{"BotId":3340947887},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:01+08:00","eventName":"message-dispatching","detail":"Dispatching message event to QChat.","data":{"MessageType":"Group","UserId":2001,"GroupId":867165927,"isMentionedOrWoken":false},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:02+08:00","eventName":"group-buffered","detail":"Group message buffered for model dispatch.","data":{"GroupId":867165927,"IsEnabled":true,"bufferCount":1,"isAwakening":false,"senderRole":1},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:03+08:00","eventName":"group-passive-low-information-skipped","detail":"Passive group message skipped because it has too little conversational content.","data":{"GroupId":867165927,"UserId":2002,"senderRole":1,"isMentionedOrWoken":false,"RawMessage":"ok"},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:04+08:00","eventName":"group-passive-throttled","detail":"Passive group message skipped because the bot replied recently.","data":{"GroupId":867165927,"UserId":2003,"senderRole":1,"isMentionedOrWoken":false,"elapsedSeconds":12.5,"cooldownSeconds":90},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:05+08:00","eventName":"group-buffered-proactive","detail":"Group message buffered by proactive probability.","data":{"GroupId":867165927,"bufferCount":1,"ProactiveChatProbability":0.15,"EffectiveProactiveChatProbability":0.075},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:06+08:00","eventName":"qchat-quiet-mode-enabled","detail":"Owner enabled QQ quiet mode.","data":{"MessageType":"Group","UserId":3045846738,"GroupId":867165927,"reason":"owner-sleep-command"},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:07+08:00","eventName":"qchat-quiet-message-suppressed","detail":"QQ inbound message suppressed because owner quiet mode is enabled.","data":{"MessageType":"Group","UserId":2004,"GroupId":867165927,"senderRole":1,"isMentionedOrWoken":false},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:08+08:00","eventName":"group-passive-media-chance-allowed","detail":"Passive media-only group message allowed by media reply chance.","data":{"GroupId":867165927,"UserId":2005,"senderRole":1,"isMentionedOrWoken":false,"MediaOnlyPassiveGroupReplyProbability":0.2,"RawMessage":"[CQ:image,file=sticker.jpg]"},"exception":null}"""
+        ]);
+        AgentControlCenterService service = new(qchatDiagnosticsPath: diagnosticsPath);
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        AgentQChatAntiSpamVisibility antiSpam = snapshot.RuntimeVisibility.QChat.AntiSpam;
+        Assert.That(antiSpam.RecentGroupMessageCount, Is.EqualTo(1));
+        Assert.That(antiSpam.RecentGroupBufferedCount, Is.EqualTo(2));
+        Assert.That(antiSpam.RecentSuppressedCount, Is.EqualTo(3));
+        Assert.That(antiSpam.RecentLowInformationSuppressionCount, Is.EqualTo(1));
+        Assert.That(antiSpam.RecentCooldownSuppressionCount, Is.EqualTo(1));
+        Assert.That(antiSpam.RecentQuietSuppressionCount, Is.EqualTo(1));
+        Assert.That(antiSpam.RecentMediaChanceAllowedCount, Is.EqualTo(1));
+        Assert.That(antiSpam.PassiveCooldownSeconds, Is.EqualTo(90));
+        Assert.That(antiSpam.LastPassiveElapsedSeconds, Is.EqualTo(12.5).Within(0.01));
+        Assert.That(antiSpam.ObservedProactiveProbability, Is.EqualTo(0.075).Within(0.001));
+        Assert.That(antiSpam.ObservedMediaOnlyReplyProbability, Is.EqualTo(0.2).Within(0.001));
+        Assert.That(antiSpam.QuietModeEnabled, Is.True);
+        Assert.That(antiSpam.QuietModeReason, Is.EqualTo("owner-sleep-command"));
+        Assert.That(antiSpam.LastSuppressionReason, Is.EqualTo("quiet-mode"));
+        Assert.That(antiSpam.RecentSuppressionReasons, Does.Contain("low-information"));
+        Assert.That(antiSpam.RecentSuppressionReasons, Does.Contain("cooldown"));
+        Assert.That(antiSpam.RecentSuppressionReasons, Does.Contain("quiet-mode"));
+    }
+
+    [Test]
+    public void AgentControlCenterScopesQChatVisibilityToLatestRuntimeStart()
+    {
+        string root = CreateTempWorkspace();
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        File.WriteAllLines(diagnosticsPath, [
+            """{"timestamp":"2026-06-16T09:59:58+08:00","eventName":"start","detail":"QChat service starting.","data":{"BotId":999},"exception":null}""",
+            """{"timestamp":"2026-06-16T09:59:59+08:00","eventName":"qchat-send-failed","detail":"old test failure","data":{"type":"Group","targetId":123},"exception":"System.InvalidOperationException: old test failure"}""",
+            """{"timestamp":"2026-06-16T10:00:00+08:00","eventName":"start","detail":"QChat service starting.","data":{"BotId":3340947887},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:01+08:00","eventName":"connect-succeeded","detail":"OneBot connected.","data":{"BotId":3340947887,"IsConnected":true},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:02+08:00","eventName":"message-dispatching","detail":"Dispatching message event to QChat.","data":{"MessageType":"Group","UserId":3045846738,"GroupId":867165927},"exception":null}"""
+        ]);
+        AgentControlCenterService service = new(qchatDiagnosticsPath: diagnosticsPath);
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentConnectSucceededCount, Is.EqualTo(1));
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentInboundMessageCount, Is.EqualTo(1));
+        Assert.That(snapshot.RuntimeVisibility.QChat.RecentFailureCount, Is.Zero);
+        Assert.That(snapshot.SelfCheck.Items.Select(item => item.Category), Does.Not.Contain("qq-runtime-failure"));
+    }
+
+    [Test]
     public void AgentControlCenterBuildsAgentReadableSelfCheckRecommendations()
     {
         string root = CreateTempWorkspace();
@@ -1787,6 +1956,7 @@ public class AgentCapabilityServiceTests
             workspace: workspace,
             auditLog: audit,
             maintenance: maintenance,
+            qchatDiagnosticsPath: Path.Combine(root, "qchat-diagnostics.jsonl"),
             clock: () => now)
         {
             Configuration = new AgentControlCenterConfig
@@ -1872,6 +2042,48 @@ public class AgentCapabilityServiceTests
         Assert.That(duplicate!.MaintenanceInspection?.Created, Is.False);
         Assert.That(duplicate.WakeRecommended, Is.False);
         Assert.That(service.BuildSnapshot(runtime, "Kira").PendingMaintenanceProposals, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void AgentControlCenterAutomaticSelfCheckReducesQChatOutputVolume()
+    {
+        string root = CreateTempWorkspace();
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        List<string> lines = [
+            """{"timestamp":"2026-06-16T10:00:00+08:00","eventName":"start","detail":"QChat service starting.","data":{"BotId":3340947887},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:01+08:00","eventName":"connect-succeeded","detail":"OneBot connected.","data":{"BotId":3340947887,"IsConnected":true},"exception":null}"""
+        ];
+        for (int i = 0; i < 6; i++)
+        {
+            lines.Add($$"""{"timestamp":"2026-06-16T10:00:0{{i + 2}}+08:00","eventName":"qchat-sent","detail":"QChat XML tool sent a QQ message.","data":{"type":"Group","targetId":867165927,"message":"reply {{i}}"},"exception":null}""");
+        }
+        File.WriteAllLines(diagnosticsPath, lines);
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-16T10:01:00+08:00");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(
+            auditLog: audit,
+            qchatDiagnosticsPath: diagnosticsPath,
+            clock: () => now)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = true,
+                MaintenanceInspectionIntervalMinutes = 1,
+                ProactiveChatIntensity = 5
+            }
+        };
+        ChatRuntimeState runtime = new(false, 0, 0, null, []);
+
+        AgentControlCenterSelfCheckLoopResult? result = service.TryAutomaticSelfCheck(
+            runtime,
+            "Kira",
+            "qq:group:867165927");
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.SelfCheck.Items.Select(item => item.Category), Does.Contain("qq-output-volume"));
+        Assert.That(service.Configuration!.ProactiveChatIntensity, Is.EqualTo(4));
+        Assert.That(audit.GetRecentEntries(20).Select(entry => entry.Action), Does.Contain("agent.self_check.action"));
+        Assert.That(audit.GetRecentEntries(20).Select(entry => entry.Detail), Has.Some.Contains("reduce-proactive-intensity"));
     }
 
     [Test]
@@ -2121,6 +2333,7 @@ public class AgentCapabilityServiceTests
                 [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
             auditLog: audit,
             maintenance: maintenance,
+            qchatDiagnosticsPath: Path.Combine(root, "qchat-diagnostics.jsonl"),
             clock: () => now)
         {
             Configuration = new AgentControlCenterConfig
@@ -2162,6 +2375,7 @@ public class AgentCapabilityServiceTests
                 [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
             auditLog: audit,
             maintenance: maintenance,
+            qchatDiagnosticsPath: Path.Combine(root, "qchat-diagnostics.jsonl"),
             clock: () => now)
         {
             Configuration = new AgentControlCenterConfig
@@ -2201,6 +2415,7 @@ public class AgentCapabilityServiceTests
                 ]),
             auditLog: audit,
             maintenance: maintenance,
+            qchatDiagnosticsPath: Path.Combine(root, "qchat-diagnostics.jsonl"),
             clock: () => now)
         {
             Configuration = new AgentControlCenterConfig
@@ -2441,6 +2656,32 @@ public class AgentCapabilityServiceTests
         Assert.That(snapshot.EnvironmentCheck.Items.Select(item => item.Name), Does.Contain(".NET runtime"));
         Assert.That(snapshot.EnvironmentCheck.HasBlockingIssues, Is.False);
         Assert.That(snapshot.PendingConfigurationProposals, Is.Empty);
+    }
+
+    [Test]
+    public void AgentControlCenterMapsProactiveChatIntensityToHumanMode()
+    {
+        Assert.That(AgentControlCenterService.GetProactiveChatModeName(0), Is.EqualTo("安静"));
+        Assert.That(AgentControlCenterService.GetProactiveChatModeName(1), Is.EqualTo("低调"));
+        Assert.That(AgentControlCenterService.GetProactiveChatModeName(2), Is.EqualTo("平衡"));
+        Assert.That(AgentControlCenterService.GetProactiveChatModeName(4), Is.EqualTo("活跃"));
+        Assert.That(AgentControlCenterService.GetProactiveChatModeName(5), Is.EqualTo("高活跃"));
+    }
+
+    [Test]
+    public void AgentControlCenterFormatsProactiveChatStatusWithHumanMode()
+    {
+        AgentControlCenterConfig config = new()
+        {
+            AllowProactiveChat = true,
+            ProactiveChatIntensity = 2
+        };
+
+        string status = AgentControlCenterService.FormatProactiveChatStatus(config);
+
+        Assert.That(status, Does.Contain("enabled"));
+        Assert.That(status, Does.Contain("mode=平衡"));
+        Assert.That(status, Does.Contain("intensity=2"));
     }
 
     [Test]

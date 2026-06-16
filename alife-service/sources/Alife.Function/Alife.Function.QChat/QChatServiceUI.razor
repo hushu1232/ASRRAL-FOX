@@ -172,6 +172,14 @@
                                                            Step="0.05f"
                                                            Style="width: 100%;" />
                                 </FormItem>
+                                <FormItem Label="Media-only reply chance">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.MediaOnlyPassiveGroupReplyProbability"
+                                                           Min="0f"
+                                                           Max="1f"
+                                                           Step="0.05f"
+                                                           Style="width: 100%;" />
+                                    <div class="quiet-hint">Unmentioned image/sticker-only group messages may be answered at this probability.</div>
+                                </FormItem>
                             </Card>
                         </GridCol>
                         <GridCol Xs="24" Md="12">
@@ -189,6 +197,16 @@
                                 </FormItem>
                                 <FormItem Label="启用防抖">
                                     <Switch @bind-Value="@Configuration.DebounceEnabled" />
+                                </FormItem>
+                                <FormItem Label="Passive reply cooldown">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PassiveGroupReplyCooldownSeconds"
+                                                           Min="0"
+                                                           Max="3600"
+                                                           Step="10"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="Filter low-info messages">
+                                    <Switch @bind-Value="@Configuration.SuppressLowInformationPassiveGroupMessages" />
                                 </FormItem>
                                 <FormItem Label="自动休眠时间（分钟）">
                                     <AntDesign.InputNumber @bind-Value="@Configuration.AutoCloseMinutes"

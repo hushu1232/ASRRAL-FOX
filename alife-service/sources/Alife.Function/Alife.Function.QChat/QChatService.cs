@@ -53,6 +53,9 @@ public record QChatConfig
     //群监听关闭
     public bool CloseGroupAfterReply { get; set; }//AI回复后立即关闭群消息监听
     public float AutoCloseMinutes { get; set; } = 4f;//长时间不触发唤醒条件时，自动关闭群消息监听的时间
+    public int PassiveGroupReplyCooldownSeconds { get; set; } = 90;
+    public bool SuppressLowInformationPassiveGroupMessages { get; set; } = true;
+    public float MediaOnlyPassiveGroupReplyProbability { get; set; } = 0.15f;
     //自动重连
 }
 
@@ -62,6 +65,7 @@ public class GroupState
     public string? Tag { get; set; }
     public bool IsEnabled { get; set; }
     public DateTime LastActivityTime { get; set; }
+    public DateTime LastBotReplyTime { get; set; }
     public DateTime LastFlushedTime { get; set; }
     public List<string> MessageBuffer { get; set; } = [];
     public AgentPermissionRequest? PermissionRequest { get; set; }
@@ -873,6 +877,8 @@ public class QChatService(
             Configuration.AllowProactiveGroupChat,
             Configuration.AllowPrivateGuestChat,
             Configuration.ProactiveChatProbability,
+            Configuration.PassiveGroupReplyCooldownSeconds,
+            Configuration.SuppressLowInformationPassiveGroupMessages,
             Configuration.FlushInterval,
             Configuration.WakingWords
         });
@@ -1063,6 +1069,7 @@ public class QChatService(
     {
         GroupState state = GetGroupInfo(groupId);
         state.LastActivityTime = DateTime.Now;
+        state.LastBotReplyTime = DateTime.Now;
 
         if (Configuration!.CloseGroupAfterReply)
             QGroup(groupId, false);
@@ -1139,6 +1146,12 @@ public class QChatService(
                     return;
                 }
 
+                if (ShouldSkipLowInformationPassiveGroupMessage(messageEvent, senderRole, isMentionedOrWoken))
+                    return;
+
+                if (ShouldThrottlePassiveGroupMessage(state, messageEvent, senderRole, isMentionedOrWoken))
+                    return;
+
                 BufferGroupMessage(
                     state,
                     formatted,
@@ -1157,15 +1170,151 @@ public class QChatService(
             else if (QChatMessageSecurity.ShouldAllowProactiveGroupChat(Configuration!, messageEvent, agentControlCenter?.Configuration) &&
                      Random.Shared.NextSingle() < QChatMessageSecurity.GetProactiveChatProbability(Configuration!, agentControlCenter?.Configuration))//群聊未激活时（概率接收）
             {
+                if (ShouldSkipLowInformationPassiveGroupMessage(messageEvent, senderRole, isMentionedOrWoken))
+                    return;
+
+                if (ShouldThrottlePassiveGroupMessage(state, messageEvent, senderRole, isMentionedOrWoken))
+                    return;
+
                 BufferGroupMessage(state, formatted, permissionRequest: permissionRequest);
                 state.LastFlushedTime = DateTime.Now;
                 WriteQChatDiagnostic("group-buffered-proactive", "Group message buffered by proactive probability.", new {
                     state.GroupId,
                     bufferCount = state.MessageBuffer.Count,
-                    Configuration!.ProactiveChatProbability
+                    Configuration!.ProactiveChatProbability,
+                    EffectiveProactiveChatProbability = QChatMessageSecurity.GetProactiveChatProbability(Configuration!, agentControlCenter?.Configuration)
                 });
             }
         }
+    }
+
+    bool ShouldSkipLowInformationPassiveGroupMessage(
+        OneBotBasicMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken)
+    {
+        if (messageEvent is not OneBotMessageEvent groupMessage)
+            return false;
+        if (Configuration?.SuppressLowInformationPassiveGroupMessages != true)
+            return false;
+        if (messageEvent.MessageType != OneBotMessageType.Group)
+            return false;
+        if (isMentionedOrWoken)
+            return false;
+        if (IsMediaOnlyPassiveGroupMessage(groupMessage.RawMessage)
+            && Random.Shared.NextSingle() < QChatMessageSecurity.GetMediaOnlyPassiveGroupReplyProbability(Configuration))
+        {
+            WriteQChatDiagnostic("group-passive-media-chance-allowed", "Passive media-only group message allowed by media reply chance.", new {
+                messageEvent.GroupId,
+                messageEvent.UserId,
+                senderRole,
+                isMentionedOrWoken,
+                Configuration.MediaOnlyPassiveGroupReplyProbability,
+                groupMessage.RawMessage
+            });
+            return false;
+        }
+
+        if (IsLowInformationPassiveGroupMessage(groupMessage.RawMessage) == false)
+            return false;
+
+        WriteQChatDiagnostic("group-passive-low-information-skipped", "Passive group message skipped because it has too little conversational content.", new {
+            messageEvent.GroupId,
+            messageEvent.UserId,
+            senderRole,
+            isMentionedOrWoken,
+            groupMessage.RawMessage
+        });
+        return true;
+    }
+
+    static bool IsLowInformationPassiveGroupMessage(string? rawMessage)
+    {
+        string raw = rawMessage ?? "";
+        string plain = OneBotSegment.GetPlainText(raw).Trim();
+        if (string.IsNullOrWhiteSpace(plain))
+            return ContainsLowInformationCqSegment(raw);
+
+        string compact = CompactPassiveText(plain);
+        if (compact.Length == 0)
+            return ContainsLowInformationCqSegment(raw);
+
+        return compact is "嗯" or "哦" or "喔" or "啊" or "诶" or "哈" or "哈哈" or "hhh" or "www" or "6" or "草" or "好" or "行" or "ok";
+    }
+
+    static bool ContainsLowInformationCqSegment(string raw)
+    {
+        return raw.Contains("[CQ:image", StringComparison.OrdinalIgnoreCase)
+               || raw.Contains("[CQ:face", StringComparison.OrdinalIgnoreCase)
+               || raw.Contains("[CQ:mface", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool IsMediaOnlyPassiveGroupMessage(string? rawMessage)
+    {
+        string raw = rawMessage ?? "";
+        if (ContainsLowInformationCqSegment(raw) == false)
+            return false;
+
+        return string.IsNullOrWhiteSpace(OneBotSegment.GetPlainText(raw));
+    }
+
+    static string CompactPassiveText(string text)
+    {
+        StringBuilder builder = new(text.Length);
+        foreach (char ch in text)
+        {
+            if (char.IsWhiteSpace(ch) || char.IsPunctuation(ch) || char.IsSymbol(ch))
+                continue;
+            builder.Append(char.ToLowerInvariant(ch));
+        }
+
+        return builder.ToString();
+    }
+
+    bool ShouldThrottlePassiveGroupMessage(
+        GroupState state,
+        OneBotBasicMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken)
+    {
+        int cooldownSeconds = GetEffectivePassiveGroupReplyCooldownSeconds();
+        if (cooldownSeconds <= 0)
+            return false;
+        if (messageEvent.MessageType != OneBotMessageType.Group)
+            return false;
+        if (senderRole == QChatSenderRole.Owner || isMentionedOrWoken)
+            return false;
+        if (state.LastBotReplyTime == default)
+            return false;
+
+        double elapsedSeconds = (DateTime.Now - state.LastBotReplyTime).TotalSeconds;
+        if (elapsedSeconds >= cooldownSeconds)
+            return false;
+
+        WriteQChatDiagnostic("group-passive-throttled", "Passive group message skipped because the bot replied recently.", new {
+            state.GroupId,
+            messageEvent.UserId,
+            senderRole,
+            isMentionedOrWoken,
+            elapsedSeconds,
+            cooldownSeconds
+        });
+        return true;
+    }
+
+    int GetEffectivePassiveGroupReplyCooldownSeconds()
+    {
+        int configuredSeconds = Math.Max(0, Configuration?.PassiveGroupReplyCooldownSeconds ?? 0);
+        int controlIntensity = agentControlCenter?.Configuration?.ProactiveChatIntensity ?? 2;
+        int controlFloor = controlIntensity switch
+        {
+            <= 0 => 300,
+            1 => 180,
+            2 => 90,
+            _ => 0
+        };
+
+        return Math.Max(configuredSeconds, controlFloor);
     }
 
     bool TryApplyOwnerQuietCommand(OneBotMessageEvent messageEvent, QChatSenderRole senderRole, string readable)
@@ -1194,7 +1343,7 @@ public class QChatService(
 
     bool ShouldSuppressForQuietMode(OneBotBasicMessageEvent messageEvent, QChatSenderRole senderRole, bool isMentionedOrWoken)
     {
-        if (IsQuietModeEnabled == false || senderRole == QChatSenderRole.Owner)
+        if (IsQuietModeEnabled == false)
             return false;
 
         WriteQChatDiagnostic("qchat-quiet-message-suppressed", "QQ inbound message suppressed because owner quiet mode is enabled.", new {
@@ -1597,6 +1746,15 @@ public class QChatService(
                || compact.Contains("不用回复", StringComparison.Ordinal)
                || compact.Contains("保持安静", StringComparison.Ordinal)
                || compact.Contains("保持安靜", StringComparison.Ordinal)
+               || compact.Contains("不插话", StringComparison.Ordinal)
+               || compact.Contains("不插話", StringComparison.Ordinal)
+               || compact.Contains("不打扰", StringComparison.Ordinal)
+               || compact.Contains("不打擾", StringComparison.Ordinal)
+               || compact.Contains("旁观", StringComparison.Ordinal)
+               || compact.Contains("旁觀", StringComparison.Ordinal)
+               || compact.Contains("默默看", StringComparison.Ordinal)
+               || compact.Contains("安静看", StringComparison.Ordinal)
+               || compact.Contains("安靜看", StringComparison.Ordinal)
                || compact is "silent" or "stayquiet" or "noreply";
     }
 

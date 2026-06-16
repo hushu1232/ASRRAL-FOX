@@ -627,6 +627,38 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task IncomingGroupPassiveObservationStatusDoesNotFallBackToQqMessage()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        PlainReplyQChatService service = new(functionCaller, runtime, "（咪绪乖乖旁观，不插话喵。）")
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowGroupMemberMentions = true,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "[CQ:at,qq=999] observe quietly"
+        });
+
+        await service.WaitForDispatchAsync();
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
+    [Test]
     public async Task IncomingGroupMentionPlainModelReplyFallsBackToGroupChat()
     {
         FakeOneBotRuntime runtime = new();
@@ -736,6 +768,7 @@ public class QChatServiceAdapterTests
             AllowGroupMemberChat = true,
             AllowProactiveGroupChat = true,
             ProactiveChatProbability = 1.0f,
+            MaxBufferMessages = 0,
             FlushInterval = 0,
             EnableBalancedTextStreaming = false
         });
@@ -753,6 +786,354 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(4));
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "local-passive-reply") }));
+    }
+
+    [Test]
+    public async Task ConsecutivePassiveGroupMemberMessagesAreThrottledAfterRecentBotReply()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowProactiveGroupChat = true,
+            ProactiveChatProbability = 1.0f,
+            PassiveGroupReplyCooldownSeconds = 60,
+            FlushInterval = 0,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatchCount++;
+            return service.SendChatAsync("group", inbound.TargetId, $"passive-reply-{dispatchCount}");
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "passive message one"
+        });
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(4));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2002,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2002, Nickname = "member2" },
+            RawMessage = "passive message two"
+        });
+
+        await Task.Delay(300);
+        Assert.That(dispatchCount, Is.EqualTo(1));
+        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "passive-reply-1") }));
+    }
+
+    [Test]
+    public async Task ControlCenterLowProactiveIntensityMakesPassiveGroupCooldownConservative()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        AgentControlCenterService controlCenter = new()
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                ProactiveChatIntensity = 1
+            }
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowProactiveGroupChat = true,
+            ProactiveChatProbability = 1.0f,
+            PassiveGroupReplyCooldownSeconds = 0,
+            MaxBufferMessages = 0,
+            FlushInterval = 0,
+            EnableBalancedTextStreaming = false
+        }, controlCenter);
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatchCount++;
+            return service.SendChatAsync("group", inbound.TargetId, $"passive-reply-{dispatchCount}");
+        };
+        service.QGroup(3001, true);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "passive one"
+        });
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(4));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2002,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2002, Nickname = "member2" },
+            RawMessage = "passive two"
+        });
+
+        await Task.Delay(300);
+        Assert.That(dispatchCount, Is.EqualTo(1));
+        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "passive-reply-1") }));
+    }
+
+    [Test]
+    public async Task ControlCenterLowProactiveIntensitySuppressesRandomPassiveGroupActivationButAllowsMentions()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        AgentControlCenterService controlCenter = new()
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                ProactiveChatIntensity = 1
+            }
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            AllowProactiveGroupChat = true,
+            ProactiveChatProbability = 1.0f,
+            MaxBufferMessages = 0,
+            FlushInterval = 0,
+            EnableBalancedTextStreaming = false
+        }, controlCenter);
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatchCount++;
+            return service.SendChatAsync("group", inbound.TargetId, $"reply-{dispatchCount}");
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "random passive group message"
+        });
+
+        await Task.Delay(300);
+        Assert.That(dispatchCount, Is.EqualTo(0));
+        Assert.That(runtime.GroupMessages, Is.Empty);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "[CQ:at,qq=999] mention message"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(4));
+        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "reply-1") }));
+    }
+
+    [Test]
+    public async Task PassiveGroupThrottleDoesNotBlockOwnerOrMentionedMessages()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            AllowProactiveGroupChat = true,
+            ProactiveChatProbability = 1.0f,
+            PassiveGroupReplyCooldownSeconds = 60,
+            FlushInterval = 0,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatchCount++;
+            return service.SendChatAsync("group", inbound.TargetId, $"reply-{dispatchCount}");
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "passive message"
+        });
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(4));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2002,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2002, Nickname = "member2" },
+            RawMessage = "[CQ:at,qq=999] mention message"
+        });
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "owner message"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 3, TimeSpan.FromSeconds(4));
+        Assert.That(runtime.GroupMessages.Select(message => message.Message), Is.EqualTo(new[] {
+            "reply-1",
+            "reply-2",
+            "reply-3"
+        }));
+    }
+
+    [Test]
+    public async Task PassiveGroupImageOnlyMessageIsSkippedAsLowInformation()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowProactiveGroupChat = true,
+            ProactiveChatProbability = 1.0f,
+            FlushInterval = 0,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatchCount++;
+            return service.SendChatAsync("group", inbound.TargetId, "should-not-send");
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "[CQ:image,summary=&#91;动画表情&#93;,file=sticker.jpg,sub_type=1]"
+        });
+
+        await Task.Delay(300);
+        Assert.That(dispatchCount, Is.Zero);
+        Assert.That(runtime.GroupMessages, Is.Empty);
+        Assert.That(service.GroupStates[3001].MessageBuffer, Is.Empty);
+    }
+
+    [Test]
+    public async Task PassiveGroupImageOnlyMessageCanDispatchWhenMediaReplyChanceAllows()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowProactiveGroupChat = true,
+            ProactiveChatProbability = 1.0f,
+            MediaOnlyPassiveGroupReplyProbability = 1.0f,
+            FlushInterval = 0,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatchCount++;
+            return service.SendChatAsync("group", inbound.TargetId, "media-reply");
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "[CQ:image,summary=&#91;鍔ㄧ敾琛ㄦ儏&#93;,file=sticker.jpg,sub_type=1]"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(4));
+        Assert.That(dispatchCount, Is.EqualTo(1));
+        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "media-reply") }));
+    }
+
+    [Test]
+    public async Task PassiveLowInformationFilterAllowsMentionsButSuppressesUnmentionedOwnerLowInformation()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            AllowProactiveGroupChat = true,
+            ProactiveChatProbability = 1.0f,
+            FlushInterval = 0,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatchCount++;
+            return service.SendChatAsync("group", inbound.TargetId, $"reply-{dispatchCount}");
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "[CQ:at,qq=999] [CQ:image,file=sticker.jpg]"
+        });
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(4));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "哈哈"
+        });
+
+        await Task.Delay(300);
+        Assert.That(dispatchCount, Is.EqualTo(1));
+        Assert.That(runtime.GroupMessages.Select(message => message.Message), Is.EqualTo(new[] {
+            "reply-1",
+        }));
     }
 
     [Test]
@@ -873,6 +1254,76 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task QuietModeSuppressesOwnerGroupMessageUntilWakeCommand()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            FlushInterval = 0,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatchCount++;
+            return service.SendChatAsync("group", inbound.TargetId, $"reply-{dispatchCount}");
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "\u4f60\u53bb\u7761\u89c9\u5427"
+        });
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "\u73b0\u5728\u8fd8\u4f1a\u56de\u590d\u5417"
+        });
+
+        await Task.Delay(300);
+        Assert.That(service.IsQuietModeEnabled, Is.True);
+        Assert.That(dispatchCount, Is.Zero);
+        Assert.That(runtime.GroupMessages, Is.Empty);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "\u9192\u9192"
+        });
+        await WaitUntilAsync(() => service.IsQuietModeEnabled == false);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "\u4f60\u8fd8\u5728\u5417"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "reply-1") }));
+    }
+
+    [Test]
     public async Task OwnerWakeCommandDisablesQuietModeAndAllowsNextOwnerReply()
     {
         FakeOneBotRuntime runtime = new();
@@ -924,7 +1375,7 @@ public class QChatServiceAdapterTests
             {
                 Configuration = new QChatConfig { BotId = 999 }
             };
-            GroupState state = new() { GroupId = 3001 };
+            GroupState state = new() { GroupId = 9876543210123L };
 
             service.FlushGroupBuffer(state);
             service.FlushGroupBuffer(state);
@@ -942,10 +1393,13 @@ public class QChatServiceAdapterTests
         }
     }
 
-    static QChatService CreateStartedService(FakeOneBotRuntime runtime, QChatConfig config)
+    static QChatService CreateStartedService(
+        FakeOneBotRuntime runtime,
+        QChatConfig config,
+        AgentControlCenterService? controlCenter = null)
     {
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
-        QChatService service = new(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        QChatService service = new(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime, agentControlCenter: controlCenter)
         {
             Configuration = config
         };

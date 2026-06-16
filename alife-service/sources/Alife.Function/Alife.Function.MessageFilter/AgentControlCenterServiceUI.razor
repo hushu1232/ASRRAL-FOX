@@ -528,16 +528,22 @@
                                         @GetEnabledText(snapshot.Configuration.AllowPassiveGroupListening)
                                     </Tag>
                                 </div>
-                            <div class="command-line">
-                                <span>Proactive chat</span>
-                                <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowProactiveChat)">
-                                    @GetEnabledText(snapshot.Configuration.AllowProactiveChat)
-                                </Tag>
+                                <div class="command-line">
+                                    <span>Proactive chat</span>
+                                    <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowProactiveChat)">
+                                        @GetEnabledText(snapshot.Configuration.AllowProactiveChat)
+                                    </Tag>
                                 </div>
                                 <div class="command-line">
-                                <span>Proactive intensity</span>
-                                <Tag Color="@("blue")">@snapshot.Configuration.ProactiveChatIntensity</Tag>
-                            </div>
+                                    <div>
+                                        <span>Proactive mode</span>
+                                        <div class="muted">@AgentControlCenterService.GetProactiveChatModeDescription(snapshot.Configuration.ProactiveChatIntensity)</div>
+                                    </div>
+                                    <Tag Color="@GetProactiveChatModeColor(snapshot.Configuration.ProactiveChatIntensity)">
+                                        @AgentControlCenterService.GetProactiveChatModeName(snapshot.Configuration.ProactiveChatIntensity)
+                                        (@snapshot.Configuration.ProactiveChatIntensity)
+                                    </Tag>
+                                </div>
                             <div class="command-line">
                                 <span>Auto maintenance</span>
                                 <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowAutomaticMaintenanceInspection)">
@@ -669,6 +675,63 @@
                                         </div>
                                     </div>
                                     <Tag Color="@GetSchedulerColor(snapshot.SelfCheckScheduler.LastSkipReason)">loop</Tag>
+                                </div>
+
+                                <div class="anti-spam-panel">
+                                    <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("8")">
+                                        <div>
+                                            <Text Strong>QQ group anti-spam</Text>
+                                            <div class="muted">
+                                                @snapshot.RuntimeVisibility.QChat.AntiSpam.RecentGroupMessageCount group trigger(s),
+                                                @snapshot.RuntimeVisibility.QChat.AntiSpam.RecentGroupBufferedCount dispatched,
+                                                @snapshot.RuntimeVisibility.QChat.AntiSpam.RecentSuppressedCount suppressed
+                                            </div>
+                                        </div>
+                                        <Tag Color="@GetAntiSpamColor(snapshot.RuntimeVisibility.QChat.AntiSpam)">
+                                            @GetAntiSpamStatusText(snapshot.RuntimeVisibility.QChat.AntiSpam)
+                                        </Tag>
+                                    </Flex>
+                                    <div class="anti-spam-grid">
+                                        <div class="anti-spam-metric">
+                                            <Text Type="TextElementType.Secondary">Low info</Text>
+                                            <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentLowInformationSuppressionCount</div>
+                                        </div>
+                                        <div class="anti-spam-metric">
+                                            <Text Type="TextElementType.Secondary">Cooldown</Text>
+                                            <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentCooldownSuppressionCount</div>
+                                        </div>
+                                        <div class="anti-spam-metric">
+                                            <Text Type="TextElementType.Secondary">Quiet</Text>
+                                            <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentQuietSuppressionCount</div>
+                                        </div>
+                                        <div class="anti-spam-metric">
+                                            <Text Type="TextElementType.Secondary">Media</Text>
+                                            <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentMediaChanceAllowedCount</div>
+                                        </div>
+                                    </div>
+                                    <div class="muted">
+                                        passive cooldown @FormatSeconds(snapshot.RuntimeVisibility.QChat.AntiSpam.PassiveCooldownSeconds),
+                                        elapsed @FormatNullableSeconds(snapshot.RuntimeVisibility.QChat.AntiSpam.LastPassiveElapsedSeconds),
+                                        proactive probability @FormatProbability(snapshot.RuntimeVisibility.QChat.AntiSpam.ObservedProactiveProbability),
+                                        media chance @FormatProbability(snapshot.RuntimeVisibility.QChat.AntiSpam.ObservedMediaOnlyReplyProbability)
+                                    </div>
+                                    <div class="muted">
+                                        quiet mode @(snapshot.RuntimeVisibility.QChat.AntiSpam.QuietModeEnabled ? "enabled" : "disabled")
+                                        @if (string.IsNullOrWhiteSpace(snapshot.RuntimeVisibility.QChat.AntiSpam.QuietModeReason) == false)
+                                        {
+                                            <span> / @snapshot.RuntimeVisibility.QChat.AntiSpam.QuietModeReason</span>
+                                        }
+                                    </div>
+                                    @if (string.IsNullOrWhiteSpace(snapshot.RuntimeVisibility.QChat.AntiSpam.LastSuppressionReason) == false)
+                                    {
+                                        <div class="muted">
+                                            last suppression: @snapshot.RuntimeVisibility.QChat.AntiSpam.LastSuppressionReason
+                                            @if (snapshot.RuntimeVisibility.QChat.AntiSpam.RecentSuppressionReasons.Count > 0)
+                                            {
+                                                <span> / reasons: @string.Join(", ", snapshot.RuntimeVisibility.QChat.AntiSpam.RecentSuppressionReasons)</span>
+                                            }
+                                        </div>
+                                    }
                                 </div>
 
                                 @if (snapshot.RuntimeVisibility.BackgroundTasks.Count == 0)
@@ -1046,9 +1109,51 @@
         return memoryConsistency.HasIssues ? "orange" : "green";
     }
 
+    static string GetAntiSpamColor(AgentQChatAntiSpamVisibility antiSpam)
+    {
+        if (antiSpam.QuietModeEnabled)
+            return "blue";
+        if (antiSpam.RecentSuppressedCount > 0)
+            return "orange";
+        return "green";
+    }
+
+    static string GetAntiSpamStatusText(AgentQChatAntiSpamVisibility antiSpam)
+    {
+        if (antiSpam.QuietModeEnabled)
+            return "quiet";
+        if (antiSpam.RecentSuppressedCount > 0)
+            return "filtering";
+        return "normal";
+    }
+
+    static string FormatSeconds(int seconds)
+    {
+        return seconds <= 0 ? "none" : $"{seconds}s";
+    }
+
+    static string FormatNullableSeconds(double? seconds)
+    {
+        return seconds == null ? "unknown" : $"{seconds.Value:0.#}s";
+    }
+
+    static string FormatProbability(double? probability)
+    {
+        return probability == null ? "unknown" : $"{probability.Value:P0}";
+    }
+
     static string GetEnabledColor(bool enabled) => enabled ? "green" : "default";
 
     static string GetEnabledText(bool enabled) => enabled ? "enabled" : "disabled";
+
+    static string GetProactiveChatModeColor(int intensity) => intensity switch
+    {
+        <= 0 => "default",
+        1 => "cyan",
+        2 => "blue",
+        <= 4 => "orange",
+        _ => "red"
+    };
 
     static string GetSelfCheckHandlingColor(bool canAgentHandleAutonomously) =>
         canAgentHandleAutonomously ? "green" : "orange";
@@ -1128,6 +1233,35 @@
         background: #fff;
         padding: 8px;
         min-height: 76px;
+    }
+
+    .anti-spam-panel {
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        background: #fff;
+        padding: 10px;
+        overflow-wrap: anywhere;
+    }
+
+    .anti-spam-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin: 8px 0;
+    }
+
+    .anti-spam-metric {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fafafa;
+        padding: 7px 8px;
+        min-height: 58px;
+    }
+
+    .anti-spam-metric div {
+        font-size: 18px;
+        font-weight: 650;
+        color: #1f2937;
     }
 
     .metric-value {

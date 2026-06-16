@@ -110,12 +110,25 @@ public static class QChatMessageSecurity
     public static float GetProactiveChatProbability(QChatConfig config, AgentControlCenterConfig? controlConfig)
     {
         if (controlConfig == null)
-            return config.ProactiveChatProbability;
+            return Math.Clamp(config.ProactiveChatProbability, 0f, 1f);
         if (controlConfig.AllowProactiveChat == false)
             return 0;
 
-        float intensityMultiplier = Math.Clamp(controlConfig.ProactiveChatIntensity, 0, 10) / 5f;
+        int intensity = Math.Clamp(controlConfig.ProactiveChatIntensity, 0, 10);
+        float intensityMultiplier = intensity switch
+        {
+            <= 1 => 0f,
+            2 => 0.5f,
+            3 => 0.7f,
+            4 => 0.9f,
+            _ => 1f
+        };
         return Math.Clamp(config.ProactiveChatProbability * intensityMultiplier, 0f, 1f);
+    }
+
+    public static float GetMediaOnlyPassiveGroupReplyProbability(QChatConfig config)
+    {
+        return Math.Clamp(config.MediaOnlyPassiveGroupReplyProbability, 0f, 1f);
     }
 
     public static AgentPermissionConfig BuildPermissionConfig(QChatConfig config, AgentControlCenterConfig? controlConfig)

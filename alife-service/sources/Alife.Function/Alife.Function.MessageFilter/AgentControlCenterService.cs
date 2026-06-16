@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Alife.Framework;
@@ -125,13 +126,74 @@ public sealed record AgentActionGatewayAuditSummary(
     int FailedCount,
     IReadOnlyList<AgentAuditLogEntry> RecentEntries);
 
+public sealed record AgentQChatRuntimeVisibility(
+    int RecentConnectSucceededCount,
+    int RecentInboundMessageCount,
+    int RecentOutboundMessageCount,
+    int RecentFailureCount,
+    int RecentQuietSuppressionCount,
+    DateTimeOffset? LastConnectSucceededAt,
+    DateTimeOffset? LastInboundMessageAt,
+    DateTimeOffset? LastOutboundMessageAt,
+    IReadOnlyList<string> RecentFailures,
+    AgentQChatAntiSpamVisibility AntiSpam)
+{
+    public static AgentQChatRuntimeVisibility Empty { get; } = new(
+        0,
+        0,
+        0,
+        0,
+        0,
+        null,
+        null,
+        null,
+        [],
+        AgentQChatAntiSpamVisibility.Empty);
+}
+
+public sealed record AgentQChatAntiSpamVisibility(
+    int RecentGroupMessageCount,
+    int RecentGroupBufferedCount,
+    int RecentSuppressedCount,
+    int RecentLowInformationSuppressionCount,
+    int RecentCooldownSuppressionCount,
+    int RecentQuietSuppressionCount,
+    int RecentMediaChanceAllowedCount,
+    bool QuietModeEnabled,
+    string QuietModeReason,
+    int PassiveCooldownSeconds,
+    double? LastPassiveElapsedSeconds,
+    double? ObservedProactiveProbability,
+    double? ObservedMediaOnlyReplyProbability,
+    string LastSuppressionReason,
+    IReadOnlyList<string> RecentSuppressionReasons)
+{
+    public static AgentQChatAntiSpamVisibility Empty { get; } = new(
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        false,
+        "",
+        0,
+        null,
+        null,
+        null,
+        "",
+        []);
+}
+
 public sealed record AgentControlCenterRuntimeVisibility(
     IReadOnlyList<AgentStreamingPolicyVisibility> StreamingPolicies,
     AgentChatLatencyVisibility ChatLatency,
     AgentEventPipelineSnapshot EventPipeline,
     IReadOnlyList<AgentBackgroundTaskResult> BackgroundTasks,
     AgentActionGatewayAuditSummary ActionGatewayAudit,
-    IReadOnlyList<AgentRunSnapshot> RecentRunSessions);
+    IReadOnlyList<AgentRunSnapshot> RecentRunSessions,
+    AgentQChatRuntimeVisibility QChat);
 
 public sealed record AgentControlCenterHealthTriageSnapshot(
     IReadOnlyList<ModuleHealth> Waiting,
@@ -300,7 +362,7 @@ public class AgentControlCenterService(
               Low-risk self-configuration: {(config.AllowAgentLowRiskSelfConfiguration ? "enabled" : "disabled")}
               Mention wakeup: {(config.AllowMentionWakeup ? "enabled" : "disabled")}
               Passive group listening: {(config.AllowPassiveGroupListening ? "enabled" : "disabled")}
-              Proactive chat: {(config.AllowProactiveChat ? "enabled" : "disabled")} intensity={config.ProactiveChatIntensity}
+              Proactive chat: {FormatProactiveChatStatus(config)}
               Automatic maintenance inspection: {(config.AllowAutomaticMaintenanceInspection ? "enabled" : "disabled")} every {config.MaintenanceInspectionIntervalMinutes}m, duplicate cooldown={config.MaintenanceDuplicateCooldownMinutes}m
               Pending configuration proposals: {configurationProposals.Count}
               """);
@@ -1315,6 +1377,27 @@ public class AgentControlCenterService(
                 ActionId: "reduce-proactive-intensity"));
         }
 
+        if (runtimeVisibility.QChat.RecentFailureCount > 0)
+        {
+            items.Add(new AgentControlCenterSelfCheckItem(
+                "qq-runtime-failure",
+                AgentAuditRiskLevel.Medium,
+                $"QQ runtime has {runtimeVisibility.QChat.RecentFailureCount} recent failure event(s): {string.Join("; ", runtimeVisibility.QChat.RecentFailures.Take(2))}",
+                "Do not retry noisy QQ output automatically. Summarize the failure and ask the owner to check OneBot/NapCat only when QQ communication is needed.",
+                CanAgentHandleAutonomously: false));
+        }
+
+        if (runtimeVisibility.QChat.RecentOutboundMessageCount >= 6)
+        {
+            items.Add(new AgentControlCenterSelfCheckItem(
+                "qq-output-volume",
+                AgentAuditRiskLevel.Low,
+                $"QQ sent {runtimeVisibility.QChat.RecentOutboundMessageCount} recent message(s).",
+                "Reduce proactive chat intensity before sending more unsolicited QQ messages.",
+                CanAgentHandleAutonomously: true,
+                ActionId: "reduce-proactive-intensity"));
+        }
+
         if (runtimeVisibility.ActionGatewayAudit.BlockedCount > 0)
         {
             items.Add(new AgentControlCenterSelfCheckItem(
@@ -1436,7 +1519,201 @@ public class AgentControlCenterService(
             recentRunSessions
                 .OrderByDescending(session => session.StartedAt)
                 .Take(8)
+                .ToArray(),
+            BuildQChatRuntimeVisibility());
+    }
+
+    AgentQChatRuntimeVisibility BuildQChatRuntimeVisibility()
+    {
+        try
+        {
+            if (File.Exists(qchatDiagnosticsPath) == false)
+                return AgentQChatRuntimeVisibility.Empty;
+
+            QChatDiagnosticEntry[] entries = File.ReadLines(qchatDiagnosticsPath)
+                .TakeLast(200)
+                .Select(TryParseQChatDiagnosticEntry)
+                .OfType<QChatDiagnosticEntry>()
+                .ToArray();
+            int latestStartIndex = Array.FindLastIndex(
+                entries,
+                entry => entry.EventName.Equals("start", StringComparison.OrdinalIgnoreCase));
+            if (latestStartIndex >= 0)
+                entries = entries.Skip(latestStartIndex).ToArray();
+
+            QChatDiagnosticEntry[] failures = entries
+                .Where(entry => IsQChatFailureEvent(entry.EventName))
+                .ToArray();
+            AgentQChatAntiSpamVisibility antiSpam = BuildQChatAntiSpamVisibility(entries);
+
+            return new AgentQChatRuntimeVisibility(
+                entries.Count(entry => entry.EventName.Equals("connect-succeeded", StringComparison.OrdinalIgnoreCase)),
+                entries.Count(entry => entry.EventName.Equals("message-dispatching", StringComparison.OrdinalIgnoreCase)),
+                entries.Count(entry => entry.EventName.Equals("qchat-sent", StringComparison.OrdinalIgnoreCase)
+                                       || entry.EventName.Equals("plain-fallback-sent", StringComparison.OrdinalIgnoreCase)),
+                failures.Length,
+                entries.Count(entry => entry.EventName.Equals("qchat-quiet-message-suppressed", StringComparison.OrdinalIgnoreCase)),
+                entries.LastOrDefault(entry => entry.EventName.Equals("connect-succeeded", StringComparison.OrdinalIgnoreCase))?.Timestamp,
+                entries.LastOrDefault(entry => entry.EventName.Equals("message-dispatching", StringComparison.OrdinalIgnoreCase))?.Timestamp,
+                entries.LastOrDefault(entry => entry.EventName.Equals("qchat-sent", StringComparison.OrdinalIgnoreCase)
+                                               || entry.EventName.Equals("plain-fallback-sent", StringComparison.OrdinalIgnoreCase))?.Timestamp,
+                failures
+                    .TakeLast(5)
+                    .Select(entry => $"{entry.EventName}: {entry.Detail}")
+                    .ToArray(),
+                antiSpam);
+        }
+        catch
+        {
+            return AgentQChatRuntimeVisibility.Empty;
+        }
+    }
+
+    static AgentQChatAntiSpamVisibility BuildQChatAntiSpamVisibility(IReadOnlyList<QChatDiagnosticEntry> entries)
+    {
+        QChatDiagnosticEntry[] suppressed = entries
+            .Where(entry => GetAntiSpamSuppressionReason(entry.EventName).Length > 0)
+            .ToArray();
+        QChatDiagnosticEntry[] lowInformation = suppressed
+            .Where(entry => entry.EventName.Equals("group-passive-low-information-skipped", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        QChatDiagnosticEntry[] cooldown = suppressed
+            .Where(entry => entry.EventName.Equals("group-passive-throttled", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        QChatDiagnosticEntry[] quiet = suppressed
+            .Where(entry => entry.EventName.Equals("qchat-quiet-message-suppressed", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        QChatDiagnosticEntry? latestCooldown = cooldown.LastOrDefault();
+        QChatDiagnosticEntry? latestProactive = entries.LastOrDefault(entry =>
+            entry.EventName.Equals("group-buffered-proactive", StringComparison.OrdinalIgnoreCase));
+        QChatDiagnosticEntry? latestMediaChanceAllowed = entries.LastOrDefault(entry =>
+            entry.EventName.Equals("group-passive-media-chance-allowed", StringComparison.OrdinalIgnoreCase));
+        QChatDiagnosticEntry? latestQuietMode = entries.LastOrDefault(entry =>
+            entry.EventName.Equals("qchat-quiet-mode-enabled", StringComparison.OrdinalIgnoreCase)
+            || entry.EventName.Equals("qchat-quiet-mode-disabled", StringComparison.OrdinalIgnoreCase)
+            || entry.EventName.Equals("qchat-quiet-mode-restored", StringComparison.OrdinalIgnoreCase)
+            || entry.EventName.Equals("qchat-quiet-mode-restore-skipped", StringComparison.OrdinalIgnoreCase));
+        QChatDiagnosticEntry? latestSuppression = suppressed.LastOrDefault();
+
+        return new AgentQChatAntiSpamVisibility(
+            entries.Count(entry =>
+                entry.EventName.Equals("message-dispatching", StringComparison.OrdinalIgnoreCase)
+                && entry.GetStringData("MessageType").Equals("Group", StringComparison.OrdinalIgnoreCase)),
+            entries.Count(entry =>
+                entry.EventName.Equals("group-buffered", StringComparison.OrdinalIgnoreCase)
+                || entry.EventName.Equals("group-buffered-proactive", StringComparison.OrdinalIgnoreCase)),
+            suppressed.Length,
+            lowInformation.Length,
+            cooldown.Length,
+            quiet.Length,
+            entries.Count(entry => entry.EventName.Equals("group-passive-media-chance-allowed", StringComparison.OrdinalIgnoreCase)),
+            latestQuietMode?.EventName.Equals("qchat-quiet-mode-enabled", StringComparison.OrdinalIgnoreCase) == true
+            || latestQuietMode?.EventName.Equals("qchat-quiet-mode-restored", StringComparison.OrdinalIgnoreCase) == true
+               && latestQuietMode.GetBoolData("IsQuietModeEnabled") == true,
+            latestQuietMode?.GetStringData("reason") is { Length: > 0 } reason
+                ? reason
+                : latestQuietMode?.GetStringData("QuietModeReason") ?? "",
+            latestCooldown?.GetIntData("cooldownSeconds") ?? 0,
+            latestCooldown?.GetDoubleData("elapsedSeconds"),
+            latestProactive?.GetDoubleData("EffectiveProactiveChatProbability")
+            ?? latestProactive?.GetDoubleData("ProactiveChatProbability"),
+            latestMediaChanceAllowed?.GetDoubleData("MediaOnlyPassiveGroupReplyProbability"),
+            latestSuppression == null ? "" : GetAntiSpamSuppressionReason(latestSuppression.EventName),
+            suppressed
+                .Select(entry => GetAntiSpamSuppressionReason(entry.EventName))
+                .Where(reason => reason.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray());
+    }
+
+    static string GetAntiSpamSuppressionReason(string eventName)
+    {
+        if (eventName.Equals("group-filtered", StringComparison.OrdinalIgnoreCase))
+            return "policy";
+        if (eventName.Equals("group-passive-low-information-skipped", StringComparison.OrdinalIgnoreCase))
+            return "low-information";
+        if (eventName.Equals("group-passive-throttled", StringComparison.OrdinalIgnoreCase))
+            return "cooldown";
+        if (eventName.Equals("qchat-quiet-message-suppressed", StringComparison.OrdinalIgnoreCase))
+            return "quiet-mode";
+        return "";
+    }
+
+    static QChatDiagnosticEntry? TryParseQChatDiagnosticEntry(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+            return null;
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            JsonElement root = document.RootElement;
+            DateTimeOffset? timestamp = null;
+            if (root.TryGetProperty("timestamp", out JsonElement timestampElement)
+                && timestampElement.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(timestampElement.GetString(), out DateTimeOffset parsedTimestamp))
+            {
+                timestamp = parsedTimestamp;
+            }
+
+            string eventName = root.TryGetProperty("eventName", out JsonElement eventNameElement)
+                ? eventNameElement.GetString() ?? ""
+                : "";
+            if (string.IsNullOrWhiteSpace(eventName))
+                return null;
+
+            string detail = root.TryGetProperty("detail", out JsonElement detailElement)
+                ? detailElement.GetString() ?? ""
+                : "";
+
+            Dictionary<string, string> data = new(StringComparer.OrdinalIgnoreCase);
+            if (root.TryGetProperty("data", out JsonElement dataElement)
+                && dataElement.ValueKind == JsonValueKind.Object)
+            {
+                foreach (JsonProperty property in dataElement.EnumerateObject())
+                    data[property.Name] = property.Value.ToString();
+            }
+
+            return new QChatDiagnosticEntry(timestamp, eventName, detail, data);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    static bool IsQChatFailureEvent(string eventName)
+    {
+        return eventName.Equals("qchat-send-failed", StringComparison.OrdinalIgnoreCase)
+               || eventName.Equals("model-dispatch-failed", StringComparison.OrdinalIgnoreCase)
+               || eventName.Equals("connect-failed", StringComparison.OrdinalIgnoreCase);
+    }
+
+    sealed record QChatDiagnosticEntry(
+        DateTimeOffset? Timestamp,
+        string EventName,
+        string Detail,
+        IReadOnlyDictionary<string, string> Data)
+    {
+        public string GetStringData(string key)
+        {
+            return Data.TryGetValue(key, out string? value) ? value : "";
+        }
+
+        public int? GetIntData(string key)
+        {
+            return int.TryParse(GetStringData(key), out int value) ? value : null;
+        }
+
+        public double? GetDoubleData(string key)
+        {
+            return double.TryParse(GetStringData(key), out double value) ? value : null;
+        }
+
+        public bool? GetBoolData(string key)
+        {
+            return bool.TryParse(GetStringData(key), out bool value) ? value : null;
+        }
     }
 
     static IReadOnlyList<AgentStreamingPolicyVisibility> BuildStreamingPolicyVisibility()
@@ -1546,7 +1823,18 @@ public class AgentControlCenterService(
         AgentControlCenterSelfCheckItem[] meaningfulItems = snapshot.SelfCheck.Items
             .Where(item => item.Category.Equals("ready", StringComparison.OrdinalIgnoreCase) == false)
             .ToArray();
+        IReadOnlyList<AgentControlCenterSelfCheckActionResult> autonomousActions =
+            ApplyAutomaticSelfCheckActions(meaningfulItems, runtimeState);
         string resultText = FormatSelfCheckForAgent(snapshot.SelfCheck);
+        if (autonomousActions.Count > 0)
+        {
+            StringBuilder builder = new(resultText);
+            builder.AppendLine();
+            builder.AppendLine("Autonomous actions applied:");
+            foreach (AgentControlCenterSelfCheckActionResult action in autonomousActions)
+                builder.AppendLine($"- {action.ActionId}: {action.Message}");
+            resultText = builder.ToString();
+        }
         AgentBackgroundTaskResult backgroundResult = AgentBackgroundTaskResult.Completed(
             $"agent-self-check-{now:yyyyMMddHHmmss}",
             "agent-self-check",
@@ -1586,7 +1874,7 @@ public class AgentControlCenterService(
         auditLog.Record(
             "agent.self_check.loop",
             "agent",
-            $"items={snapshot.SelfCheck.Items.Count}; meaningful={meaningfulItems.Length}; wake={wakeRecommended}",
+            $"items={snapshot.SelfCheck.Items.Count}; meaningful={meaningfulItems.Length}; autonomous_actions={autonomousActions.Count}; wake={wakeRecommended}",
             AgentAuditRiskLevel.Low,
             true);
 
@@ -1596,6 +1884,29 @@ public class AgentControlCenterService(
             wakeRecommended,
             wakeEvent,
             maintenanceInspection);
+    }
+
+    IReadOnlyList<AgentControlCenterSelfCheckActionResult> ApplyAutomaticSelfCheckActions(
+        IEnumerable<AgentControlCenterSelfCheckItem> items,
+        ChatRuntimeState runtimeState)
+    {
+        List<AgentControlCenterSelfCheckActionResult> results = [];
+        AgentControlCenterConfig config = EnsureConfiguration();
+        foreach (AgentControlCenterSelfCheckItem item in items)
+        {
+            if (item.CanAgentHandleAutonomously == false
+                || item.RiskLevel != AgentAuditRiskLevel.Low
+                || item.Category.Equals("qq-output-volume", StringComparison.OrdinalIgnoreCase) == false
+                || string.Equals(item.ActionId, "reduce-proactive-intensity", StringComparison.OrdinalIgnoreCase) == false
+                || config.ProactiveChatIntensity <= 0)
+            {
+                continue;
+            }
+
+            results.Add(ApplySelfCheckAction(item.ActionId!, runtimeState, "agent"));
+        }
+
+        return results;
     }
 
     AgentControlCenterSelfCheckSchedulerStatus BuildSelfCheckSchedulerStatus(AgentControlCenterConfig config)
@@ -1631,6 +1942,36 @@ public class AgentControlCenterService(
     static IReadOnlyList<string> ParseKeyList(string value)
     {
         return value.Split([';', ',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    public static string FormatProactiveChatStatus(AgentControlCenterConfig config)
+    {
+        string enabledText = config.AllowProactiveChat ? "enabled" : "disabled";
+        return $"{enabledText} mode={GetProactiveChatModeName(config.ProactiveChatIntensity)} intensity={config.ProactiveChatIntensity}";
+    }
+
+    public static string GetProactiveChatModeName(int intensity)
+    {
+        return intensity switch
+        {
+            <= 0 => "安静",
+            1 => "低调",
+            2 => "平衡",
+            <= 4 => "活跃",
+            _ => "高活跃"
+        };
+    }
+
+    public static string GetProactiveChatModeDescription(int intensity)
+    {
+        return intensity switch
+        {
+            <= 0 => "只响应主人或明确 @，不主动插话",
+            1 => "低频回应，适合群聊降噪",
+            2 => "极少量自然插话，默认推荐",
+            <= 4 => "更愿意参与对话，但仍受冷却限制",
+            _ => "测试或小群使用，刷屏风险较高"
+        };
     }
 
     static string GetConfigValue(AgentControlCenterConfig config, string key)
