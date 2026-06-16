@@ -118,6 +118,22 @@
                         </GridCol>
                         <GridCol Xs="24" Md="12">
                             <Card Size="CardSize.Small" Title="聊天入口" Class="qchat-card">
+                                <FormItem Label="QQ 安静模式">
+                                    <Switch @bind-Value="@QuietModeEnabled" />
+                                    @if (Module?.IsQuietModeEnabled == true)
+                                    {
+                                        <div class="quiet-hint">已暂停非主人私聊、群聊 @@、普通群聊和主动群聊。</div>
+                                        <div class="quiet-hint">@QuietModeDetail</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="quiet-hint">当前允许按下方策略处理 QQ 消息。</div>
+                                    }
+                                </FormItem>
+                                <FormItem Label="重启后保持安静模式">
+                                    <Switch @bind-Value="@Configuration.PersistQuietModeAcrossRestart" />
+                                    <div class="quiet-hint">关闭时，重启后恢复正常 QQ 聊天；开启时会恢复上次安静/唤醒状态。</div>
+                                </FormItem>
                                 <FormItem Label="允许群成员聊天">
                                     <Switch @bind-Value="@Configuration.AllowGroupMemberChat" />
                                 </FormItem>
@@ -329,6 +345,31 @@
     string activeGroupTabKey = "overview";
     bool isReconnecting;
     System.Timers.Timer? refreshTimer;
+    bool QuietModeEnabled
+    {
+        get => Module?.IsQuietModeEnabled ?? false;
+        set
+        {
+            if (Module == null || Module.IsQuietModeEnabled == value)
+                return;
+
+            Module.QChatQuietMode(value, "control-center");
+        }
+    }
+    string QuietModeDetail
+    {
+        get
+        {
+            if (Module == null)
+                return "";
+
+            string reason = string.IsNullOrWhiteSpace(Module.QuietModeReason)
+                ? "未记录原因"
+                : Module.QuietModeReason;
+            string changedAt = Module.QuietModeChangedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "未知时间";
+            return $"原因: {reason}; 时间: {changedAt}";
+        }
+    }
 
     protected override void OnInitialized()
     {
@@ -418,6 +459,13 @@
         font-weight: 650;
         margin-top: 6px;
         overflow-wrap: anywhere;
+    }
+
+    .quiet-hint {
+        color: rgba(0, 0, 0, 0.45);
+        font-size: 12px;
+        line-height: 1.5;
+        margin-top: 6px;
     }
 
     .prompt-card {

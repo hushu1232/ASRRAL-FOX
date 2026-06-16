@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Microsoft.Extensions.Logging;
@@ -32,6 +33,16 @@ public class ChatActivitySystem
     public ChatActivity? GetChatActivity(Character character)
     {
         return activities.GetValueOrDefault(character.Name);
+    }
+
+    public async Task ActivateAutoActivateCharacters()
+    {
+        List<Character> startingCharacters = characterSystem.GetAllCharacters()
+            .Where(c => c.AutoActivate && !IsActivated(c))
+            .ToList();
+
+        foreach (Character startingCharacter in startingCharacters)
+            await Activate(startingCharacter);
     }
 
     /// <summary>

@@ -17,6 +17,7 @@
 
 !/tools/
 !/tools/upload-alife-service-via-foxd.ps1
+!/tools/start-alife-napcat-live.ps1
 
 !/README.md
 !/LICENSE

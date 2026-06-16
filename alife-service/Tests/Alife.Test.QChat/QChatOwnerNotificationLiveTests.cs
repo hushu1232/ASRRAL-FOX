@@ -91,6 +91,58 @@ public class QChatOwnerNotificationLiveTests
     }
 
     [Test]
+    public async Task LiveSentenceStreamingDoesNotHardCutUnfinishedQqText()
+    {
+        if (Environment.GetEnvironmentVariable("ALIFE_QCHAT_LIVE_OWNER_NOTIFICATION") != "1")
+            Assert.Ignore("Set ALIFE_QCHAT_LIVE_OWNER_NOTIFICATION=1 to run real QQ streaming diagnostics.");
+
+        string url = Environment.GetEnvironmentVariable("ALIFE_QCHAT_LIVE_URL") ?? "ws://127.0.0.1:3001";
+        string token = Environment.GetEnvironmentVariable("ALIFE_QCHAT_LIVE_TOKEN") ?? "";
+        long botId = ReadLongEnvironment("ALIFE_QCHAT_LIVE_BOT_ID", 3340947887);
+        long ownerId = ReadLongEnvironment("ALIFE_QCHAT_LIVE_OWNER_ID", 3045846738);
+        long groupId = ReadLongEnvironment("ALIFE_QCHAT_LIVE_GROUP_ID", 867165927);
+        string marker = DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss");
+        string unfinishedGroupText = $"AstralFox sentence-streaming group no hard cut {marker} abcdefghijklmnopqrstuvwxyz0123456789";
+        string unfinishedPrivateText = $"AstralFox sentence-streaming private no hard cut {marker} abcdefghijklmnopqrstuvwxyz0123456789";
+
+        OneBotRuntime runtime = new(new OneBotClient(url, token));
+        await runtime.ConnectAsync();
+        await using (runtime.ConfigureAwait(false))
+        {
+            TrackingOneBotRuntime tracking = new(runtime);
+            QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: tracking)
+            {
+                Configuration = new QChatConfig
+                {
+                    Url = url,
+                    Token = token,
+                    BotId = botId,
+                    OwnerId = ownerId,
+                    EnableBalancedTextStreaming = true
+                }
+            };
+
+            await service.SendChatAsync("group", groupId, unfinishedGroupText);
+            await service.SendChatAsync("private", ownerId, unfinishedPrivateText);
+
+            IReadOnlyList<(long Target, string Message)> groupMessages = tracking.GroupMessages
+                .Where(message => message.Target == groupId && message.Message.Contains(marker, StringComparison.Ordinal))
+                .ToArray();
+            IReadOnlyList<(long Target, string Message)> privateMessages = tracking.PrivateMessages
+                .Where(message => message.Target == ownerId && message.Message.Contains(marker, StringComparison.Ordinal))
+                .ToArray();
+
+            TestContext.Out.WriteLine($"Group unfinished streaming messages to {groupId}: {groupMessages.Count}");
+            TestContext.Out.WriteLine($"Private unfinished streaming messages to {ownerId}: {privateMessages.Count}");
+            Assert.Multiple(() =>
+            {
+                Assert.That(groupMessages.Select(message => message.Message), Is.EqualTo(new[] { unfinishedGroupText }));
+                Assert.That(privateMessages.Select(message => message.Message), Is.EqualTo(new[] { unfinishedPrivateText }));
+            });
+        }
+    }
+
+    [Test]
     public async Task LiveGroupMembersAndGroupFileUpload()
     {
         if (Environment.GetEnvironmentVariable("ALIFE_QCHAT_LIVE_OWNER_NOTIFICATION") != "1")

@@ -25,10 +25,21 @@ public class StreamingOutputSegmenterTests
     }
 
     [Test]
+    public void Push_QqGroupText_DoesNotCutBeforeSentenceBoundary()
+    {
+        StreamingOutputSegmenter segmenter = new(StreamingOutputPolicy.QqGroupText);
+        string incompleteSentence = "abcdefghijklmnopqrstuvwxyz0123456789abcdefghij";
+
+        Assert.That(segmenter.Push(incompleteSentence), Is.Empty);
+        Assert.That(segmenter.Flush(), Is.EqualTo(new[] { incompleteSentence }));
+    }
+
+    [Test]
     public void Push_ShortSentenceMode_FlushesWhenBufferReachesMaxCharacters()
     {
         StreamingOutputPolicy policy = StreamingOutputPolicy.QqGroupText with
         {
+            Mode = StreamingOutputMode.ShortSentence,
             MaxBufferedCharacters = 6,
             MinBufferedCharacters = 1,
         };

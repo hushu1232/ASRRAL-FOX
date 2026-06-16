@@ -2490,7 +2490,7 @@ public class AgentCapabilityServiceTests
         Directory.CreateDirectory(storageRoot);
         try
         {
-            AlifePath.SetStorageFolderPath(storageRoot);
+            AlifePath.SetStorageFolderPath(storageRoot, persist: false);
             ConfigurationSystem configurationSystem = new(new StorageSystem());
             AgentControlCenterService service = new(configurationSystem: configurationSystem);
 
@@ -2508,7 +2508,7 @@ public class AgentCapabilityServiceTests
         }
         finally
         {
-            AlifePath.SetStorageFolderPath(previousStorage);
+            AlifePath.SetStorageFolderPath(previousStorage, persist: false);
         }
     }
 

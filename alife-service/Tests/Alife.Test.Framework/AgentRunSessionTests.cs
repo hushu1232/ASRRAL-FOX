@@ -18,7 +18,7 @@ public class AgentRunSessionTests
         Assert.That(snapshot.Status, Is.EqualTo(AgentRunStatus.Running));
         Assert.That(snapshot.SourceEventType, Is.EqualTo("qq.message.group"));
         Assert.That(snapshot.SourceSessionId, Is.EqualTo("qq:group:1000"));
-        Assert.That(snapshot.StreamingMode, Is.EqualTo(StreamingOutputMode.ShortSentence));
+        Assert.That(snapshot.StreamingMode, Is.EqualTo(StreamingOutputMode.Sentence));
         Assert.That(snapshot.StartedAt, Is.EqualTo(new DateTimeOffset(2026, 6, 15, 10, 0, 0, TimeSpan.Zero)));
     }
 

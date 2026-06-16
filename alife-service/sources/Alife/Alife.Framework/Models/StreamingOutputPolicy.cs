@@ -37,9 +37,9 @@ public sealed record StreamingOutputPolicy(
         SentenceBoundaries: "。！？.!?\n");
 
     public static StreamingOutputPolicy QqGroupText { get; } = new(
-        StreamingOutputMode.ShortSentence,
+        StreamingOutputMode.Sentence,
         MinBufferedCharacters: 1,
-        MaxBufferedCharacters: 36,
+        MaxBufferedCharacters: 80,
         SentenceBoundaries: "。！？.!?\n");
 }
 

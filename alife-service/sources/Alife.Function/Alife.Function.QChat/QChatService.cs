@@ -35,9 +35,13 @@ public record QChatConfig
     public bool EnablePrivateFileUpload { get; set; } = true;
     public bool EnableVideoMessage { get; set; } = true;
     public bool EnableBalancedTextStreaming { get; set; } = true;
+    public bool PersistQuietModeAcrossRestart { get; set; }
+    public bool PersistedQuietModeEnabled { get; set; }
+    public DateTimeOffset? PersistedQuietModeChangedAt { get; set; }
+    public string? PersistedQuietModeReason { get; set; }
     public string AllowedGroupIds { get; set; } = "";
     public string AllowedPrivateUserIds { get; set; } = "";
-    public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。此外注意分清语境，群聊环境人声嘈杂，不要回复与自己无关的内容，回复时请加上CQat标签";
+    public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。决定不回复时不要输出“不回复/保持安静”等状态文字，直接不发送QQ消息。此外注意分清语境，群聊环境人声嘈杂，不要回复与自己无关的内容，回复时请加上CQat标签";
     //群监听唤醒
     public string IgnoredGroup { get; set; } = "";//完全屏蔽消息的群，不会收到这些群的任何信息
     public string WakingWords { get; set; } = "";//原始群消息中触发开启群消息监听的唤醒词，以逗号分隔
@@ -249,8 +253,29 @@ public class QChatService(
         }
         catch (Exception ex)
         {
-            Poke($"[QQ message send failed] {ex.Message}");
+            WriteQChatDiagnostic("qchat-send-failed", ex.Message, new {
+                type,
+                targetId
+            }, ex);
+            TryPokeSendFailure(ex.Message);
         }
+    }
+
+    [XmlFunction(FunctionMode.OneShot, "qchat_quiet_mode", budgetCost: 1)]
+    [Description("设置 QQ 安静模式。启用后，非主人私聊、群聊 @、普通群聊和主动群聊都会被静默抑制；主人仍可唤醒或继续控制。")]
+    public void QChatQuietMode(
+        [Description("true 表示进入安静模式，false 表示退出安静模式")] bool enabled,
+        [Description("可选原因，会写入诊断和当前状态")] string? reason = null)
+    {
+        SetQuietMode(enabled, reason ?? "agent-control");
+    }
+
+    void TryPokeSendFailure(string message)
+    {
+        if (ChatBot == null)
+            return;
+
+        Poke($"[QQ message send failed] {message}");
     }
 
     public async Task<QChatOwnerNotificationDeliveryResult> DeliverOwnerNotificationPlanAsync(
@@ -767,9 +792,12 @@ public class QChatService(
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Communication;
     public string SelfDescription => "Your QQ social communication channel for private chats, group chats, images, files, forwarded messages, and message context.";
     public Func<QChatInboundMessage, Task>? InboundChatDispatcher { get; set; }
+    public bool IsQuietModeEnabled { get; private set; }
+    public DateTimeOffset? QuietModeChangedAt { get; private set; }
+    public string? QuietModeReason { get; private set; }
     public string? GetCurrentState() => Configuration == null
         ? "QQ configuration unavailable"
-        : $"QQ channel configured; connected: {IsConnected}; bot id: {(Configuration.BotId == 0 ? "not set" : Configuration.BotId)}.";
+        : $"QQ channel configured; connected: {IsConnected}; bot id: {(Configuration.BotId == 0 ? "not set" : Configuration.BotId)}; quiet mode: {(IsQuietModeEnabled ? "enabled" : "disabled")}{FormatQuietModeStateSuffix()}.";
     public ModuleHealth GetHealth()
     {
         if (Configuration == null)
@@ -805,6 +833,7 @@ public class QChatService(
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
+        RestoreQuietModeFromConfiguration();
 
         //加载基本环境
         oneBotClient = GetOneBotClient();
@@ -989,6 +1018,9 @@ public class QChatService(
                 string speaker = messageEvent.GetSpeakerTag();
                 IOneBotRuntime client = GetOneBotClient();
                 string content = await messageEvent.GetReadableMessage(client);
+                if (TryApplyOwnerQuietCommand(messageEvent, senderRole, content))
+                    return;
+
                 string formatted = $"{speaker}：{content}";
                 formatted = QChatMessageSecurity.FormatForModel(config, messageEvent, formatted);
                 bool isMentionedOrWoken = messageEvent.GetAtID() == client.BotId ||
@@ -1046,6 +1078,9 @@ public class QChatService(
         QChatSenderRole senderRole,
         AgentPermissionRequest permissionRequest)
     {
+        if (ShouldSuppressForQuietMode(messageEvent, senderRole, isMentionedOrWoken))
+            return;
+
         if (messageEvent.MessageType == OneBotMessageType.Private)//私聊消息
         {
             if (senderRole == QChatSenderRole.Owner || Configuration!.AllowPrivateGuestChat)
@@ -1131,6 +1166,157 @@ public class QChatService(
                 });
             }
         }
+    }
+
+    bool TryApplyOwnerQuietCommand(OneBotMessageEvent messageEvent, QChatSenderRole senderRole, string readable)
+    {
+        if (senderRole != QChatSenderRole.Owner)
+            return false;
+
+        string normalized = NormalizeQuietCommandText(messageEvent.RawMessage, readable);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+
+        if (IsQuietWakeCommand(normalized))
+        {
+            SetQuietMode(false, messageEvent, "owner-wake-command");
+            return true;
+        }
+
+        if (IsQuietSleepCommand(normalized))
+        {
+            SetQuietMode(true, messageEvent, "owner-sleep-command");
+            return true;
+        }
+
+        return false;
+    }
+
+    bool ShouldSuppressForQuietMode(OneBotBasicMessageEvent messageEvent, QChatSenderRole senderRole, bool isMentionedOrWoken)
+    {
+        if (IsQuietModeEnabled == false || senderRole == QChatSenderRole.Owner)
+            return false;
+
+        WriteQChatDiagnostic("qchat-quiet-message-suppressed", "QQ inbound message suppressed because owner quiet mode is enabled.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            isMentionedOrWoken
+        });
+        return true;
+    }
+
+    void SetQuietMode(bool enabled, OneBotBasicMessageEvent messageEvent, string reason)
+    {
+        SetQuietModeCore(enabled, reason, new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            reason
+        });
+    }
+
+    void SetQuietMode(bool enabled, string reason)
+    {
+        SetQuietModeCore(enabled, reason, new {
+            source = "direct-control",
+            reason
+        });
+    }
+
+    void SetQuietModeCore(bool enabled, string reason, object data)
+    {
+        IsQuietModeEnabled = enabled;
+        QuietModeChangedAt = DateTimeOffset.UtcNow;
+        QuietModeReason = reason;
+        if (Configuration != null)
+        {
+            Configuration.PersistedQuietModeEnabled = enabled;
+            Configuration.PersistedQuietModeChangedAt = QuietModeChangedAt;
+            Configuration.PersistedQuietModeReason = reason;
+        }
+
+        WriteQChatDiagnostic(
+            enabled ? "qchat-quiet-mode-enabled" : "qchat-quiet-mode-disabled",
+            enabled ? "Owner enabled QQ quiet mode." : "Owner disabled QQ quiet mode.",
+            data);
+    }
+
+    void RestoreQuietModeFromConfiguration()
+    {
+        if (Configuration?.PersistQuietModeAcrossRestart != true)
+            return;
+
+        IsQuietModeEnabled = Configuration.PersistedQuietModeEnabled;
+        QuietModeChangedAt = Configuration.PersistedQuietModeChangedAt;
+        QuietModeReason = string.IsNullOrWhiteSpace(Configuration.PersistedQuietModeReason)
+            ? "configuration-restore"
+            : Configuration.PersistedQuietModeReason;
+
+        WriteQChatDiagnostic(
+            IsQuietModeEnabled ? "qchat-quiet-mode-restored" : "qchat-quiet-mode-restore-skipped",
+            IsQuietModeEnabled ? "QQ quiet mode restored from configuration." : "QQ quiet mode persistence is enabled but saved state is disabled.",
+            new {
+                IsQuietModeEnabled,
+                QuietModeChangedAt,
+                QuietModeReason
+            });
+    }
+
+    string FormatQuietModeStateSuffix()
+    {
+        if (IsQuietModeEnabled == false)
+            return "";
+
+        StringBuilder builder = new();
+        if (string.IsNullOrWhiteSpace(QuietModeReason) == false)
+            builder.Append($"; reason: {QuietModeReason}");
+        if (QuietModeChangedAt != null)
+            builder.Append($"; changed at: {QuietModeChangedAt:O}");
+
+        return builder.ToString();
+    }
+
+    static string NormalizeQuietCommandText(string? raw, string? readable)
+    {
+        string text = $"{OneBotSegment.GetPlainText(raw ?? string.Empty)} {OneBotSegment.GetPlainText(readable ?? string.Empty)}";
+        StringBuilder builder = new(text.Length);
+        foreach (char ch in text)
+        {
+            if (char.IsWhiteSpace(ch) || char.IsPunctuation(ch) || char.IsSymbol(ch))
+                continue;
+
+            builder.Append(char.ToLowerInvariant(ch));
+        }
+
+        return builder.ToString();
+    }
+
+    static bool IsQuietSleepCommand(string normalized)
+    {
+        return normalized.Contains("睡觉", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("去睡觉", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("休息", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("安静", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("别说话", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("不要说话", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("保持安静", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("sleep", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("quiet", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("silent", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool IsQuietWakeCommand(string normalized)
+    {
+        return normalized.Contains("醒醒", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("起床", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("回来", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("可以说话了", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("说话吧", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("wake", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("resume", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains("talk", StringComparison.OrdinalIgnoreCase);
     }
 
     void BufferGroupMessage(
@@ -1379,11 +1565,47 @@ public class QChatService(
             return false;
         }
 
+        if (IsInternalNoReplyStatus(trimmed))
+            return false;
+
         const int MaxFallbackLength = 1200;
         message = trimmed.Length <= MaxFallbackLength
             ? trimmed
             : trimmed[..MaxFallbackLength].TrimEnd() + "...";
         return string.IsNullOrWhiteSpace(message) == false;
+    }
+
+    static bool IsInternalNoReplyStatus(string value)
+    {
+        string normalized = value.Trim();
+        while (normalized.Length >= 2 && IsWrappingPair(normalized[0], normalized[^1]))
+            normalized = normalized[1..^1].Trim();
+
+        if (normalized.Length > 60)
+            return false;
+
+        string compact = normalized
+            .Replace(" ", "", StringComparison.Ordinal)
+            .Replace("\t", "", StringComparison.Ordinal)
+            .Replace("\r", "", StringComparison.Ordinal)
+            .Replace("\n", "", StringComparison.Ordinal)
+            .ToLowerInvariant();
+
+        return compact.Contains("不回复", StringComparison.Ordinal)
+               || compact.Contains("不回覆", StringComparison.Ordinal)
+               || compact.Contains("无需回复", StringComparison.Ordinal)
+               || compact.Contains("不用回复", StringComparison.Ordinal)
+               || compact.Contains("保持安静", StringComparison.Ordinal)
+               || compact.Contains("保持安靜", StringComparison.Ordinal)
+               || compact is "silent" or "stayquiet" or "noreply";
+    }
+
+    static bool IsWrappingPair(char start, char end)
+    {
+        return (start == '(' && end == ')')
+               || (start == '（' && end == '）')
+               || (start == '[' && end == ']')
+               || (start == '【' && end == '】');
     }
 
     void PublishLifeEvent(string summary)

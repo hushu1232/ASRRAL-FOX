@@ -75,6 +75,21 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public void SendChatAsync_SendFailureDoesNotThrowWhenChatContextIsUnavailable()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            SendException = new InvalidOperationException("network unavailable")
+        };
+        QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        {
+            Configuration = new QChatConfig { BotId = 999 }
+        };
+
+        Assert.DoesNotThrowAsync(async () => await service.SendChatAsync("group", 123, "hello"));
+    }
+
+    [Test]
     public async Task QGroupFile_UsesInjectedRuntimeAndCustomName()
     {
         string file = Path.GetTempFileName();
@@ -446,6 +461,96 @@ public class QChatServiceAdapterTests
 
         Assert.That(guide, Does.Contain("qchat"));
         Assert.That(guide, Does.Contain("targetid"));
+        Assert.That(guide, Does.Contain("qchat_quiet_mode"));
+    }
+
+    [Test]
+    public void QuietModeControlCanBeChangedByAgentToolOrControlCenter()
+    {
+        QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: new FakeOneBotRuntime())
+        {
+            Configuration = new QChatConfig { BotId = 999, OwnerId = 1001 }
+        };
+
+        service.QChatQuietMode(true, "manual-control");
+
+        Assert.That(service.IsQuietModeEnabled, Is.True);
+        Assert.That(service.QuietModeReason, Is.EqualTo("manual-control"));
+        Assert.That(service.QuietModeChangedAt, Is.Not.Null);
+
+        service.QChatQuietMode(false, "resume-control");
+
+        Assert.That(service.IsQuietModeEnabled, Is.False);
+        Assert.That(service.QuietModeReason, Is.EqualTo("resume-control"));
+    }
+
+    [Test]
+    public void QuietModeControlMirrorsRuntimeStateToConfiguration()
+    {
+        QChatConfig config = new() { BotId = 999, OwnerId = 1001 };
+        QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: new FakeOneBotRuntime())
+        {
+            Configuration = config
+        };
+
+        service.QChatQuietMode(true, "persist-me");
+
+        Assert.That(config.PersistedQuietModeEnabled, Is.True);
+        Assert.That(config.PersistedQuietModeReason, Is.EqualTo("persist-me"));
+        Assert.That(config.PersistedQuietModeChangedAt, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task AwakeRestoresQuietModeOnlyWhenPersistenceIsEnabled()
+    {
+        DateTimeOffset changedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        QChatService restored = new(new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()), new NullLogger<QChatService>(), oneBotRuntime: new FakeOneBotRuntime())
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                PersistQuietModeAcrossRestart = true,
+                PersistedQuietModeEnabled = true,
+                PersistedQuietModeReason = "before-restart",
+                PersistedQuietModeChangedAt = changedAt
+            }
+        };
+
+        await restored.AwakeAsync(new AwakeContext
+        {
+            Character = new Character { Name = "QChatQuietRestore" },
+            ContextBuilder = new ChatHistoryAgentThread(),
+            KernelBuilder = Kernel.CreateBuilder(),
+        });
+
+        Assert.That(restored.IsQuietModeEnabled, Is.True);
+        Assert.That(restored.QuietModeReason, Is.EqualTo("before-restart"));
+        Assert.That(restored.QuietModeChangedAt, Is.EqualTo(changedAt));
+        Assert.That(restored.GetCurrentState(), Does.Contain("before-restart"));
+
+        QChatService ignored = new(new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()), new NullLogger<QChatService>(), oneBotRuntime: new FakeOneBotRuntime())
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                PersistQuietModeAcrossRestart = false,
+                PersistedQuietModeEnabled = true,
+                PersistedQuietModeReason = "should-not-restore",
+                PersistedQuietModeChangedAt = changedAt
+            }
+        };
+
+        await ignored.AwakeAsync(new AwakeContext
+        {
+            Character = new Character { Name = "QChatQuietIgnoreRestore" },
+            ContextBuilder = new ChatHistoryAgentThread(),
+            KernelBuilder = Kernel.CreateBuilder(),
+        });
+
+        Assert.That(ignored.IsQuietModeEnabled, Is.False);
+        Assert.That(ignored.GetCurrentState(), Does.Not.Contain("should-not-restore"));
     }
 
     [Test]
@@ -495,6 +600,33 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
         Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] { (1001L, "plain-private-reply") }));
+    }
+
+    [Test]
+    public async Task IncomingPrivateSilentModelStatusDoesNotFallBackToQqMessage()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        PlainReplyQChatService service = new(functionCaller, runtime, "（不回复，保持安静）")
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "你在吗"
+        });
+
+        await service.WaitForDispatchAsync();
+        Assert.That(runtime.PrivateMessages, Is.Empty);
     }
 
     [Test]
@@ -627,6 +759,162 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerPrivateSleepCommandEnablesQuietModeWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u4f60\u53bb\u7761\u89c9\u5427"
+        });
+
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+        Assert.That(dispatchCount, Is.Zero);
+        Assert.That(runtime.PrivateMessages, Is.Empty);
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
+    [Test]
+    public async Task QuietModeSuppressesNonOwnerGroupMention()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatchCount++;
+            return service.SendChatAsync("group", inbound.TargetId, "[CQ:at,qq=2001] should-not-send");
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u4f60\u53bb\u7761\u89c9\u5427"
+        });
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "[CQ:at,qq=999] \u9192\u9192"
+        });
+
+        await Task.Delay(200);
+        Assert.That(service.IsQuietModeEnabled, Is.True);
+        Assert.That(dispatchCount, Is.Zero);
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
+    [Test]
+    public async Task QuietModeSuppressesPassiveProactiveGroupMessage()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowProactiveGroupChat = true,
+            ProactiveChatProbability = 1.0f,
+            FlushInterval = 0,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatchCount++;
+            return service.SendChatAsync("group", inbound.TargetId, "should-not-send");
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u4f60\u53bb\u7761\u89c9\u5427"
+        });
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "\u4eca\u5929\u5403\u4ec0\u4e48"
+        });
+
+        await Task.Delay(200);
+        Assert.That(dispatchCount, Is.Zero);
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
+    [Test]
+    public async Task OwnerWakeCommandDisablesQuietModeAndAllowsNextOwnerReply()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = inbound => service.SendChatAsync("private", inbound.TargetId, "awake-reply");
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u4f60\u53bb\u7761\u89c9\u5427"
+        });
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u9192\u9192"
+        });
+        await WaitUntilAsync(() => service.IsQuietModeEnabled == false);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u4f60\u8fd8\u5728\u5417"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] { (1001L, "awake-reply") }));
+    }
+
+    [Test]
     public void EmptyGroupFlushDiagnosticsAreThrottledPerGroup()
     {
         string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
@@ -634,7 +922,7 @@ public class QChatServiceAdapterTests
         Directory.CreateDirectory(storageRoot);
         try
         {
-            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot);
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
             QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: new FakeOneBotRuntime())
             {
                 Configuration = new QChatConfig { BotId = 999 }
@@ -653,7 +941,7 @@ public class QChatServiceAdapterTests
         }
         finally
         {
-            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage);
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
         }
     }
 
@@ -713,16 +1001,21 @@ public class QChatServiceAdapterTests
         public List<(long Target, string File, string Name)> GroupFiles { get; } = new();
         public List<(long Target, string File, string Name)> PrivateFiles { get; } = new();
         public Dictionary<long, IReadOnlyList<OneBotGroupMember>> GroupMemberLists { get; } = new();
+        public Exception? SendException { get; set; }
 
         public Task ConnectAsync() => Task.CompletedTask;
         public Task SendGroupMessage(long groupId, string message)
         {
+            if (SendException != null)
+                throw SendException;
             GroupMessages.Add((groupId, message));
             return Task.CompletedTask;
         }
 
         public Task SendPrivateMessage(long userId, string message)
         {
+            if (SendException != null)
+                throw SendException;
             PrivateMessages.Add((userId, message));
             return Task.CompletedTask;
         }
@@ -757,8 +1050,13 @@ public class QChatServiceAdapterTests
         IOneBotRuntime runtime,
         string reply) : QChatService(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime)
     {
+        readonly TaskCompletionSource dispatchCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task WaitForDispatchAsync() => dispatchCompletion.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
         protected override Task<string> DispatchToModelAsync(QChatInboundMessage message)
         {
+            dispatchCompletion.TrySetResult();
             return Task.FromResult(reply);
         }
     }
