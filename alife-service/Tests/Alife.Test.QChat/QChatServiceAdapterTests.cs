@@ -18,7 +18,8 @@ public class QChatServiceAdapterTests
     public async Task SendChatAsync_UsesInjectedRuntime()
     {
         FakeOneBotRuntime runtime = new();
-        QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        FakeLifeEventPublisher publisher = new();
+        QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: runtime, lifeEventPublisher: publisher)
         {
             Configuration = new QChatConfig { BotId = 999 }
         };
@@ -28,6 +29,14 @@ public class QChatServiceAdapterTests
 
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (123L, "hello") }));
         Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] { (456L, "hi") }));
+        Assert.That(publisher.Events.Select(lifeEvent => lifeEvent.Kind), Is.EqualTo(new[] {
+            LifeEventKind.Communication,
+            LifeEventKind.Communication,
+        }));
+        Assert.That(publisher.Events.Select(lifeEvent => lifeEvent.Summary), Is.EqualTo(new[] {
+            "You sent a QQ group message to 123.",
+            "You sent a QQ private message to 456.",
+        }));
     }
 
     [Test]
@@ -617,6 +626,37 @@ public class QChatServiceAdapterTests
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "local-passive-reply") }));
     }
 
+    [Test]
+    public void EmptyGroupFlushDiagnosticsAreThrottledPerGroup()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storageRoot);
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot);
+            QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: new FakeOneBotRuntime())
+            {
+                Configuration = new QChatConfig { BotId = 999 }
+            };
+            GroupState state = new() { GroupId = 3001 };
+
+            service.FlushGroupBuffer(state);
+            service.FlushGroupBuffer(state);
+            service.FlushGroupBuffer(state);
+
+            string diagnosticsPath = Path.Combine(storageRoot, "AgentWorkspace", "qchat-diagnostics.jsonl");
+            string[] skippedLines = File.ReadAllLines(diagnosticsPath)
+                .Where(line => line.Contains("\"eventName\":\"group-flush-skipped\"", StringComparison.Ordinal))
+                .ToArray();
+            Assert.That(skippedLines, Has.Length.EqualTo(1));
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage);
+        }
+    }
+
     static QChatService CreateStartedService(FakeOneBotRuntime runtime, QChatConfig config)
     {
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
@@ -721,5 +761,11 @@ public class QChatServiceAdapterTests
         {
             return Task.FromResult(reply);
         }
+    }
+
+    sealed class FakeLifeEventPublisher : ILifeEventPublisher
+    {
+        public List<LifeEvent> Events { get; } = new();
+        public void Publish(LifeEvent lifeEvent) => Events.Add(lifeEvent);
     }
 }

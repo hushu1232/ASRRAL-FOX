@@ -74,6 +74,39 @@ public class LifeEventStreamServiceTests
     }
 
     [Test]
+    public void Constructor_NormalizesAndDeduplicatesPersistedEventsFromStore()
+    {
+        string rootPath = CreateTempRoot();
+        string storePath = Path.Combine(rootPath, "life-events.jsonl");
+        File.WriteAllLines(storePath,
+        [
+            """
+            {"Timestamp":"2026-06-14T10:00:00+00:00","Kind":4,"Source":" Browser ","Summary":" older duplicate ","Id":"event-dup","Importance":1,"Privacy":1,"IsPersisted":false}
+            """,
+            """
+            {"Timestamp":"2026-06-14T10:01:00+00:00","Kind":4,"Source":" Browser ","Summary":" newer duplicate ","Id":"event-dup","Importance":-3,"Privacy":1,"IsPersisted":true}
+            """,
+            """
+            {"Timestamp":"2026-06-14T10:02:00+00:00","Kind":3,"Source":" QChat ","Summary":" missing id event ","Id":" ","Importance":2,"Privacy":1,"IsPersisted":false}
+            """
+        ]);
+
+        LifeEventStreamService reloaded = new(storagePath: rootPath);
+        IReadOnlyList<LifeEvent> events = reloaded.GetRecentEvents(10);
+
+        Assert.That(events, Has.Count.EqualTo(2));
+        LifeEvent duplicate = events.Single(e => e.Id == "event-dup");
+        Assert.That(duplicate.Summary, Is.EqualTo("newer duplicate"));
+        Assert.That(duplicate.Source, Is.EqualTo("Browser"));
+        Assert.That(duplicate.Importance, Is.EqualTo(0));
+        Assert.That(duplicate.IsPersisted, Is.True);
+        LifeEvent generated = events.Single(e => e.Id != "event-dup");
+        Assert.That(generated.Id, Is.Not.Empty);
+        Assert.That(generated.Summary, Is.EqualTo("missing id event"));
+        Assert.That(generated.Source, Is.EqualTo("QChat"));
+    }
+
+    [Test]
     public void FormatRecentExperiences_ReturnsEmptyForNoEvents()
     {
         string formatted = LifeEventStreamService.FormatRecentExperiences([], maxCount: 5);

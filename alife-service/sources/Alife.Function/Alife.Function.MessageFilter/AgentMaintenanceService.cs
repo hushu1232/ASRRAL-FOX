@@ -402,14 +402,17 @@ public class AgentMaintenanceService(
     AgentMaintenanceProposal? FindRecentDuplicate(string title, string evidence, TimeSpan cooldown)
     {
         DateTimeOffset cutoff = clock() - cooldown;
+        string fingerprint = BuildDuplicateFingerprint(title, evidence);
         lock (proposalGate)
         {
             return proposals.Values
                        .Concat(archivedProposals.Values.Select(item => item.Proposal))
                        .Where(proposal => proposal.CreatedAt >= cutoff)
                        .FirstOrDefault(proposal =>
-                           string.Equals(proposal.Title, title, StringComparison.OrdinalIgnoreCase)
-                           && string.Equals(proposal.Evidence, evidence, StringComparison.OrdinalIgnoreCase));
+                           string.Equals(
+                               BuildDuplicateFingerprint(proposal.Title, proposal.Evidence),
+                               fingerprint,
+                               StringComparison.OrdinalIgnoreCase));
         }
     }
 
@@ -418,7 +421,7 @@ public class AgentMaintenanceService(
         return string.IsNullOrWhiteSpace(issueReport.LastError) == false
                || issueReport.RuntimeErrors.Count > 0
                || issueReport.FailedAuditEntries.Count > 0
-               || issueReport.UnhealthyModules.Count > 0;
+               || issueReport.UnhealthyModules.Any(AgentHealthIssueClassifier.IsActionable);
     }
 
     static string TrimLine(string value, int maxLength)
@@ -427,6 +430,64 @@ public class AgentMaintenanceService(
         if (value.Length <= maxLength)
             return value;
         return value[..(maxLength - 3)] + "...";
+    }
+
+    static string BuildDuplicateFingerprint(string title, string evidence)
+    {
+        string[] lines = evidence.Split(
+            ['\r', '\n'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        string[] unhealthyModules = lines
+            .Where(line => line.StartsWith("Unhealthy module:", StringComparison.OrdinalIgnoreCase))
+            .Select(NormalizeDiagnosticLine)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (unhealthyModules.Length > 0)
+            return "modules:" + string.Join("|", unhealthyModules);
+
+        string[] errors = lines
+            .Where(line => line.StartsWith("Last error:", StringComparison.OrdinalIgnoreCase)
+                           || line.StartsWith("Runtime error:", StringComparison.OrdinalIgnoreCase))
+            .Select(NormalizeDiagnosticLine)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (errors.Length > 0)
+            return "errors:" + string.Join("|", errors);
+
+        return "title:" + NormalizeDiagnosticText(title);
+    }
+
+    static string NormalizeDiagnosticLine(string line)
+    {
+        int separator = line.IndexOf(':');
+        string payload = separator >= 0 ? line[(separator + 1)..] : line;
+        return NormalizeDiagnosticText(payload);
+    }
+
+    static string NormalizeDiagnosticText(string value)
+    {
+        string normalized = value.ReplaceLineEndings(" ").Trim();
+        while (TryStripExceptionPrefix(normalized, out string stripped))
+            normalized = stripped;
+        return string.Join(" ", normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    static bool TryStripExceptionPrefix(string value, out string stripped)
+    {
+        stripped = value;
+        int separator = value.IndexOf(':');
+        if (separator <= 0)
+            return false;
+
+        string prefix = value[..separator].Trim();
+        if (prefix.EndsWith("Exception", StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        stripped = value[(separator + 1)..].Trim();
+        return true;
     }
 
     void SaveProposals()
@@ -522,8 +583,14 @@ public class AgentMaintenanceService(
     {
         return restored
             .Where(proposal => string.IsNullOrWhiteSpace(proposal.Id) == false)
-            .GroupBy(proposal => proposal.Id, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            .GroupBy(
+                proposal => BuildDuplicateFingerprint(proposal.Title, proposal.Evidence),
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group => group
+                .OrderByDescending(proposal => proposal.CreatedAt)
+                .ThenBy(proposal => proposal.Id, StringComparer.OrdinalIgnoreCase)
+                .First())
+            .ToDictionary(proposal => proposal.Id, proposal => proposal, StringComparer.OrdinalIgnoreCase);
     }
 
     static readonly JsonSerializerOptions JsonOptions = new()

@@ -15,6 +15,7 @@ public enum MemoryStorageConsistencyIssueKind
 {
     MissingArchiveFile,
     MissingIndexRecord,
+    ContentMismatch,
 }
 
 public record MemoryStorageConsistencyIssue(
@@ -26,11 +27,13 @@ public record MemoryStorageConsistencyIssue(
 public record MemoryStorageConsistencyReport(
     int MissingArchiveFiles,
     int MissingIndexRecords,
+    int ContentMismatches,
     int RepairedArchiveFiles,
     int RepairedIndexRecords,
+    int RepairedContentMismatches,
     IReadOnlyList<MemoryStorageConsistencyIssue> Issues)
 {
-    public static MemoryStorageConsistencyReport Empty { get; } = new(0, 0, 0, 0, []);
+    public static MemoryStorageConsistencyReport Empty { get; } = new(0, 0, 0, 0, 0, 0, []);
 }
 
 public enum MemorySearchMode
@@ -139,6 +142,7 @@ public class MemoryStorage : IAsyncDisposable
     {
         int repairedArchiveFiles = 0;
         int repairedIndexRecords = 0;
+        int repairedContentMismatches = 0;
 
         await databaseLock.WaitAsync();
         try
@@ -160,6 +164,20 @@ public class MemoryStorage : IAsyncDisposable
                         indexedRecord.StartTime,
                         indexedRecord.EndTime);
                     repairedArchiveFiles++;
+                    continue;
+                }
+
+                if (issue.Kind == MemoryStorageConsistencyIssueKind.ContentMismatch &&
+                    indexedRecords.TryGetValue(MemoryKey(issue.Level, issue.Name), out IndexedMemoryRecord? mismatchedRecord))
+                {
+                    await WriteArchiveFileAtomicAsync(
+                        mismatchedRecord.Name,
+                        mismatchedRecord.Level,
+                        mismatchedRecord.Summary,
+                        mismatchedRecord.Content,
+                        mismatchedRecord.StartTime,
+                        mismatchedRecord.EndTime);
+                    repairedContentMismatches++;
                     continue;
                 }
 
@@ -185,12 +203,14 @@ public class MemoryStorage : IAsyncDisposable
 
             LastConsistencyReport = ScanConsistencyNoLock() with {
                 RepairedArchiveFiles = repairedArchiveFiles,
-                RepairedIndexRecords = repairedIndexRecords
+                RepairedIndexRecords = repairedIndexRecords,
+                RepairedContentMismatches = repairedContentMismatches
             };
 
             return beforeRepair with {
                 RepairedArchiveFiles = repairedArchiveFiles,
-                RepairedIndexRecords = repairedIndexRecords
+                RepairedIndexRecords = repairedIndexRecords,
+                RepairedContentMismatches = repairedContentMismatches
             };
         }
         finally
@@ -351,18 +371,33 @@ public class MemoryStorage : IAsyncDisposable
     {
         HashSet<string> archiveKeys = archiveRecords.Select(record => MemoryKey(record.Level, record.Name)).ToHashSet();
         HashSet<string> indexKeys = indexedRecords.Values.Select(record => MemoryKey(record.Level, record.Name)).ToHashSet();
+        Dictionary<string, ArchiveMemoryRecord> archiveRecordsByKey = archiveRecords.ToDictionary(
+            record => MemoryKey(record.Level, record.Name),
+            StringComparer.Ordinal);
         List<MemoryStorageConsistencyIssue> issues = new();
 
         foreach (IndexedMemoryRecord record in indexedRecords.Values)
         {
-            if (archiveKeys.Contains(MemoryKey(record.Level, record.Name)))
+            string key = MemoryKey(record.Level, record.Name);
+            if (archiveKeys.Contains(key) == false)
+            {
+                issues.Add(new MemoryStorageConsistencyIssue(
+                    MemoryStorageConsistencyIssueKind.MissingArchiveFile,
+                    record.Name,
+                    record.Level,
+                    GetArchivePath(record.Level, record.Name)));
                 continue;
+            }
 
-            issues.Add(new MemoryStorageConsistencyIssue(
-                MemoryStorageConsistencyIssueKind.MissingArchiveFile,
-                record.Name,
-                record.Level,
-                GetArchivePath(record.Level, record.Name)));
+            ArchiveMemoryRecord archiveRecord = archiveRecordsByKey[key];
+            if (record.Summary != archiveRecord.Summary || record.Content != archiveRecord.Content)
+            {
+                issues.Add(new MemoryStorageConsistencyIssue(
+                    MemoryStorageConsistencyIssueKind.ContentMismatch,
+                    record.Name,
+                    record.Level,
+                    archiveRecord.Path));
+            }
         }
 
         foreach (ArchiveMemoryRecord record in archiveRecords)
@@ -380,6 +415,8 @@ public class MemoryStorage : IAsyncDisposable
         return new MemoryStorageConsistencyReport(
             issues.Count(issue => issue.Kind == MemoryStorageConsistencyIssueKind.MissingArchiveFile),
             issues.Count(issue => issue.Kind == MemoryStorageConsistencyIssueKind.MissingIndexRecord),
+            issues.Count(issue => issue.Kind == MemoryStorageConsistencyIssueKind.ContentMismatch),
+            0,
             0,
             0,
             issues);

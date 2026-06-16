@@ -124,4 +124,24 @@ public class ChatBotLifecycleTests
         Assert.That(state.Latency.LastChatDuration, Is.Not.Null);
         Assert.That(state.Latency.LastFirstContentLatency, Is.Null);
     }
+
+    [Test]
+    public async Task GetRuntimeStateReportsPokeFlushSchedulingEvents()
+    {
+        await using ChatBot chatBot = new(null!, new ChatHistoryAgentThread());
+        chatBot.Poke("scheduled");
+
+        MethodInfo method = typeof(ChatBot).GetMethod(
+            "TryFlushMessageCache",
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("TryFlushMessageCache was not found.");
+        Task flushTask = (Task)method.Invoke(chatBot, [CancellationToken.None])!;
+
+        await flushTask;
+        ChatRuntimeState state = chatBot.GetRuntimeState();
+
+        Assert.That(state.PendingPokeCount, Is.EqualTo(0));
+        Assert.That(state.RecentEvents.Any(runtimeEvent => runtimeEvent.Kind == "PokeFlushStarted"), Is.True);
+        Assert.That(state.RecentEvents.Any(runtimeEvent => runtimeEvent.Kind == "PokeFlushDispatched"), Is.True);
+    }
 }

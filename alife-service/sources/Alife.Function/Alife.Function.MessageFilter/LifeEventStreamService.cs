@@ -46,13 +46,7 @@ public class LifeEventStreamService
 
         lock (syncRoot)
         {
-            LifeEvent normalized = lifeEvent with
-            {
-                Id = string.IsNullOrWhiteSpace(lifeEvent.Id) ? Guid.NewGuid().ToString("N") : lifeEvent.Id.Trim(),
-                Importance = Math.Max(0, lifeEvent.Importance),
-                Source = lifeEvent.Source.Trim(),
-                Summary = lifeEvent.Summary.Trim()
-            };
+            LifeEvent normalized = Normalize(lifeEvent);
 
             events.RemoveAll(existing => existing.Id == normalized.Id);
             events.Add(normalized);
@@ -159,7 +153,18 @@ public class LifeEventStreamService
             {
                 LifeEvent? lifeEvent = JsonSerializer.Deserialize<LifeEvent>(line);
                 if (lifeEvent != null && string.IsNullOrWhiteSpace(lifeEvent.Summary) == false)
-                    events.Add(lifeEvent);
+                {
+                    LifeEvent normalized = Normalize(lifeEvent);
+                    int existingIndex = events.FindIndex(existing => existing.Id == normalized.Id);
+                    if (existingIndex < 0)
+                    {
+                        events.Add(normalized);
+                    }
+                    else if (normalized.Timestamp >= events[existingIndex].Timestamp)
+                    {
+                        events[existingIndex] = normalized;
+                    }
+                }
             }
             catch
             {
@@ -171,6 +176,17 @@ public class LifeEventStreamService
         int overflow = events.Count - maxRetainedEvents;
         if (overflow > 0)
             events.RemoveRange(0, overflow);
+    }
+
+    static LifeEvent Normalize(LifeEvent lifeEvent)
+    {
+        return lifeEvent with
+        {
+            Id = string.IsNullOrWhiteSpace(lifeEvent.Id) ? Guid.NewGuid().ToString("N") : lifeEvent.Id.Trim(),
+            Importance = Math.Max(0, lifeEvent.Importance),
+            Source = string.IsNullOrWhiteSpace(lifeEvent.Source) ? "Unknown" : lifeEvent.Source.Trim(),
+            Summary = lifeEvent.Summary.Trim()
+        };
     }
 
     void SavePersistedEvents()

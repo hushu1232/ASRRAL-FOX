@@ -58,12 +58,33 @@ public static class QChatMessageSecurity
             return config.OwnerPriorityMode || isMentionedOrWoken;
 
         bool mentionWakeupAllowed = controlConfig?.AllowMentionWakeup ?? true;
-        bool passiveListeningAllowed = controlConfig?.AllowPassiveGroupListening ?? true;
-        return passiveListeningAllowed &&
-               mentionWakeupAllowed &&
+        return mentionWakeupAllowed &&
                config.AllowGroupMemberChat &&
                config.AllowGroupMemberMentions &&
                isMentionedOrWoken;
+    }
+
+    public static bool ShouldAcceptGroupMessage(
+        QChatConfig config,
+        OneBotBasicMessageEvent messageEvent,
+        bool isMentionedOrWoken,
+        bool isGroupEnabled,
+        AgentControlCenterConfig? controlConfig)
+    {
+        if (messageEvent.MessageType != OneBotMessageType.Group)
+            return false;
+
+        QChatSenderRole role = Classify(config, messageEvent);
+        if (role == QChatSenderRole.Owner)
+            return config.OwnerPriorityMode || isMentionedOrWoken || isGroupEnabled;
+
+        if (config.AllowGroupMemberChat == false)
+            return false;
+
+        if (isMentionedOrWoken)
+            return config.AllowGroupMemberMentions && (controlConfig?.AllowMentionWakeup ?? true);
+
+        return isGroupEnabled && (controlConfig?.AllowPassiveGroupListening ?? true);
     }
 
     public static bool ShouldAllowProactiveGroupChat(QChatConfig config, OneBotBasicMessageEvent messageEvent)

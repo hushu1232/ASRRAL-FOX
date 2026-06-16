@@ -86,6 +86,22 @@ public class AutobiographicalMemoryServiceTests
         Assert.That(sink.Writes[1].Content, Does.Not.Contain("You observed a page."));
     }
 
+    [Test]
+    public async Task RememberRecentLife_IgnoresOlderUnpersistedEventsAfterPreviousMemory()
+    {
+        FakeLifeEventStream stream = new();
+        stream.Publish(Event(LifeEventKind.Browser, "Browser", "You observed a page.", minute: 2));
+        FakeMemorySink sink = new();
+        AutobiographicalMemoryService service = new(stream, sink);
+
+        await service.RememberRecentLifeAsync();
+        stream.Publish(Event(LifeEventKind.Communication, "QChat", "A delayed old QQ event arrived.", minute: 1));
+        string? second = await service.RememberRecentLifeAsync();
+
+        Assert.That(second, Is.Null);
+        Assert.That(sink.Writes, Has.Count.EqualTo(1));
+    }
+
     static LifeEvent Event(LifeEventKind kind, string source, string summary, int minute = 0)
     {
         return new LifeEvent(

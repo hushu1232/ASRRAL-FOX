@@ -13,8 +13,9 @@ public class BrowserServiceAdapterTests
     public async Task BrowserService_UsesInjectedRuntimeForBrowserActions()
     {
         FakeBrowserRuntime runtime = new();
+        FakeLifeEventPublisher publisher = new();
         await using ChatBot chatBot = new(null!, new ChatHistoryAgentThread());
-        BrowserService service = new(null!, runtime);
+        BrowserService service = new(null!, runtime, publisher);
         await service.AwakeAsync(new AwakeContext
         {
             Character = new Character { Name = "BrowserTest" },
@@ -43,6 +44,30 @@ public class BrowserServiceAdapterTests
         Assert.Equal([7], runtime.ElementInfoIds);
         Assert.Contains("return 1;", runtime.ExecutedScripts.Single());
         Assert.Equal(ModuleHealthStatus.Healthy, service.GetHealth().Status);
+        Assert.Contains(publisher.Events, lifeEvent =>
+            lifeEvent.Kind == LifeEventKind.Browser
+            && lifeEvent.Source == "Browser"
+            && lifeEvent.Summary.Contains("opened a browser page", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(publisher.Events, lifeEvent =>
+            lifeEvent.Kind == LifeEventKind.Browser
+            && lifeEvent.Summary.Contains("observed browser page segment 2", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task BrowserService_AwakeDoesNotFailWhenRuntimeIsStillInitializing()
+    {
+        SlowBrowserRuntime runtime = new();
+        BrowserService service = new(null!, runtime);
+
+        await service.AwakeAsync(new AwakeContext
+        {
+            Character = new Character { Name = "BrowserTest" },
+            ContextBuilder = new ChatHistoryAgentThread()
+        });
+
+        ModuleHealth health = service.GetHealth();
+        Assert.Equal(ModuleHealthStatus.Degraded, health.Status);
+        Assert.Contains("did not initialize", health.Summary, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -116,5 +141,35 @@ public class BrowserServiceAdapterTests
         }
 
         public void Dispose() {}
+    }
+
+    sealed class SlowBrowserRuntime : IBrowserRuntime
+    {
+        public bool IsReady => false;
+
+        public Task WaitToLoadedAsync(TimeSpan timeout)
+        {
+            throw new TimeoutException("Browser WebView did not initialize within 3 seconds.");
+        }
+
+        public Task<NavigateResult> NavigateAsync(string url, TimeSpan? timeout = null) =>
+            throw new InvalidOperationException("Browser runtime is not initialized.");
+
+        public Task<string> ExecuteScriptAsync(string code) =>
+            throw new InvalidOperationException("Browser runtime is not initialized.");
+
+        public Task<string> ObserveAsync(int page) =>
+            throw new InvalidOperationException("Browser runtime is not initialized.");
+
+        public Task<string> GetElementInfoAsync(int id) =>
+            throw new InvalidOperationException("Browser runtime is not initialized.");
+
+        public void Dispose() {}
+    }
+
+    sealed class FakeLifeEventPublisher : ILifeEventPublisher
+    {
+        public List<LifeEvent> Events { get; } = new();
+        public void Publish(LifeEvent lifeEvent) => Events.Add(lifeEvent);
     }
 }

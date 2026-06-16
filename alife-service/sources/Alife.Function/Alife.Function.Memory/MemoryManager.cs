@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Newtonsoft.Json;
+using Alife.Framework;
 using Alife.Platform;
 
 namespace Alife.Function.Memory;
@@ -204,6 +205,16 @@ public class MemoryManager
         return await memoryStorage.SearchAsync(level, keyword, question, count, offset, startTime, endTime, searchMode, includePermanent);
     }
 
+    public MemoryConsistencySnapshot GetConsistencySnapshot()
+    {
+        return ToConsistencySnapshot(memoryStorage.LastConsistencyReport);
+    }
+
+    public async Task<MemoryConsistencySnapshot> RepairConsistencyAsync()
+    {
+        return ToConsistencySnapshot(await memoryStorage.RepairConsistencyAsync());
+    }
+
     public MemoryMeta GetMemoryMetaData(ChatMessageContent content)
     {
         if (memoryMetaDatas.TryGetValue(content, out MemoryMeta? data) == false)
@@ -213,6 +224,17 @@ public class MemoryManager
         }
 
         return data;
+    }
+
+    static MemoryConsistencySnapshot ToConsistencySnapshot(MemoryStorageConsistencyReport report)
+    {
+        return new MemoryConsistencySnapshot(
+            report.MissingArchiveFiles,
+            report.MissingIndexRecords,
+            report.ContentMismatches,
+            report.RepairedArchiveFiles,
+            report.RepairedIndexRecords,
+            report.RepairedContentMismatches);
     }
 
     record HistoryRecord(AuthorRole Role, string Content, MemoryMeta MemoryMeta);

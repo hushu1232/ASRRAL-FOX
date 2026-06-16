@@ -175,6 +175,76 @@
                             }
                         </Card>
 
+                        <Card Size="CardSize.Small" Title="Health triage" Class="agent-control-card">
+                            <GridRow Gutter="12">
+                                <GridCol Xs="24" Md="6">
+                                    <div class="triage-metric">
+                                        <Tag Color="@("blue")">Waiting</Tag>
+                                        <div class="metric-value compact">@snapshot.HealthTriage.Waiting.Count</div>
+                                    </div>
+                                </GridCol>
+                                <GridCol Xs="24" Md="6">
+                                    <div class="triage-metric">
+                                        <Tag Color="@("orange")">External</Tag>
+                                        <div class="metric-value compact">@snapshot.HealthTriage.ExternalEnvironment.Count</div>
+                                    </div>
+                                </GridCol>
+                                <GridCol Xs="24" Md="6">
+                                    <div class="triage-metric">
+                                        <Tag Color="@("red")">Fault</Tag>
+                                        <div class="metric-value compact">@snapshot.HealthTriage.Faults.Count</div>
+                                    </div>
+                                </GridCol>
+                                <GridCol Xs="24" Md="6">
+                                    <div class="triage-metric">
+                                        <Tag Color="@("gold")">Owner</Tag>
+                                        <div class="metric-value compact">@snapshot.HealthTriage.OwnerConfirmationItems.Count</div>
+                                    </div>
+                                </GridCol>
+                            </GridRow>
+                            <Divider Style="margin: 10px 0;" />
+                            @if (snapshot.HealthTriage.Waiting.Count == 0
+                                 && snapshot.HealthTriage.ExternalEnvironment.Count == 0
+                                 && snapshot.HealthTriage.Faults.Count == 0
+                                 && snapshot.HealthTriage.OwnerConfirmationItems.Count == 0)
+                            {
+                                <div class="empty-state compact">No triage items</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list compact-list">
+                                    @foreach (ModuleHealth health in snapshot.HealthTriage.Faults.Take(3))
+                                    {
+                                        <div class="summary-line">
+                                            <Tag Color="@("red")">Fault</Tag>
+                                            <span>@health.Name: @Truncate(health.Summary, 96)</span>
+                                        </div>
+                                    }
+                                    @foreach (ModuleHealth health in snapshot.HealthTriage.ExternalEnvironment.Take(3))
+                                    {
+                                        <div class="summary-line">
+                                            <Tag Color="@("orange")">External</Tag>
+                                            <span>@health.Name: @Truncate(health.Summary, 96)</span>
+                                        </div>
+                                    }
+                                    @foreach (ModuleHealth health in snapshot.HealthTriage.Waiting.Take(3))
+                                    {
+                                        <div class="summary-line">
+                                            <Tag Color="@("blue")">Waiting</Tag>
+                                            <span>@health.Name: @Truncate(health.Summary, 96)</span>
+                                        </div>
+                                    }
+                                    @foreach (string item in snapshot.HealthTriage.OwnerConfirmationItems.Take(3))
+                                    {
+                                        <div class="summary-line">
+                                            <Tag Color="@("gold")">Owner</Tag>
+                                            <span>@Truncate(item, 96)</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
                         <Card Size="CardSize.Small" Title="Active task queue" Class="agent-control-card">
                             @if (snapshot.ActiveTasks.Count == 0)
                             {
@@ -519,6 +589,37 @@
                                     <Tag Color="@("blue")">stream</Tag>
                                 </div>
 
+                                <div class="command-line">
+                                    <div>
+                                        <Text Strong>Memory consistency</Text>
+                                        <div class="muted">
+                                            @snapshot.MemoryConsistency.TotalIssues issue(s):
+                                            @snapshot.MemoryConsistency.MissingArchiveFiles archives /
+                                            @snapshot.MemoryConsistency.MissingIndexRecords indexes /
+                                            @snapshot.MemoryConsistency.ContentMismatches content
+                                        </div>
+                                        <div class="muted">
+                                            repaired @snapshot.MemoryConsistency.RepairedArchiveFiles archives /
+                                            @snapshot.MemoryConsistency.RepairedIndexRecords indexes /
+                                            @snapshot.MemoryConsistency.RepairedContentMismatches content
+                                        </div>
+                                    </div>
+                                    <Space>
+                                        <SpaceItem>
+                                            <Tag Color="@GetMemoryConsistencyColor(snapshot.MemoryConsistency)">
+                                                @(snapshot.MemoryConsistency.HasIssues ? "repairable" : "ok")
+                                            </Tag>
+                                        </SpaceItem>
+                                        <SpaceItem>
+                                            <Button Size="@ButtonSize.Small"
+                                                    Disabled="@(!snapshot.MemoryConsistency.HasIssues)"
+                                                    OnClick="@RepairMemoryConsistency">
+                                                Repair
+                                            </Button>
+                                        </SpaceItem>
+                                    </Space>
+                                </div>
+
                                 <div>
                                     <Text Strong>Streaming policies</Text>
                                     <div class="policy-grid">
@@ -601,6 +702,45 @@
                                             }
                                         </div>
                                     </div>
+                                }
+                            </Flex>
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Runtime cleanup" Class="agent-control-card">
+                            @if (string.IsNullOrWhiteSpace(lastCleanupActionMessage) == false)
+                            {
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="@lastCleanupActionMessage"
+                                       Style="margin-bottom: 10px;" />
+                            }
+                            <Flex Direction="FlexDirection.Vertical" Gap="@("8")">
+                                <div class="command-line">
+                                    <span>Terminal tasks</span>
+                                    <Tag Color="@GetCleanupColor(snapshot.CleanupPreview.StaleTerminalTaskCount)">
+                                        @snapshot.CleanupPreview.StaleTerminalTaskCount
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>Maintenance proposals</span>
+                                    <Tag Color="@GetCleanupColor(snapshot.CleanupPreview.StaleMaintenanceProposalCount)">
+                                        @snapshot.CleanupPreview.StaleMaintenanceProposalCount
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>QChat diagnostics</span>
+                                    <Tag Color="@GetCleanupColor(snapshot.CleanupPreview.ExcessDiagnosticLineCount)">
+                                        @snapshot.CleanupPreview.ExcessDiagnosticLineCount lines
+                                    </Tag>
+                                </div>
+                                <Button Type="@ButtonType.Primary"
+                                        Disabled="@(!snapshot.CleanupPreview.HasWork)"
+                                        OnClick="@CleanupRuntimeNoise">
+                                    Cleanup
+                                </Button>
+                                @if (snapshot.CleanupPreview.RequiresOwnerConfirmation)
+                                {
+                                    <div class="confirmation-text">Local owner-confirmed cleanup: archive stale maintenance, remove old terminal tasks, trim diagnostic noise.</div>
                                 }
                             </Flex>
                         </Card>
@@ -689,6 +829,7 @@
     AgentControlCenterSnapshot? snapshot;
     string? lastProactiveActionMessage;
     string? lastMaintenanceActionMessage;
+    string? lastCleanupActionMessage;
 
     int HighRiskAuditCount => snapshot?.RecentAuditEntries.Count(entry => entry.RiskLevel == AgentAuditRiskLevel.High) ?? 0;
 
@@ -796,6 +937,36 @@
         return Task.CompletedTask;
     }
 
+    Task CleanupRuntimeNoise()
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        AgentControlCenterCleanupResult result = Module.CleanupRuntimeNoiseFromControlCenter(
+            maxTerminalTaskAge: TimeSpan.FromDays(30),
+            maxPendingMaintenanceAge: TimeSpan.FromDays(14),
+            maxDiagnosticLines: 500);
+        lastCleanupActionMessage = result.Message;
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    Task RepairMemoryConsistency()
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        ChatRuntimeState runtime = ChatActivity?.ChatBot.GetRuntimeState()
+                                   ?? new ChatRuntimeState(false, 0, 0, null, []);
+        AgentControlCenterSelfCheckActionResult result = Module.ApplySelfCheckAction(
+            "repair-memory-storage-consistency",
+            runtime,
+            "agent-control-ui");
+        lastMaintenanceActionMessage = result.Message;
+        Refresh();
+        return Task.CompletedTask;
+    }
+
     void RefreshSnapshot()
     {
         if (Module == null)
@@ -870,6 +1041,11 @@
         _ => "green"
     };
 
+    static string GetMemoryConsistencyColor(MemoryConsistencySnapshot memoryConsistency)
+    {
+        return memoryConsistency.HasIssues ? "orange" : "green";
+    }
+
     static string GetEnabledColor(bool enabled) => enabled ? "green" : "default";
 
     static string GetEnabledText(bool enabled) => enabled ? "enabled" : "disabled";
@@ -919,6 +1095,8 @@
         _ => "blue"
     };
 
+    static string GetCleanupColor(int count) => count > 0 ? "orange" : "green";
+
     static string Truncate(string value, int maxLength)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -942,6 +1120,14 @@
 
     .metric-card {
         min-height: 92px;
+    }
+
+    .triage-metric {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 8px;
+        min-height: 76px;
     }
 
     .metric-value {

@@ -100,14 +100,28 @@ public class BrowserService(
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Sense;
     public string SelfDescription => "Your real browser for opening pages, observing web content, and operating web interfaces when external information is needed.";
     public string? GetCurrentState() => "Initialized when this module awakes; use browser XML functions to open and observe pages.";
-    public ModuleHealth GetHealth() => browserReady || browser.IsReady
-        ? new ModuleHealth("Browser", ModuleHealthStatus.Healthy, "Browser runtime is initialized.")
-        : new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized yet.");
+    public ModuleHealth GetHealth()
+    {
+        if (browserReady || browser.IsReady)
+            return new ModuleHealth("Browser", ModuleHealthStatus.Healthy, "Browser runtime is initialized.");
+
+        string summary = lastInitializationError == null
+            ? "Browser runtime is not initialized yet."
+            : $"Browser runtime did not initialize during module startup: {lastInitializationError.Message}";
+        return new ModuleHealth("Browser", ModuleHealthStatus.Degraded, summary);
+    }
 
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
-        await browser.WaitToLoadedAsync(TimeSpan.FromSeconds(3));
+        try
+        {
+            await browser.WaitToLoadedAsync(TimeSpan.FromSeconds(3));
+        }
+        catch (Exception ex)
+        {
+            lastInitializationError = ex;
+        }
         browserReady = browser.IsReady;
         functionService?.RegisterHandler(new XmlHandler(this), DocumentMode.Implicit, nameof(RunJs));
     }
@@ -115,6 +129,7 @@ public class BrowserService(
     public void Dispose() => browser.Dispose();
 
     bool browserReady;
+    Exception? lastInitializationError;
 
     void PublishLifeEvent(string summary)
     {

@@ -336,9 +336,11 @@ public class ChatBot : IAsyncDisposable
 
     async Task TryFlushMessageCache(CancellationToken cancellationToken = default)
     {
-        if (messageCache.Count == 0)
+        int pendingCount = messageCache.Count;
+        if (pendingCount == 0)
             return;
 
+        RecordRuntimeEvent("PokeFlushStarted", $"Flushing {pendingCount} pending poke message(s).");
         await RequestChatAsync(cancellationToken);
         try
         {
@@ -359,6 +361,7 @@ public class ChatBot : IAsyncDisposable
             }
 
             //发送消息
+            RecordRuntimeEvent("PokeFlushDispatched", "Pending poke messages were dispatched into chat.");
             Chat($"{PokeMessageTag}\n{poke}");
         }
         finally

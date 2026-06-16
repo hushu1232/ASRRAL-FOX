@@ -64,7 +64,7 @@ public class AgentAuditLogService
             if (overflow > 0)
                 entries.RemoveRange(0, overflow);
 
-            File.AppendAllText(auditFilePath, JsonSerializer.Serialize(entry) + Environment.NewLine);
+            AppendLineWithSharing(auditFilePath, JsonSerializer.Serialize(entry));
         }
 
         return entry;
@@ -94,7 +94,7 @@ public class AgentAuditLogService
         if (File.Exists(auditFilePath) == false)
             return;
 
-        foreach (string line in File.ReadLines(auditFilePath))
+        foreach (string line in ReadLinesWithSharing(auditFilePath))
         {
             if (string.IsNullOrWhiteSpace(line))
                 continue;
@@ -117,5 +117,28 @@ public class AgentAuditLogService
             if (overflow > 0)
                 entries.RemoveRange(0, overflow);
         }
+    }
+
+    static void AppendLineWithSharing(string path, string line)
+    {
+        using FileStream stream = new(
+            path,
+            FileMode.Append,
+            FileAccess.Write,
+            FileShare.ReadWrite);
+        using StreamWriter writer = new(stream);
+        writer.WriteLine(line);
+    }
+
+    static IEnumerable<string> ReadLinesWithSharing(string path)
+    {
+        using FileStream stream = new(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite);
+        using StreamReader reader = new(stream);
+        while (reader.ReadLine() is { } line)
+            yield return line;
     }
 }

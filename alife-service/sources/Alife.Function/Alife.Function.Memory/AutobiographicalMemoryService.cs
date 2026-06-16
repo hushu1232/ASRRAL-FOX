@@ -89,7 +89,7 @@ public class AutobiographicalMemoryService(
             .Where(lifeEvent => string.IsNullOrWhiteSpace(lifeEvent.Summary) == false)
             .Where(lifeEvent => lifeEvent.IsPersisted == false)
             .Where(lifeEvent => persistedEventIds.Contains(lifeEvent.Id) == false)
-            .Where(lifeEvent => lastPersistedEventTimestamp == null || lifeEvent.Timestamp > lastPersistedEventTimestamp || string.IsNullOrWhiteSpace(lifeEvent.Id) == false)
+            .Where(lifeEvent => lastPersistedEventTimestamp == null || lifeEvent.Timestamp > lastPersistedEventTimestamp)
             .OrderBy(lifeEvent => lifeEvent.Timestamp)
             .ToArray();
 

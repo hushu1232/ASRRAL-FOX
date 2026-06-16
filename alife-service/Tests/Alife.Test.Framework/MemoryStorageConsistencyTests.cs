@@ -60,6 +60,37 @@ public class MemoryStorageConsistencyTests
         Assert.That(results.Single().Name, Is.EqualTo("3-file-only"));
     }
 
+    [Test]
+    public async Task RepairConsistencyAsync_RewritesArchiveFileWhenDatabaseAndArchiveContentDiffer()
+    {
+        string rootPath = CreateTempRoot();
+        await using MemoryStorage storage = new(rootPath, new FakeVectorizer());
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-14T10:00:00+08:00");
+
+        await storage.SaveAsync("3-mismatch", 3, "trusted db summary", "trusted db content", now, now);
+        string archivePath = Path.Combine(rootPath, "L3", "3-mismatch.txt");
+        await File.WriteAllTextAsync(archivePath,
+            """
+            内容概述：
+            ```
+            stale archive summary
+            ```
+            原始内容：
+            ```
+            stale archive content
+            ```
+            """);
+
+        MemoryStorageConsistencyReport report = await storage.RepairConsistencyAsync();
+
+        Assert.That(report.ContentMismatches, Is.EqualTo(1));
+        Assert.That(report.RepairedContentMismatches, Is.EqualTo(1));
+        string repaired = await File.ReadAllTextAsync(archivePath);
+        Assert.That(repaired, Does.Contain("trusted db summary"));
+        Assert.That(repaired, Does.Contain("trusted db content"));
+        Assert.That(repaired, Does.Not.Contain("stale archive summary"));
+    }
+
     static string CreateTempRoot()
     {
         string rootPath = Path.Combine(Path.GetTempPath(), "alife-memory-consistency-tests", Guid.NewGuid().ToString("N"));

@@ -113,6 +113,73 @@ public class QChatMessageSecurityTests
     }
 
     [Test]
+    public void ControlCenterConfig_DisablingPassiveGroupListeningDoesNotBlockMentionWakeup()
+    {
+        QChatConfig config = new() {
+            OwnerId = 10001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+        };
+        AgentControlCenterConfig control = new() {
+            AllowMentionWakeup = true,
+            AllowPassiveGroupListening = false,
+        };
+        OneBotBasicMessageEvent memberEvent = new() {
+            UserId = 30003,
+            GroupId = 20002,
+        };
+
+        Assert.That(QChatMessageSecurity.ShouldActivateGroup(config, memberEvent, isMentionedOrWoken: true, control), Is.True);
+    }
+
+    [Test]
+    public void ControlCenterConfig_SeparatesMentionWakeupFromPassiveGroupListening()
+    {
+        QChatConfig config = new() {
+            OwnerId = 10001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+        };
+        OneBotBasicMessageEvent memberEvent = new() {
+            UserId = 30003,
+            GroupId = 20002,
+        };
+        AgentControlCenterConfig passiveDisabled = new() {
+            AllowMentionWakeup = true,
+            AllowPassiveGroupListening = false,
+        };
+        AgentControlCenterConfig mentionDisabled = new() {
+            AllowMentionWakeup = false,
+            AllowPassiveGroupListening = true,
+        };
+
+        Assert.That(QChatMessageSecurity.ShouldAcceptGroupMessage(
+            config,
+            memberEvent,
+            isMentionedOrWoken: true,
+            isGroupEnabled: false,
+            passiveDisabled), Is.True);
+        Assert.That(QChatMessageSecurity.ShouldAcceptGroupMessage(
+            config,
+            memberEvent,
+            isMentionedOrWoken: false,
+            isGroupEnabled: true,
+            passiveDisabled), Is.False);
+        Assert.That(QChatMessageSecurity.ShouldAcceptGroupMessage(
+            config,
+            memberEvent,
+            isMentionedOrWoken: true,
+            isGroupEnabled: false,
+            mentionDisabled), Is.False);
+        Assert.That(QChatMessageSecurity.ShouldAcceptGroupMessage(
+            config,
+            memberEvent,
+            isMentionedOrWoken: false,
+            isGroupEnabled: true,
+            mentionDisabled), Is.True);
+    }
+
+    [Test]
     public void ControlCenterConfig_DisablesProactiveGroupChat()
     {
         QChatConfig config = new() {

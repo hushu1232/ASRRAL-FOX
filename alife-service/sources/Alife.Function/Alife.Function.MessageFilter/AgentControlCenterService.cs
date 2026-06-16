@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.FunctionCaller;
@@ -132,6 +133,31 @@ public sealed record AgentControlCenterRuntimeVisibility(
     AgentActionGatewayAuditSummary ActionGatewayAudit,
     IReadOnlyList<AgentRunSnapshot> RecentRunSessions);
 
+public sealed record AgentControlCenterHealthTriageSnapshot(
+    IReadOnlyList<ModuleHealth> Waiting,
+    IReadOnlyList<ModuleHealth> ExternalEnvironment,
+    IReadOnlyList<ModuleHealth> Faults,
+    IReadOnlyList<string> OwnerConfirmationItems);
+
+public sealed record AgentControlCenterCleanupPreview(
+    int StaleTerminalTaskCount,
+    int StaleMaintenanceProposalCount,
+    int ExcessDiagnosticLineCount,
+    bool RequiresOwnerConfirmation)
+{
+    public bool HasWork => StaleTerminalTaskCount > 0
+                           || StaleMaintenanceProposalCount > 0
+                           || ExcessDiagnosticLineCount > 0;
+}
+
+public sealed record AgentControlCenterCleanupResult(
+    bool Applied,
+    string Message,
+    int RemovedTerminalTaskCount,
+    int ArchivedMaintenanceProposalCount,
+    int TrimmedDiagnosticLineCount,
+    bool RequiresOwnerConfirmation);
+
 public sealed record AgentControlCenterSnapshot(
     DateTimeOffset Timestamp,
     AgentStateSnapshot AgentState,
@@ -151,7 +177,10 @@ public sealed record AgentControlCenterSnapshot(
     IReadOnlyList<AgentAuditLogEntry> RecentAuditEntries,
     AgentControlCenterAttentionSummary AttentionSummary,
     AgentControlCenterNotificationSummary NotificationSummary,
+    AgentControlCenterHealthTriageSnapshot HealthTriage,
+    AgentControlCenterCleanupPreview CleanupPreview,
     IReadOnlyList<AgentExecutionGatewayDecision> SecurityGatewayPreview,
+    MemoryConsistencySnapshot MemoryConsistency,
     AgentControlCenterSelfCheckSnapshot SelfCheck,
     AgentControlCenterSelfCheckSchedulerStatus SelfCheckScheduler,
     AgentControlCenterRuntimeVisibility RuntimeVisibility);
@@ -175,7 +204,9 @@ public class AgentControlCenterService(
     AgentMaintenanceService? maintenance = null,
     AgentEnvironmentCheckService? environmentChecks = null,
     AgentEventPipeline? eventPipeline = null,
-    Func<DateTimeOffset>? clock = null)
+    IMemoryConsistencyReporter? memoryConsistencyReporter = null,
+    Func<DateTimeOffset>? clock = null,
+    string? qchatDiagnosticsPath = null)
     : InteractiveModule<AgentControlCenterService>, IConfigurable<AgentControlCenterConfig>
 {
     readonly AgentAuditLogService auditLog = auditLog ?? new AgentAuditLogService(
@@ -185,8 +216,11 @@ public class AgentControlCenterService(
     readonly AgentIssueReportService issueReports = issueReports ?? new AgentIssueReportService(auditLog);
     readonly AgentEnvironmentCheckService environmentChecks = environmentChecks ?? new AgentEnvironmentCheckService();
     readonly AgentEventPipeline eventPipeline = eventPipeline ?? new AgentEventPipeline();
+    readonly IMemoryConsistencyReporter? memoryConsistencyReporter = memoryConsistencyReporter;
     readonly AgentMaintenanceService maintenance = maintenance ?? new AgentMaintenanceService(issueReports, auditLog);
     readonly AgentTaskService tasks = tasks ?? new AgentTaskService(auditLog);
+    readonly string qchatDiagnosticsPath = Path.GetFullPath(
+        qchatDiagnosticsPath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "qchat-diagnostics.jsonl"));
     readonly AgentWorkspaceService workspace = workspace ?? new AgentWorkspaceService(
         workspacePolicy,
         auditLog: auditLog);
@@ -335,6 +369,11 @@ public class AgentControlCenterService(
             pendingMaintenanceProposals,
             recentAuditEntries);
         AgentControlCenterRuntimeVisibility runtimeVisibility = BuildRuntimeVisibility(runtimeState, recentAuditEntries);
+        MemoryConsistencySnapshot memoryConsistency = BuildMemoryConsistencySnapshot();
+        AgentControlCenterCleanupPreview cleanupPreview = BuildRuntimeCleanupPreview(
+            maxTerminalTaskAge: TimeSpan.FromDays(30),
+            maxPendingMaintenanceAge: TimeSpan.FromDays(14),
+            maxDiagnosticLines: 500);
         return new AgentControlCenterSnapshot(
             DateTimeOffset.Now,
             diagnostics.BuildSnapshot(runtimeState, characterName),
@@ -354,8 +393,11 @@ public class AgentControlCenterService(
             recentAuditEntries,
             attentionSummary,
             BuildNotificationSummary(attentionSummary, issueReport),
+            BuildHealthTriage(issueReport, attentionSummary),
+            cleanupPreview,
             BuildSecurityGatewayPreview(),
-            BuildSelfCheck(configuration, attentionSummary, issueReport, runtimeVisibility),
+            memoryConsistency,
+            BuildSelfCheck(configuration, attentionSummary, issueReport, memoryConsistency, runtimeVisibility),
             BuildSelfCheckSchedulerStatus(configuration),
             runtimeVisibility);
     }
@@ -431,6 +473,9 @@ public class AgentControlCenterService(
                     $"expired_pending={cleanup.ExpiredPendingCount}; removed_completed={cleanup.RemovedCompletedCount}");
                 break;
             }
+            case "repair-memory-storage-consistency":
+                actionResult = ApplyMemoryConsistencyRepairAction(normalizedActionId, normalizedActor);
+                break;
             case "set-owner-user-ids":
                 actionResult = ToSelfCheckActionResult(normalizedActionId, ApplyConfigurationChange(
                     "OwnerUserIds",
@@ -451,6 +496,58 @@ public class AgentControlCenterService(
             actionResult.Applied || actionResult.RequiresOwnerConfirmation ? null : actionResult.Message);
 
         return actionResult;
+    }
+
+    AgentControlCenterSelfCheckActionResult ApplyMemoryConsistencyRepairAction(string actionId, string actor)
+    {
+        if (memoryConsistencyReporter == null)
+        {
+            return new AgentControlCenterSelfCheckActionResult(
+                Applied: false,
+                RequiresOwnerConfirmation: false,
+                actionId,
+                "MemoryStorageConsistency",
+                "memory consistency reporter is unavailable");
+        }
+
+        try
+        {
+            MemoryConsistencySnapshot repair = memoryConsistencyReporter
+                .RepairMemoryConsistencyAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            string message =
+                $"issues={repair.TotalIssues}; repaired_archives={repair.RepairedArchiveFiles}; repaired_indexes={repair.RepairedIndexRecords}; repaired_content_mismatches={repair.RepairedContentMismatches}";
+            auditLog.Record(
+                "agent.memory.consistency.repair",
+                actor,
+                message,
+                AgentAuditRiskLevel.Low,
+                true);
+            return new AgentControlCenterSelfCheckActionResult(
+                Applied: true,
+                RequiresOwnerConfirmation: false,
+                actionId,
+                "MemoryStorageConsistency",
+                message);
+        }
+        catch (Exception ex)
+        {
+            string message = $"memory consistency repair failed: {ex.Message}";
+            auditLog.Record(
+                "agent.memory.consistency.repair",
+                actor,
+                message,
+                AgentAuditRiskLevel.Low,
+                false,
+                message);
+            return new AgentControlCenterSelfCheckActionResult(
+                Applied: false,
+                RequiresOwnerConfirmation: false,
+                actionId,
+                "MemoryStorageConsistency",
+                message);
+        }
     }
 
     public AgentTaskState StartTaskFromControlCenter(string taskId)
@@ -495,6 +592,138 @@ public class AgentControlCenterService(
             issueReports.BuildSnapshot(runtimeState),
             "agent-control-ui",
             duplicateCooldown);
+    }
+
+    public AgentControlCenterCleanupPreview BuildRuntimeCleanupPreview(
+        TimeSpan maxTerminalTaskAge,
+        TimeSpan maxPendingMaintenanceAge,
+        int maxDiagnosticLines)
+    {
+        TimeSpan safeTerminalAge = maxTerminalTaskAge < TimeSpan.Zero ? TimeSpan.Zero : maxTerminalTaskAge;
+        TimeSpan safeMaintenanceAge = maxPendingMaintenanceAge < TimeSpan.Zero ? TimeSpan.Zero : maxPendingMaintenanceAge;
+        DateTimeOffset now = clock();
+        DateTimeOffset terminalCutoff = now - safeTerminalAge;
+        DateTimeOffset maintenanceCutoff = now - safeMaintenanceAge;
+        int staleTerminalTasks = tasks.GetTasks()
+            .Count(task => task.Status is (AgentTaskStatus.Completed or AgentTaskStatus.Failed or AgentTaskStatus.Cancelled)
+                           && task.UpdatedAt <= terminalCutoff);
+        int staleMaintenance = maintenance.GetPendingProposals()
+            .Count(proposal => proposal.CreatedAt <= maintenanceCutoff);
+        int excessDiagnosticLines = CountExcessDiagnosticLines(maxDiagnosticLines);
+
+        return new AgentControlCenterCleanupPreview(
+            staleTerminalTasks,
+            staleMaintenance,
+            excessDiagnosticLines,
+            RequiresOwnerConfirmation: staleTerminalTasks > 0 || staleMaintenance > 0 || excessDiagnosticLines > 0);
+    }
+
+    public AgentControlCenterCleanupResult CleanupRuntimeNoiseFromControlCenter(
+        TimeSpan maxTerminalTaskAge,
+        TimeSpan maxPendingMaintenanceAge,
+        int maxDiagnosticLines)
+    {
+        AgentControlCenterCleanupPreview preview = BuildRuntimeCleanupPreview(
+            maxTerminalTaskAge,
+            maxPendingMaintenanceAge,
+            maxDiagnosticLines);
+        if (preview.HasWork == false)
+        {
+            return new AgentControlCenterCleanupResult(
+                false,
+                "No runtime cleanup work was found.",
+                0,
+                0,
+                0,
+                RequiresOwnerConfirmation: false);
+        }
+
+        int removedTasks = tasks.RemoveTerminalTasksOlderThan(maxTerminalTaskAge, "agent-control-ui");
+        int archivedMaintenance = ArchiveStaleMaintenanceProposals(maxPendingMaintenanceAge);
+        int trimmedDiagnostics = TrimDiagnostics(maxDiagnosticLines);
+        string detail =
+            $"removed_terminal_tasks={removedTasks}; archived_maintenance={archivedMaintenance}; trimmed_diagnostic_lines={trimmedDiagnostics}";
+        auditLog.Record(
+            "agent.control.cleanup",
+            "agent-control-ui",
+            detail,
+            archivedMaintenance > 0 ? AgentAuditRiskLevel.Medium : AgentAuditRiskLevel.Low,
+            succeeded: true);
+
+        return new AgentControlCenterCleanupResult(
+            true,
+            $"Runtime cleanup applied: {detail}",
+            removedTasks,
+            archivedMaintenance,
+            trimmedDiagnostics,
+            preview.RequiresOwnerConfirmation);
+    }
+
+    int ArchiveStaleMaintenanceProposals(TimeSpan maxAge)
+    {
+        TimeSpan safeAge = maxAge < TimeSpan.Zero ? TimeSpan.Zero : maxAge;
+        DateTimeOffset cutoff = clock() - safeAge;
+        int archived = 0;
+        foreach (AgentMaintenanceProposal proposal in maintenance.GetPendingProposals()
+                     .Where(proposal => proposal.CreatedAt <= cutoff)
+                     .ToArray())
+        {
+            AgentMaintenanceArchiveResult result = maintenance.ArchiveProposal(
+                proposal.Id,
+                "agent-control-ui",
+                "archived during owner-confirmed control-center runtime cleanup");
+            if (result.Archived)
+                archived++;
+        }
+
+        return archived;
+    }
+
+    int CountExcessDiagnosticLines(int maxDiagnosticLines)
+    {
+        int safeMaxLines = Math.Max(1, maxDiagnosticLines);
+        if (File.Exists(qchatDiagnosticsPath) == false)
+            return 0;
+
+        try
+        {
+            return Math.Max(0, File.ReadLines(qchatDiagnosticsPath).Count() - safeMaxLines);
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
+
+    int TrimDiagnostics(int maxDiagnosticLines)
+    {
+        int safeMaxLines = Math.Max(1, maxDiagnosticLines);
+        if (File.Exists(qchatDiagnosticsPath) == false)
+            return 0;
+
+        try
+        {
+            string[] lines = File.ReadAllLines(qchatDiagnosticsPath);
+            int excess = Math.Max(0, lines.Length - safeMaxLines);
+            if (excess == 0)
+                return 0;
+
+            string[] retained = lines.Skip(excess).ToArray();
+            File.WriteAllLines(qchatDiagnosticsPath, retained);
+            return excess;
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return 0;
+        }
     }
 
     public AgentMaintenanceInspectionResult? TryAutomaticMaintenanceInspection(ChatRuntimeState runtimeState)
@@ -878,16 +1107,47 @@ public class AgentControlCenterService(
                 $"{group.Key} failed {group.Count()} times. Latest: {group.Last().Error ?? group.Last().Detail}")));
 
         items.AddRange(issueReport.UnhealthyModules
-            .Where(IsQqEnvironmentHealth)
+            .Where(health => AgentHealthIssueClassifier.Classify(health) == AgentHealthIssueKind.ExternalEnvironment)
             .Select(health => new AgentControlCenterNotification(
-                "qq-environment",
-                AgentAuditRiskLevel.Medium,
-                $"{health.Name} environment needs attention: {health.Summary}")));
+                IsQqEnvironmentHealth(health) ? "qq-environment" : "external-environment",
+                AgentAuditRiskLevel.Low,
+                $"{health.Name} external environment is not ready: {health.Summary}")));
 
         AgentControlCenterNotification[] snapshot = items
             .Take(8)
             .ToArray();
         return new AgentControlCenterNotificationSummary(snapshot.Length > 0, snapshot);
+    }
+
+    static AgentControlCenterHealthTriageSnapshot BuildHealthTriage(
+        AgentIssueReportSnapshot issueReport,
+        AgentControlCenterAttentionSummary attentionSummary)
+    {
+        List<ModuleHealth> waiting = [];
+        List<ModuleHealth> externalEnvironment = [];
+        List<ModuleHealth> faults = [];
+
+        foreach (ModuleHealth health in issueReport.UnhealthyModules)
+        {
+            switch (AgentHealthIssueClassifier.Classify(health))
+            {
+                case AgentHealthIssueKind.ActionableFault:
+                    faults.Add(health);
+                    break;
+                case AgentHealthIssueKind.ExternalEnvironment:
+                    externalEnvironment.Add(health);
+                    break;
+                default:
+                    waiting.Add(health);
+                    break;
+            }
+        }
+
+        return new AgentControlCenterHealthTriageSnapshot(
+            waiting,
+            externalEnvironment,
+            faults,
+            attentionSummary.OwnerConfirmationItems.ToArray());
     }
 
     public static AgentOwnerNotificationPlan BuildOwnerNotificationPlan(
@@ -947,6 +1207,7 @@ public class AgentControlCenterService(
         AgentControlCenterConfig configuration,
         AgentControlCenterAttentionSummary attentionSummary,
         AgentIssueReportSnapshot issueReport,
+        MemoryConsistencySnapshot memoryConsistency,
         AgentControlCenterRuntimeVisibility runtimeVisibility)
     {
         List<AgentControlCenterSelfCheckItem> items = [];
@@ -959,6 +1220,17 @@ public class AgentControlCenterService(
                 item,
                 "Wait for owner confirmation before applying this change or executing the external action.",
                 CanAgentHandleAutonomously: false)));
+
+        if (memoryConsistency.HasIssues)
+        {
+            items.Add(new AgentControlCenterSelfCheckItem(
+                "memory-consistency",
+                AgentAuditRiskLevel.Low,
+                $"Memory storage consistency issues: missing archives={memoryConsistency.MissingArchiveFiles}; missing indexes={memoryConsistency.MissingIndexRecords}; content mismatches={memoryConsistency.ContentMismatches}.",
+                "Apply the low-risk memory consistency repair action so storage can recreate missing archive/index records and rewrite mismatched archive text from DB-authoritative content.",
+                CanAgentHandleAutonomously: true,
+                ActionId: "repair-memory-storage-consistency"));
+        }
 
         string? latestRuntimeError = issueReport.LastError
                                      ?? issueReport.RuntimeErrors.LastOrDefault()?.Detail;
@@ -983,6 +1255,41 @@ public class AgentControlCenterService(
                     ? "Run the automatic maintenance inspection path and create a repair task if the issue repeats."
                     : "Report the runtime error to the owner because automatic maintenance inspection is disabled.",
                 configuration.AllowAutomaticMaintenanceInspection));
+        }
+
+        foreach (ModuleHealth health in issueReport.UnhealthyModules.Take(6))
+        {
+            AgentHealthIssueKind kind = AgentHealthIssueClassifier.Classify(health);
+            if (kind == AgentHealthIssueKind.ActionableFault)
+            {
+                items.Add(new AgentControlCenterSelfCheckItem(
+                    "module-fault",
+                    AgentAuditRiskLevel.Medium,
+                    $"{health.Name}: {health.Summary}",
+                    configuration.AllowAutomaticMaintenanceInspection
+                        ? "Run maintenance inspection only if this module fault persists or blocks a requested ability."
+                        : "Report the module fault to the owner because automatic maintenance inspection is disabled.",
+                    configuration.AllowAutomaticMaintenanceInspection));
+                continue;
+            }
+
+            if (kind == AgentHealthIssueKind.ExternalEnvironment)
+            {
+                items.Add(new AgentControlCenterSelfCheckItem(
+                    "external-environment",
+                    AgentAuditRiskLevel.Low,
+                    $"{health.Name}: {health.Summary}",
+                    "Keep normal chat responsive; ask the owner only when this external environment is needed for a requested action.",
+                    CanAgentHandleAutonomously: true));
+                continue;
+            }
+
+            items.Add(new AgentControlCenterSelfCheckItem(
+                "module-waiting",
+                AgentAuditRiskLevel.Low,
+                $"{health.Name}: {health.Summary}",
+                "Treat this as a normal waiting/configuration state unless a real runtime error appears.",
+                CanAgentHandleAutonomously: true));
         }
 
         AgentBackgroundTaskResult? failedBackgroundTask = runtimeVisibility.BackgroundTasks
@@ -1092,6 +1399,12 @@ public class AgentControlCenterService(
                     Action: "github.upload"),
                 config)
         ];
+    }
+
+    MemoryConsistencySnapshot BuildMemoryConsistencySnapshot()
+    {
+        return memoryConsistencyReporter?.GetMemoryConsistencySnapshot()
+               ?? MemoryConsistencySnapshot.Empty;
     }
 
     AgentControlCenterRuntimeVisibility BuildRuntimeVisibility(

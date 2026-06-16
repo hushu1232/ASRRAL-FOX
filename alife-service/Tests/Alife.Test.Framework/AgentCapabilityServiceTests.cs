@@ -735,6 +735,40 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void TaskServiceClosesStaleActiveTasksOnLoad()
+    {
+        string root = CreateTempWorkspace();
+        string taskStorePath = Path.Combine(root, "agent-tasks.json");
+        DateTimeOffset staleTime = DateTimeOffset.Now.AddDays(-3);
+        AgentTaskState staleRunning = new(
+            "stale-running",
+            "Old interrupted work",
+            ["inspect"],
+            AgentTaskStatus.Running,
+            staleTime,
+            staleTime,
+            [new AgentTaskEvent(staleTime, "agent", "started", "Task started.")]);
+        AgentTaskState freshRunning = new(
+            "fresh-running",
+            "Current work",
+            ["inspect"],
+            AgentTaskStatus.Running,
+            DateTimeOffset.Now.AddMinutes(-5),
+            DateTimeOffset.Now.AddMinutes(-5),
+            [new AgentTaskEvent(DateTimeOffset.Now.AddMinutes(-5), "agent", "started", "Task started.")]);
+        File.WriteAllText(taskStorePath, System.Text.Json.JsonSerializer.Serialize(new[] { staleRunning, freshRunning }));
+
+        AgentTaskService reloaded = new(taskStorePath: taskStorePath);
+
+        AgentTaskState? stale = reloaded.GetTask("stale-running");
+        AgentTaskState? fresh = reloaded.GetTask("fresh-running");
+        Assert.That(stale, Is.Not.Null);
+        Assert.That(stale!.Status, Is.EqualTo(AgentTaskStatus.Cancelled));
+        Assert.That(stale.Events.Last().Kind, Is.EqualTo("stale-closed"));
+        Assert.That(fresh?.Status, Is.EqualTo(AgentTaskStatus.Running));
+    }
+
+    [Test]
     public void TaskServiceXmlToolsExposeLifecycleAndParseStepText()
     {
         AgentTaskService tasks = new();
@@ -994,6 +1028,153 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void MaintenanceServiceIgnoresExpectedWaitingHealthWithoutErrors()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T10:00:00Z");
+        AgentMaintenanceService service = new(
+            proposalStorePath: Path.Combine(root, "maintenance-proposals.json"),
+            clock: () => now);
+        AgentIssueReportSnapshot browserStillStarting = new(
+            now,
+            null,
+            [],
+            [],
+            [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized yet.")]);
+        AgentIssueReportSnapshot oneBotDisconnected = new(
+            now,
+            null,
+            [],
+            [],
+            [new ModuleHealth("QChat", ModuleHealthStatus.Degraded, "OneBot is configured but disconnected.")]);
+
+        AgentMaintenanceInspectionResult browserResult = service.InspectIssueReport(
+            browserStillStarting,
+            "agent",
+            duplicateCooldown: TimeSpan.FromHours(2));
+        AgentMaintenanceInspectionResult qchatResult = service.InspectIssueReport(
+            oneBotDisconnected,
+            "agent",
+            duplicateCooldown: TimeSpan.FromHours(2));
+
+        Assert.That(browserResult.Created, Is.False);
+        Assert.That(qchatResult.Created, Is.False);
+        Assert.That(service.GetPendingProposals(), Is.Empty);
+    }
+
+    [Test]
+    public void MaintenanceServiceTreatsStartupFailureHealthAsActionable()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T10:00:00Z");
+        AgentMaintenanceService service = new(
+            proposalStorePath: Path.Combine(root, "maintenance-proposals.json"),
+            clock: () => now);
+        AgentIssueReportSnapshot startupFailure = new(
+            now,
+            null,
+            [],
+            [],
+            [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime did not initialize during module startup: timeout.")]);
+
+        AgentMaintenanceInspectionResult result = service.InspectIssueReport(
+            startupFailure,
+            "agent",
+            duplicateCooldown: TimeSpan.FromHours(2));
+
+        Assert.That(result.Created, Is.True);
+        Assert.That(result.Proposal?.Title, Does.Contain("Browser"));
+        Assert.That(service.GetPendingProposals(), Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void MaintenanceServiceDeduplicatesSameBrowserRootCauseWithDifferentErrorNoise()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T10:00:00Z");
+        AgentMaintenanceService service = new(
+            proposalStorePath: Path.Combine(root, "maintenance-proposals.json"),
+            clock: () => now);
+        AgentIssueReportSnapshot noisyBrowserFailure = new(
+            now,
+            "System.InvalidOperationException: Browser runtime failed",
+            [new ChatRuntimeEvent(now.AddMinutes(-1), "Error", "System.InvalidOperationException: Browser runtime failed")],
+            [
+                new AgentAuditLogEntry(
+                    now.AddMinutes(-1),
+                    "agent.command.test",
+                    "agent",
+                    "dotnet test failed",
+                    AgentAuditRiskLevel.Medium,
+                    Succeeded: false,
+                    Error: "1 failed test")
+            ],
+            [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]);
+        AgentIssueReportSnapshot sameBrowserFailureWithoutAuditNoise = new(
+            now.AddMinutes(1),
+            "Browser runtime failed",
+            [new ChatRuntimeEvent(now, "Error", "Browser runtime failed")],
+            [],
+            [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]);
+
+        AgentMaintenanceInspectionResult first = service.InspectIssueReport(
+            noisyBrowserFailure,
+            "agent",
+            duplicateCooldown: TimeSpan.FromHours(2));
+        AgentMaintenanceInspectionResult duplicate = service.InspectIssueReport(
+            sameBrowserFailureWithoutAuditNoise,
+            "agent",
+            duplicateCooldown: TimeSpan.FromHours(2));
+
+        Assert.That(first.Created, Is.True);
+        Assert.That(duplicate.Created, Is.False);
+        Assert.That(duplicate.Proposal?.Id, Is.EqualTo(first.Proposal?.Id));
+        Assert.That(service.GetPendingProposals(), Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void MaintenanceServiceCompactsDuplicatePersistedPendingProposalsOnLoad()
+    {
+        string root = CreateTempWorkspace();
+        string storePath = Path.Combine(root, "maintenance-proposals.json");
+        DateTimeOffset older = DateTimeOffset.Parse("2026-06-15T09:00:00Z");
+        DateTimeOffset newer = DateTimeOffset.Parse("2026-06-15T10:00:00Z");
+        AgentMaintenanceProposalPersistenceState state = new()
+        {
+            Pending =
+            [
+                new AgentMaintenanceProposal(
+                    "older-browser",
+                    older,
+                    "agent",
+                    "System.InvalidOperationException: Browser runtime failed",
+                    "Last error: System.InvalidOperationException: Browser runtime failed\nUnhealthy module: Browser; Degraded; Browser runtime is not initialized.",
+                    ["inspect"],
+                    AgentAuditRiskLevel.Medium,
+                    RequiresOwnerConfirmationForExecution: true,
+                    CanApplyAutomatically: false),
+                new AgentMaintenanceProposal(
+                    "newer-browser",
+                    newer,
+                    "agent",
+                    "Browser runtime failed",
+                    "Last error: Browser runtime failed\nFailed audit: agent.command.test; dotnet test failed; error=1 failed test\nUnhealthy module: Browser; Degraded; Browser runtime is not initialized.",
+                    ["inspect"],
+                    AgentAuditRiskLevel.Medium,
+                    RequiresOwnerConfirmationForExecution: true,
+                    CanApplyAutomatically: false)
+            ]
+        };
+        File.WriteAllText(storePath, System.Text.Json.JsonSerializer.Serialize(state));
+
+        AgentMaintenanceService service = new(proposalStorePath: storePath);
+
+        IReadOnlyList<AgentMaintenanceProposal> pending = service.GetPendingProposals();
+        Assert.That(pending, Has.Count.EqualTo(1));
+        Assert.That(pending[0].Id, Is.EqualTo("newer-browser"));
+    }
+
+    [Test]
     public void AgentControlCenterBuildsReadOnlySnapshot()
     {
         string root = CreateTempWorkspace();
@@ -1089,6 +1270,128 @@ public class AgentCapabilityServiceTests
             Is.EqualTo("workspace-proposal-1"));
         Assert.That(snapshot.MaintenanceRepairEvidenceByProposalId[maintenanceProposal.Id][0].VerificationSummary,
             Does.Contain("focused tests passed"));
+    }
+
+    [Test]
+    public void AgentControlCenterBuildsHealthTriageSnapshot()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentControlCenterService service = new(
+            issueReports: new AgentIssueReportService(
+                audit,
+                [
+                    new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized yet."),
+                    new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot is configured but disconnected."),
+                    new StubHealthReporter("DeskPet", ModuleHealthStatus.Degraded, "DeskPet runtime did not initialize during module startup: timeout.")
+                ]),
+            auditLog: audit,
+            maintenance: new AgentMaintenanceService(auditLog: audit, proposalStorePath: Path.Combine(root, "maintenance.json")));
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        Assert.That(snapshot.HealthTriage.Waiting.Select(health => health.Name), Does.Contain("Browser"));
+        Assert.That(snapshot.HealthTriage.ExternalEnvironment.Select(health => health.Name), Does.Contain("QChat"));
+        Assert.That(snapshot.HealthTriage.Faults.Select(health => health.Name), Does.Contain("DeskPet"));
+        Assert.That(snapshot.HealthTriage.OwnerConfirmationItems, Is.Empty);
+    }
+
+    [Test]
+    public void AgentControlCenterCleanupPreviewReportsRuntimeNoise()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentTaskService tasks = new(audit, taskStorePath: Path.Combine(root, "tasks.json"));
+        AgentTaskState completed = tasks.CreateTask("agent", "Old finished task", ["verify"]);
+        tasks.CompleteTask(completed.Id, "agent", "done");
+        string taskStorePath = Path.Combine(root, "tasks.json");
+        DateTimeOffset staleTime = DateTimeOffset.Now.AddDays(-45);
+        AgentTaskState staleCompleted = tasks.GetTask(completed.Id)! with
+        {
+            CreatedAt = staleTime,
+            UpdatedAt = staleTime
+        };
+        File.WriteAllText(taskStorePath, System.Text.Json.JsonSerializer.Serialize(new[] { staleCompleted }));
+        tasks = new AgentTaskService(audit, taskStorePath: taskStorePath);
+        AgentMaintenanceService maintenance = new(auditLog: audit, proposalStorePath: Path.Combine(root, "maintenance.json"));
+        maintenance.ProposeFromIssueReport(
+            new AgentIssueReportSnapshot(
+                DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+                "Browser runtime failed",
+                [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T09:59:00Z"), "Error", "Browser runtime failed")],
+                [],
+                [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            "agent");
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        File.WriteAllLines(diagnosticsPath, Enumerable.Range(1, 12).Select(index => $"{{\"index\":{index}}}"));
+        AgentControlCenterService service = new(
+            tasks: tasks,
+            auditLog: audit,
+            maintenance: maintenance,
+            qchatDiagnosticsPath: diagnosticsPath);
+
+        AgentControlCenterCleanupPreview preview = service.BuildRuntimeCleanupPreview(
+            maxTerminalTaskAge: TimeSpan.FromDays(30),
+            maxPendingMaintenanceAge: TimeSpan.Zero,
+            maxDiagnosticLines: 5);
+
+        Assert.That(preview.StaleTerminalTaskCount, Is.EqualTo(1));
+        Assert.That(preview.StaleMaintenanceProposalCount, Is.EqualTo(1));
+        Assert.That(preview.ExcessDiagnosticLineCount, Is.EqualTo(7));
+        Assert.That(preview.RequiresOwnerConfirmation, Is.True);
+        Assert.That(preview.HasWork, Is.True);
+    }
+
+    [Test]
+    public void AgentControlCenterCleanupArchivesTrimsAndAudits()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentTaskService tasks = new(audit, taskStorePath: Path.Combine(root, "tasks.json"));
+        AgentTaskState completed = tasks.CreateTask("agent", "Old finished task", ["verify"]);
+        tasks.CompleteTask(completed.Id, "agent", "done");
+        string taskStorePath = Path.Combine(root, "tasks.json");
+        DateTimeOffset staleTime = DateTimeOffset.Now.AddDays(-45);
+        AgentTaskState staleCompleted = tasks.GetTask(completed.Id)! with
+        {
+            CreatedAt = staleTime,
+            UpdatedAt = staleTime
+        };
+        File.WriteAllText(taskStorePath, System.Text.Json.JsonSerializer.Serialize(new[] { staleCompleted }));
+        tasks = new AgentTaskService(audit, taskStorePath: taskStorePath);
+        AgentMaintenanceService maintenance = new(auditLog: audit, proposalStorePath: Path.Combine(root, "maintenance.json"));
+        maintenance.ProposeFromIssueReport(
+            new AgentIssueReportSnapshot(
+                DateTimeOffset.Parse("2026-06-15T10:00:00Z"),
+                "Browser runtime failed",
+                [new ChatRuntimeEvent(DateTimeOffset.Parse("2026-06-15T09:59:00Z"), "Error", "Browser runtime failed")],
+                [],
+                [new ModuleHealth("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            "agent");
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        File.WriteAllLines(diagnosticsPath, Enumerable.Range(1, 12).Select(index => $"{{\"index\":{index}}}"));
+        AgentControlCenterService service = new(
+            tasks: tasks,
+            auditLog: audit,
+            maintenance: maintenance,
+            qchatDiagnosticsPath: diagnosticsPath);
+
+        AgentControlCenterCleanupResult result = service.CleanupRuntimeNoiseFromControlCenter(
+            maxTerminalTaskAge: TimeSpan.FromDays(30),
+            maxPendingMaintenanceAge: TimeSpan.Zero,
+            maxDiagnosticLines: 5);
+
+        Assert.That(result.Applied, Is.True);
+        Assert.That(result.RemovedTerminalTaskCount, Is.EqualTo(1));
+        Assert.That(result.ArchivedMaintenanceProposalCount, Is.EqualTo(1));
+        Assert.That(result.TrimmedDiagnosticLineCount, Is.EqualTo(7));
+        Assert.That(tasks.GetTasks(), Is.Empty);
+        Assert.That(maintenance.GetPendingProposals(), Is.Empty);
+        Assert.That(maintenance.GetArchivedProposals(), Has.Count.EqualTo(1));
+        Assert.That(File.ReadAllLines(diagnosticsPath), Has.Length.EqualTo(5));
+        Assert.That(audit.GetRecentEntries(20).Select(entry => entry.Action), Does.Contain("agent.control.cleanup"));
     }
 
     [Test]
@@ -1332,6 +1635,84 @@ public class AgentCapabilityServiceTests
         Assert.That(result.Key, Is.EqualTo("AllowAutomaticMaintenanceInspection"));
         Assert.That(service.Configuration!.AllowAutomaticMaintenanceInspection, Is.True);
         Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.config.applied"));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.self_check.action"));
+    }
+
+    [Test]
+    public void AgentControlCenterExposesMemoryConsistencyIssuesToSelfCheck()
+    {
+        FakeMemoryConsistencyReporter memoryConsistency = new(new MemoryConsistencySnapshot(
+            MissingArchiveFiles: 1,
+            MissingIndexRecords: 2,
+            ContentMismatches: 3,
+            RepairedArchiveFiles: 0,
+            RepairedIndexRecords: 0,
+            RepairedContentMismatches: 0));
+        AgentControlCenterService service = new(memoryConsistencyReporter: memoryConsistency);
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 3,
+            LastError: null,
+            RecentEvents: []);
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+        AgentControlCenterSelfCheckItem item = snapshot.SelfCheck.Items.Single(item => item.Category == "memory-consistency");
+        string report = AgentControlCenterService.FormatSelfCheckForAgent(snapshot.SelfCheck);
+
+        Assert.That(snapshot.MemoryConsistency.TotalIssues, Is.EqualTo(6));
+        Assert.That(item.ActionId, Is.EqualTo("repair-memory-storage-consistency"));
+        Assert.That(item.CanAgentHandleAutonomously, Is.True);
+        Assert.That(item.Summary, Does.Contain("missing archives=1"));
+        Assert.That(item.Summary, Does.Contain("missing indexes=2"));
+        Assert.That(item.Summary, Does.Contain("content mismatches=3"));
+        Assert.That(report, Does.Contain("memory-consistency"));
+        Assert.That(report, Does.Contain("repair-memory-storage-consistency"));
+    }
+
+    [Test]
+    public void AgentControlCenterRepairsMemoryConsistencyFromSelfCheckAndAudits()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        FakeMemoryConsistencyReporter memoryConsistency = new(new MemoryConsistencySnapshot(
+            MissingArchiveFiles: 1,
+            MissingIndexRecords: 0,
+            ContentMismatches: 1,
+            RepairedArchiveFiles: 0,
+            RepairedIndexRecords: 0,
+            RepairedContentMismatches: 0))
+        {
+            RepairResult = new MemoryConsistencySnapshot(
+                MissingArchiveFiles: 1,
+                MissingIndexRecords: 0,
+                ContentMismatches: 1,
+                RepairedArchiveFiles: 1,
+                RepairedIndexRecords: 0,
+                RepairedContentMismatches: 1)
+        };
+        AgentControlCenterService service = new(
+            auditLog: audit,
+            memoryConsistencyReporter: memoryConsistency);
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 3,
+            LastError: null,
+            RecentEvents: []);
+
+        AgentControlCenterSelfCheckActionResult result = service.ApplySelfCheckAction(
+            "repair-memory-storage-consistency",
+            runtime,
+            "agent");
+
+        Assert.That(result.Applied, Is.True);
+        Assert.That(result.RequiresOwnerConfirmation, Is.False);
+        Assert.That(result.Key, Is.EqualTo("MemoryStorageConsistency"));
+        Assert.That(result.Message, Does.Contain("repaired_archives=1"));
+        Assert.That(result.Message, Does.Contain("repaired_content_mismatches=1"));
+        Assert.That(memoryConsistency.RepairCallCount, Is.EqualTo(1));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.memory.consistency.repair"));
         Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.self_check.action"));
     }
 
@@ -1802,6 +2183,51 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void AgentControlCenterShowsWaitingHealthWithoutCreatingMaintenance()
+    {
+        string root = CreateTempWorkspace();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-15T10:00:00Z");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentMaintenanceService maintenance = new(
+            auditLog: audit,
+            proposalStorePath: Path.Combine(root, "maintenance.json"),
+            clock: () => now);
+        AgentControlCenterService service = new(
+            issueReports: new AgentIssueReportService(
+                audit,
+                [
+                    new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized yet."),
+                    new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot is configured but disconnected.")
+                ]),
+            auditLog: audit,
+            maintenance: maintenance,
+            clock: () => now)
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowAutomaticMaintenanceInspection = true,
+                MaintenanceInspectionIntervalMinutes = 1,
+                MaintenanceDuplicateCooldownMinutes = 120
+            }
+        };
+        ChatRuntimeState runtime = new(
+            IsChatting: false,
+            PendingPokeCount: 0,
+            ChatHistoryCount: 0,
+            LastError: null,
+            RecentEvents: []);
+
+        AgentMaintenanceInspectionResult? result = service.TryAutomaticMaintenanceInspection(runtime);
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(runtime, "Kira");
+
+        Assert.That(result?.Created, Is.False);
+        Assert.That(snapshot.PendingMaintenanceProposals, Is.Empty);
+        Assert.That(snapshot.SelfCheck.OwnerReviewCount, Is.Zero);
+        Assert.That(snapshot.SelfCheck.Items.Select(item => item.Category), Does.Contain("module-waiting"));
+        Assert.That(snapshot.SelfCheck.Items.Select(item => item.Category), Does.Contain("external-environment"));
+    }
+
+    [Test]
     public void AgentControlCenterCreatesMaintenanceTaskFromAutomaticInspectionAndDeduplicates()
     {
         string root = CreateTempWorkspace();
@@ -2214,6 +2640,28 @@ public class AgentCapabilityServiceTests
         {
             LastRequest = request;
             return Task.FromResult(new AgentCommandResult(request.CommandId, 0, "ok", "", TimeSpan.FromMilliseconds(5)));
+        }
+    }
+
+    sealed class FakeMemoryConsistencyReporter : IMemoryConsistencyReporter
+    {
+        readonly MemoryConsistencySnapshot snapshot;
+
+        public FakeMemoryConsistencyReporter(MemoryConsistencySnapshot snapshot)
+        {
+            this.snapshot = snapshot;
+            RepairResult = snapshot;
+        }
+
+        public int RepairCallCount { get; private set; }
+        public MemoryConsistencySnapshot RepairResult { get; set; }
+
+        public MemoryConsistencySnapshot GetMemoryConsistencySnapshot() => snapshot;
+
+        public Task<MemoryConsistencySnapshot> RepairMemoryConsistencyAsync(CancellationToken cancellationToken = default)
+        {
+            RepairCallCount++;
+            return Task.FromResult(RepairResult);
         }
     }
 

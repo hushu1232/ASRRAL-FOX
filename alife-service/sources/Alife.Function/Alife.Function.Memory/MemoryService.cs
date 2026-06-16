@@ -87,7 +87,7 @@ public partial class MemoryService
     defaultCategory: "Alife 官方/生活环境",
     LaunchOrder = -100, EditorUI = typeof(MemoryServiceUI))]
 public partial class MemoryService(XmlFunctionCaller functionService)
-    : InteractiveModule<MemoryService>, IConfigurable<MemoryConfig>, IEmbodiedCapability, IAutobiographicalMemorySink, IModuleHealthReporter
+    : InteractiveModule<MemoryService>, IConfigurable<MemoryConfig>, IEmbodiedCapability, IAutobiographicalMemorySink, IModuleHealthReporter, IMemoryConsistencyReporter
 {
     [XmlFunction(FunctionMode.OneShot)]
     public void GetMemoryGuide()
@@ -270,6 +270,20 @@ public partial class MemoryService(XmlFunctionCaller functionService)
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Memory;
     public string SelfDescription => "Your persistent memory for recalling, saving, compressing, and managing important experiences and facts.";
     public string? GetCurrentState() => Configuration == null ? "memory configuration unavailable" : "memory system configured";
+    public MemoryConsistencySnapshot GetMemoryConsistencySnapshot()
+    {
+        return memoryManager == null ? MemoryConsistencySnapshot.Empty : memoryManager.GetConsistencySnapshot();
+    }
+
+    public Task<MemoryConsistencySnapshot> RepairMemoryConsistencyAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (memoryManager == null)
+            throw new InvalidOperationException("MemoryManager is not started yet.");
+
+        return memoryManager.RepairConsistencyAsync();
+    }
+
     public ModuleHealth GetHealth()
     {
         if (Configuration == null)

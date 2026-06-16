@@ -792,6 +792,9 @@ public class QChatService(
     string[] ignoredGroup = [];
     readonly Dictionary<long, GroupState> groupStates = new();
     readonly AsyncLocal<QChatReplySession?> currentReplySession = new();
+    static readonly object emptyGroupFlushDiagnosticGate = new();
+    static readonly Dictionary<long, DateTimeOffset> emptyGroupFlushDiagnosticTimes = new();
+    static readonly TimeSpan EmptyGroupFlushDiagnosticInterval = TimeSpan.FromMinutes(5);
     long outboundMessageVersion;
     readonly object permissionGate = new();
     AgentPermissionRequest? currentPermissionRequest;
@@ -972,7 +975,13 @@ public class QChatService(
                     basicMessageEvent,
                     pokeEvent.TargetId == config.BotId,
                     content);
-                await HandleFormattedMessage(basicMessageEvent, formatted, isAwakening, senderRole, permissionRequest);
+                await HandleFormattedMessage(
+                    basicMessageEvent,
+                    formatted,
+                    isAwakening,
+                    pokeEvent.TargetId == config.BotId,
+                    senderRole,
+                    permissionRequest);
             }
 
             if (basicMessageEvent is OneBotMessageEvent messageEvent)
@@ -1003,7 +1012,13 @@ public class QChatService(
                     isAwakening,
                     senderRole
                 });
-                await HandleFormattedMessage(messageEvent, formatted, isAwakening, senderRole, permissionRequest);
+                await HandleFormattedMessage(
+                    messageEvent,
+                    formatted,
+                    isAwakening,
+                    isMentionedOrWoken,
+                    senderRole,
+                    permissionRequest);
             }
         }
         catch (Exception e)
@@ -1027,6 +1042,7 @@ public class QChatService(
         OneBotBasicMessageEvent messageEvent,
         string formatted,
         bool isAwakening,
+        bool isMentionedOrWoken,
         QChatSenderRole senderRole,
         AgentPermissionRequest permissionRequest)
     {
@@ -1069,6 +1085,25 @@ public class QChatService(
 
             if (state.IsEnabled)//群聊已激活时（直接接收）
             {
+                if (QChatMessageSecurity.ShouldAcceptGroupMessage(
+                        Configuration!,
+                        messageEvent,
+                        isMentionedOrWoken,
+                        state.IsEnabled,
+                        agentControlCenter?.Configuration) == false)
+                {
+                    WriteQChatDiagnostic("group-filtered", "Group message rejected by Agent Control Center group listening policy.", new {
+                        messageEvent.GroupId,
+                        messageEvent.UserId,
+                        senderRole,
+                        isMentionedOrWoken,
+                        state.IsEnabled,
+                        agentControlCenter?.Configuration?.AllowMentionWakeup,
+                        agentControlCenter?.Configuration?.AllowPassiveGroupListening
+                    });
+                    return;
+                }
+
                 BufferGroupMessage(
                     state,
                     formatted,
@@ -1122,9 +1157,12 @@ public class QChatService(
 
         if (state.MessageBuffer.Count == 0)
         {
-            WriteQChatDiagnostic("group-flush-skipped", "Group flush skipped because buffer is empty.", new {
-                state.GroupId
-            });
+            if (ShouldWriteEmptyGroupFlushDiagnostic(state.GroupId))
+            {
+                WriteQChatDiagnostic("group-flush-skipped", "Group flush skipped because buffer is empty.", new {
+                    state.GroupId
+                });
+            }
             return;
         }
 
@@ -1309,6 +1347,22 @@ public class QChatService(
         catch
         {
             // Diagnostics must never break QQ message handling.
+        }
+    }
+
+    static bool ShouldWriteEmptyGroupFlushDiagnostic(long groupId)
+    {
+        DateTimeOffset now = DateTimeOffset.Now;
+        lock (emptyGroupFlushDiagnosticGate)
+        {
+            if (emptyGroupFlushDiagnosticTimes.TryGetValue(groupId, out DateTimeOffset lastWrittenAt)
+                && now - lastWrittenAt < EmptyGroupFlushDiagnosticInterval)
+            {
+                return false;
+            }
+
+            emptyGroupFlushDiagnosticTimes[groupId] = now;
+            return true;
         }
     }
 

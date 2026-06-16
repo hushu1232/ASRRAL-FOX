@@ -202,6 +202,38 @@ public class AgentTaskService(
         }
     }
 
+    public int RemoveTerminalTasksOlderThan(TimeSpan maxAge, string actor = "agent-control-ui")
+    {
+        TimeSpan safeMaxAge = maxAge < TimeSpan.Zero ? TimeSpan.Zero : maxAge;
+        DateTimeOffset cutoff = DateTimeOffset.Now - safeMaxAge;
+        string[] staleIds;
+        lock (syncRoot)
+        {
+            staleIds = tasks.Values
+                .Where(task => task.Status is AgentTaskStatus.Completed or AgentTaskStatus.Failed or AgentTaskStatus.Cancelled)
+                .Where(task => task.UpdatedAt <= cutoff)
+                .Select(task => task.Id)
+                .ToArray();
+
+            foreach (string id in staleIds)
+                tasks.Remove(id);
+
+            if (staleIds.Length > 0)
+                SaveTasks();
+        }
+
+        if (staleIds.Length > 0)
+        {
+            Audit(
+                "agent.task.cleanup",
+                actor,
+                $"removed_terminal_tasks={staleIds.Length}",
+                true);
+        }
+
+        return staleIds.Length;
+    }
+
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
@@ -290,7 +322,30 @@ public class AgentTaskService(
         AgentTaskState[]? restored = JsonSerializer.Deserialize<AgentTaskState[]>(json, JsonOptions);
         return (restored ?? [])
             .Where(task => string.IsNullOrWhiteSpace(task.Id) == false)
+            .Select(CloseStaleActiveTask)
             .ToDictionary(task => task.Id, StringComparer.OrdinalIgnoreCase);
+    }
+
+    static AgentTaskState CloseStaleActiveTask(AgentTaskState task)
+    {
+        if (task.Status is not (AgentTaskStatus.Planned or AgentTaskStatus.Running))
+            return task;
+
+        DateTimeOffset now = DateTimeOffset.Now;
+        if (now - task.UpdatedAt <= StaleActiveTaskAge)
+            return task;
+
+        AgentTaskEvent staleEvent = new(
+            now,
+            "system",
+            "stale-closed",
+            $"Automatically closed stale active task after {StaleActiveTaskAge.TotalHours:F0} hours without progress.");
+        return task with
+        {
+            Status = AgentTaskStatus.Cancelled,
+            UpdatedAt = now,
+            Events = task.Events.Concat([staleEvent]).ToArray()
+        };
     }
 
     static string FormatTask(AgentTaskState task)
@@ -315,4 +370,5 @@ public class AgentTaskService(
     {
         WriteIndented = true
     };
+    static readonly TimeSpan StaleActiveTaskAge = TimeSpan.FromHours(24);
 }
