@@ -17,7 +17,11 @@ public class StreamingOutputSegmenterTests
     [Test]
     public void Push_SentenceMode_BuffersUntilSentenceBoundary()
     {
-        StreamingOutputSegmenter segmenter = new(StreamingOutputPolicy.QqPrivateText);
+        StreamingOutputPolicy policy = StreamingOutputPolicy.QqPrivateText with
+        {
+            MinBufferedCharacters = 1,
+        };
+        StreamingOutputSegmenter segmenter = new(policy);
 
         Assert.That(segmenter.Push("我看到了"), Is.Empty);
         Assert.That(segmenter.Push("。后面继续"), Is.EqualTo(new[] { "我看到了。" }));

@@ -40,7 +40,7 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public async Task SendChatAsync_SplitsGroupTextWithBalancedStreamingPolicy()
+    public async Task SendChatAsync_CoalescesShortCompleteSentencesWithBalancedStreamingPolicy()
     {
         FakeOneBotRuntime runtime = new();
         QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: runtime)
@@ -51,9 +51,7 @@ public class QChatServiceAdapterTests
         await service.SendChatAsync("group", 123, "第一句。第二句！最后一句");
 
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] {
-            (123L, "第一句。"),
-            (123L, "第二句！"),
-            (123L, "最后一句"),
+            (123L, "第一句。第二句！最后一句"),
         }));
     }
 
@@ -69,8 +67,7 @@ public class QChatServiceAdapterTests
         await service.SendChatAsync("group", 123, "[CQ:at,qq=3045846738]收到。后续继续");
 
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] {
-            (123L, "[CQ:at,qq=3045846738]收到。"),
-            (123L, "后续继续"),
+            (123L, "[CQ:at,qq=3045846738]收到。后续继续"),
         }));
     }
 
