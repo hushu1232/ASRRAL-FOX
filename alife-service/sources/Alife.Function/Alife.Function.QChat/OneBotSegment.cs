@@ -13,7 +13,7 @@ public static class OneBotSegment
     public static string GetSourceTag(this OneBotMessageEvent message)
     {
         string groupLabel = $"{message.GroupId}({message.GroupName})";
-        string sayerLabel = $"{message.UserId}({message.Sender?.Nickname})";
+        string sayerLabel = $"{message.UserId}({GetSenderDisplayName(message.Sender)})";
         return message.MessageType == OneBotMessageType.Group
             ? $"[群聊 {groupLabel}, 发言人 {sayerLabel}]"
             : $"[私聊 {sayerLabel}]";
@@ -21,9 +21,18 @@ public static class OneBotSegment
     public static string GetSpeakerTag(this OneBotBasicMessageEvent basicMessage)
     {
         string sayerLabel = basicMessage is OneBotMessageEvent messageEvent
-            ? $"{basicMessage.UserId}({messageEvent.Sender?.Nickname})"
+            ? $"{basicMessage.UserId}({GetSenderDisplayName(messageEvent.Sender)})"
             : $"{basicMessage.UserId}";
         return (basicMessage.GroupId == 0 ? "\n[私聊]" : "") + $"[{sayerLabel}]";
+    }
+
+    static string GetSenderDisplayName(OneBotSender? sender)
+    {
+        if (sender == null)
+            return "";
+        if (string.IsNullOrWhiteSpace(sender.Card) == false)
+            return sender.Card.Trim();
+        return sender.Nickname?.Trim() ?? "";
     }
     public static string GetGroupTag(this OneBotBasicMessageEvent basicMessage)
     {

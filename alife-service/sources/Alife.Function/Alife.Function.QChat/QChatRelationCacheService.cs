@@ -34,6 +34,7 @@ public class QChatRelationCacheService(
     readonly Dictionary<long, QChatGroupMemberCacheSnapshot> groupMemberCache = new();
     QChatGroupListCacheSnapshot joinedGroupsCache = new(DateTimeOffset.MinValue, []);
     readonly object syncRoot = new();
+    public Action<string, string, object?, Exception?>? DiagnosticWriter { get; set; }
 
     [XmlFunction(FunctionMode.OneShot, name: "qchat_joined_groups_refresh")]
     [Description("Refresh and cache the QQ groups this bot has joined. This is read-only and does not send messages.")]
@@ -81,20 +82,52 @@ public class QChatRelationCacheService(
 
     public async Task<QChatGroupListCacheSnapshot> RefreshJoinedGroupsAsync()
     {
-        if (oneBotRuntime == null)
-            throw new InvalidOperationException("OneBot runtime is unavailable.");
+        DiagnosticWriter?.Invoke(
+            "qchat-joined-groups-refresh-start",
+            "QQ joined group refresh started.",
+            null,
+            null);
 
-        IReadOnlyList<OneBotGroupInfo> groups = await oneBotRuntime.GetGroupList();
-        OneBotGroupInfo[] normalizedGroups = groups
-            .Where(group => group.GroupId != 0)
-            .OrderBy(group => group.GroupId)
-            .ToArray();
-        QChatGroupListCacheSnapshot snapshot = new(DateTimeOffset.Now, normalizedGroups);
+        try
+        {
+            if (oneBotRuntime == null)
+                throw new InvalidOperationException("OneBot runtime is unavailable.");
 
-        lock (syncRoot)
-            joinedGroupsCache = snapshot;
+            IReadOnlyList<OneBotGroupInfo> groups = await oneBotRuntime.GetGroupList();
+            OneBotGroupInfo[] normalizedGroups = groups
+                .Where(group => group.GroupId != 0)
+                .OrderBy(group => group.GroupId)
+                .ToArray();
+            QChatGroupListCacheSnapshot snapshot = new(DateTimeOffset.Now, normalizedGroups);
 
-        return snapshot;
+            lock (syncRoot)
+                joinedGroupsCache = snapshot;
+
+            DiagnosticWriter?.Invoke(
+                "qchat-joined-groups-refresh-succeeded",
+                "QQ joined group refresh succeeded.",
+                new {
+                    count = normalizedGroups.Length,
+                    groups = normalizedGroups.Select(group => new {
+                        group.GroupId,
+                        group.GroupName,
+                        group.MemberCount,
+                        group.MaxMemberCount
+                    }).ToArray()
+                },
+                null);
+
+            return snapshot;
+        }
+        catch (Exception exception)
+        {
+            DiagnosticWriter?.Invoke(
+                "qchat-joined-groups-refresh-failed",
+                exception.Message,
+                null,
+                exception);
+            throw;
+        }
     }
 
     public async Task<QChatGroupMemberCacheSnapshot> RefreshGroupMembersAsync(long groupId)

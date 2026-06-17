@@ -44,7 +44,7 @@ public record QChatConfig
     public string AllowedGroupIds { get; set; } = "";
     public bool AllowMentionOutsideAllowedGroups { get; set; } = true;
     public string AllowedPrivateUserIds { get; set; } = "";
-    public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。决定不回复时不要输出“不回复/保持安静”等状态文字，直接不发送QQ消息。此外注意分清语境，群聊环境人声嘈杂，不要回复与自己无关的内容，回复时请加上CQat标签";
+    public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。决定不回复时不要输出“不回复/保持安静”等状态文字，直接不发送QQ消息。群聊普通聊天不要默认@，需要指向某人时优先用自然称呼，例如主人、妈妈、群名片、昵称或“你”；只有强提醒、重要触达或主人明确要求时才使用CQ at。";
     //群监听唤醒
     public string IgnoredGroup { get; set; } = "";//完全屏蔽消息的群，不会收到这些群的任何信息
     public string WakingWords { get; set; } = "";//原始群消息中触发开启群消息监听的唤醒词，以逗号分隔
@@ -136,6 +136,8 @@ public class QChatService(
     AgentActionAuthorizationService? actionAuthorization = null,
     AgentActionGatewayService? actionGateway = null,
     AgentAuditLogService? auditLog = null,
+    QChatRelationCacheService? relationCacheService = null,
+    QChatUserProfileService? userProfileService = null,
     PADEmotionEngine? emotionEngine = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
@@ -143,7 +145,8 @@ public class QChatService(
     IConfigurable<QChatConfig>,
     IEmbodiedCapability,
     IChatOutputSink,
-    IModuleHealthReporter
+    IModuleHealthReporter,
+    IAgentQChatJoinedGroupProvider
 {
     static readonly string[] QuietModeSleepAcknowledgements =
     [
@@ -189,11 +192,13 @@ public class QChatService(
             }
         }
 
+        string relationCacheToolInfo = new XmlHandler(RelationCache).FunctionDocument();
         Poke($"""
               QQ工具使用指南
 
               ## 提供函数
               {xmlHandler.FunctionDocument()}
+              {relationCacheToolInfo}
 
               ## 关键信息
               - 你的 QQ: {(Configuration!.BotId == 0 ? "未设置" : Configuration.BotId)}（如果有人At该QQ，代表专门找你说话）
@@ -216,7 +221,7 @@ public class QChatService(
               """);
     }
     [XmlFunction(FunctionMode.Content, budgetCost: 4)]
-    [Description("将文本以QQ消息输出（注意！群聊环境对话需用“[CQ:at,qq=发送者ID]”来显式回复）")]
+    [Description("将文本以QQ消息输出（群聊普通聊天不要默认@；需要指向某人时优先用自然称呼，只有强提醒或重要触达才使用“[CQ:at,qq=发送者ID]”）")]
     public async Task QChat(XmlExecutorContext ctx, OneBotMessageType type, long targetId, [Description("将文本转为语音发送")] bool voice = false)
     {
         if (ctx.CallMode == CallMode.Closing)
@@ -237,7 +242,8 @@ public class QChatService(
                 return;
             }
 
-            EnsureQChatReplyTargetAllowed(type, targetId);
+            if (TryEnsureQChatReplyTargetAllowed(type, targetId, "xml-qchat") == false)
+                return;
             if (ShouldSuppressOutgoingForQuietMode(type, targetId, "xml-qchat"))
                 return;
 
@@ -292,6 +298,9 @@ public class QChatService(
 
         string message = text.Trim();
         if (string.IsNullOrEmpty(message))
+            return;
+
+        if (TryEnsureQChatReplyTargetAllowed(type, targetId, "direct-qchat") == false)
             return;
 
         if (bypassQuietMode == false && ShouldSuppressOutgoingForQuietMode(type, targetId, "direct-qchat"))
@@ -890,6 +899,9 @@ public class QChatService(
     readonly AgentActionAuthorizationService actionAuthorization = actionAuthorization ?? new AgentActionAuthorizationService();
     readonly AgentActionGatewayService actionGateway = actionGateway ?? new AgentActionGatewayService(authorization: actionAuthorization);
     readonly AgentAuditLogService? auditLog = auditLog;
+    readonly QChatRelationCacheService? injectedRelationCache = relationCacheService;
+    QChatRelationCacheService? relationCache;
+    readonly QChatUserProfileService userProfiles = userProfileService ?? new QChatUserProfileService();
     IOneBotRuntime? oneBotClient;
     string[] groupAwakingWords = [];
     string[] ignoredGroup = [];
@@ -898,6 +910,8 @@ public class QChatService(
     readonly List<QChatGroupDecisionSnapshot> recentGroupDecisions = [];
     const int MaxRecentGroupDecisions = 50;
     readonly AsyncLocal<QChatReplySession?> currentReplySession = new();
+    readonly object activeReplySessionGate = new();
+    readonly Dictionary<QChatReplySession, int> activeReplySessions = new();
     static readonly object emptyGroupFlushDiagnosticGate = new();
     static readonly Dictionary<long, DateTimeOffset> emptyGroupFlushDiagnosticTimes = new();
     static readonly TimeSpan EmptyGroupFlushDiagnosticInterval = TimeSpan.FromMinutes(5);
@@ -907,6 +921,7 @@ public class QChatService(
     DateTime currentPermissionExpiresAt = DateTime.MinValue;
     DateTime lastReconnectAttemptTime = DateTime.MinValue;
     XmlHandler xmlHandler = null!;
+    QChatRelationCacheService RelationCache => relationCache ??= injectedRelationCache ?? new QChatRelationCacheService(GetOneBotClient());
 
     public override async Task AwakeAsync(AwakeContext context)
     {
@@ -919,6 +934,8 @@ public class QChatService(
         // 注入函数和提示词
         xmlHandler = new(this);
         functionService.RegisterHandler(xmlHandler);
+        RelationCache.DiagnosticWriter = WriteQChatDiagnostic;
+        RegisterRelationCacheToolsIfMissing();
         functionService.ExecutionPolicy.AuthorizeHighRiskFunction = AuthorizeHighRiskXmlFunction;
 
         Prompt($"""
@@ -927,10 +944,29 @@ public class QChatService(
 
                 收到 QQ 入站消息后，如果你决定回复，必须把面向 QQ 用户的内容发送到当前 QQ 会话：
                 - 私聊回复当前私聊：<qchat type="Private" targetId="对方QQ号">回复内容</qchat>
-                - 群聊回复当前群：<qchat type="Group" targetId="群号">[CQ:at,qq=发送者QQ号] 回复内容</qchat>
+                - 群聊普通回复当前群：<qchat type="Group" targetId="群号">小明，刚刚那句我听到了</qchat>
+                - 群聊强提醒当前群：<qchat type="Group" targetId="群号">[CQ:at,qq=发送者QQ号] 这件事需要你确认一下</qchat>
                 - 不要只输出普通文字来“说明你会回复”，普通文字不会自动出现在 QQ 里。
                 - 如果判断无需回复，可以保持沉默，不要输出解释。
                 """);
+    }
+
+    void RegisterRelationCacheToolsIfMissing()
+    {
+        if (functionService.CanHandleFunction("qchat_joined_groups_refresh"))
+            return;
+
+        functionService.RegisterHandler(new XmlHandler(RelationCache));
+    }
+
+    public Task<AgentQChatJoinedGroupSourceSnapshot> RefreshAgentJoinedGroupsAsync()
+    {
+        return RelationCache.RefreshAgentJoinedGroupsAsync();
+    }
+
+    public AgentQChatJoinedGroupSourceSnapshot GetCachedAgentJoinedGroups()
+    {
+        return RelationCache.GetCachedAgentJoinedGroups();
     }
     public override async Task StartAsync(Kernel kernel, ChatActivity chatActivity)
     {
@@ -1072,7 +1108,7 @@ public class QChatService(
             if (basicMessageEvent is OneBotPokeEvent pokeEvent)
             {
                 string speaker = pokeEvent.GetSpeakerTag();
-                string content = $"戳了戳 {pokeEvent.TargetId}";
+                string content = BuildPokeContent(config, pokeEvent);
                 string formatted = $"{speaker} {content}";
                 bool isMentionedOrWoken = pokeEvent.TargetId == config.BotId;
                 formatted = BuildFormattedModelInput(
@@ -1171,8 +1207,89 @@ public class QChatService(
             readableMessage,
             isMentionedOrWoken,
             IsQuietModeEnabled);
+        string address = BuildAddressPrompt(config, messageEvent);
         string secureMessage = QChatMessageSecurity.FormatForModel(config, messageEvent, formatted);
-        return $"{cognition}{Environment.NewLine}{secureMessage}";
+        return $"{cognition}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}";
+    }
+
+    string BuildAddressPrompt(QChatConfig config, OneBotBasicMessageEvent messageEvent)
+    {
+        string displayName = ResolveDisplayName(messageEvent);
+        string preferredAddress = ResolvePreferredAddress(config, messageEvent.UserId, displayName);
+        userProfiles.TryGetProfile(messageEvent.UserId, out QChatUserProfile? profile);
+
+        return $"""
+                [QQ address]
+                user_id={messageEvent.UserId}
+                display_name={SanitizeAddressPromptValue(displayName)}
+                preferred_address={SanitizeAddressPromptValue(preferredAddress)}
+                relationship_label={SanitizeAddressPromptValue(profile?.RelationshipLabel)}
+                address_style={SanitizeAddressPromptValue(profile?.AddressStyle)}
+                [/QQ address]
+                """;
+    }
+
+    string BuildPokeContent(QChatConfig config, OneBotPokeEvent pokeEvent)
+    {
+        string actorDisplayName = ResolveParticipantDisplayName(pokeEvent.GroupId, pokeEvent.UserId);
+        string actorAddress = ResolvePreferredAddress(config, pokeEvent.UserId, actorDisplayName);
+        string targetAddress = ResolvePokeTargetAddress(config, pokeEvent.GroupId, pokeEvent.TargetId);
+
+        return $"{actorAddress}戳了戳{targetAddress}";
+    }
+
+    string ResolvePokeTargetAddress(QChatConfig config, long groupId, long targetId)
+    {
+        if (config.BotId != 0 && targetId == config.BotId)
+            return "我";
+
+        string displayName = ResolveParticipantDisplayName(groupId, targetId);
+        return ResolvePreferredAddress(config, targetId, displayName);
+    }
+
+    string ResolvePreferredAddress(QChatConfig config, long userId, string? displayName)
+    {
+        if (config.OwnerId != 0 && userId == config.OwnerId)
+            return "主人";
+        if (IsQuietModeWakeUser(userId))
+            return "妈妈";
+
+        return userProfiles.ResolvePreferredAddress(userId, displayName);
+    }
+
+    string ResolveDisplayName(OneBotBasicMessageEvent messageEvent)
+    {
+        if (messageEvent is not OneBotMessageEvent message)
+            return ResolveParticipantDisplayName(messageEvent.GroupId, messageEvent.UserId);
+        if (string.IsNullOrWhiteSpace(message.Sender?.Card) == false)
+            return message.Sender.Card.Trim();
+        if (string.IsNullOrWhiteSpace(message.Sender?.Nickname) == false)
+            return message.Sender.Nickname.Trim();
+
+        return ResolveParticipantDisplayName(messageEvent.GroupId, messageEvent.UserId);
+    }
+
+    string ResolveParticipantDisplayName(long groupId, long userId)
+    {
+        if (groupId != 0)
+        {
+            OneBotGroupMember? member = RelationCache.TryGetMember(groupId, userId);
+            if (string.IsNullOrWhiteSpace(member?.DisplayName) == false)
+                return member.DisplayName.Trim();
+        }
+
+        return "";
+    }
+
+    static string SanitizeAddressPromptValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "";
+
+        string trimmed = value.Trim()
+            .Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal);
+        return trimmed.Length <= 80 ? trimmed : trimmed[..80];
     }
 
     void OnAIGroupActivity(long groupId)
@@ -1814,10 +1931,43 @@ public class QChatService(
 
         string acknowledgement = SelectQuietModeAcknowledgement(messageEvent, QuietModeWakeAcknowledgements);
         string message = messageEvent.MessageType == OneBotMessageType.Group
-            ? $"[CQ:at,qq={messageEvent.UserId}] {acknowledgement}"
+            ? $"{GetNaturalGroupAddress(messageEvent, QChatMessageSecurity.Classify(Configuration!, messageEvent))}，{acknowledgement}"
             : acknowledgement;
 
         return SendChatAsyncCore(targetType, targetId, message, bypassQuietMode: true);
+    }
+
+    string GetNaturalGroupAddress(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        if (senderRole == QChatSenderRole.Owner)
+            return "主人";
+
+        if (IsQuietModeWakeUser(messageEvent.UserId))
+            return "妈妈";
+
+        string? displayName = messageEvent.Sender?.Card;
+        if (IsUsableAddressName(displayName))
+            return displayName!.Trim();
+
+        displayName = messageEvent.Sender?.Nickname;
+        if (IsUsableAddressName(displayName))
+            return displayName!.Trim();
+
+        return "你";
+    }
+
+    static bool IsUsableAddressName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        string trimmed = value.Trim();
+        if (trimmed.Length > 16)
+            return false;
+        if (trimmed.All(char.IsDigit))
+            return false;
+
+        return true;
     }
 
     static string SelectQuietModeAcknowledgement(OneBotBaseEvent messageEvent, IReadOnlyList<string> acknowledgements)
@@ -2100,12 +2250,14 @@ public class QChatService(
     async Task DispatchInboundChatCoreAsync(QChatInboundMessage message)
     {
         QChatReplySession? previousSession = currentReplySession.Value;
-        currentReplySession.Value = new QChatReplySession(
+        QChatReplySession replySession = new(
             message.MessageType,
             message.TargetId,
             message.SenderId,
             message.SenderRole,
             message.PermissionRequest);
+        currentReplySession.Value = replySession;
+        RegisterActiveReplySession(replySession);
         WriteQChatDiagnostic("model-dispatch-start", "Dispatching inbound QQ message to model.", new {
             message.MessageType,
             message.TargetId,
@@ -2153,6 +2305,7 @@ public class QChatService(
         }
         finally
         {
+            UnregisterActiveReplySession(replySession);
             currentReplySession.Value = previousSession;
         }
     }
@@ -2162,16 +2315,86 @@ public class QChatService(
         return ChatBot.ChatAsync(ChatTextFilter(message.Formatted));
     }
 
-    void EnsureQChatReplyTargetAllowed(OneBotMessageType type, long targetId)
+    void RegisterActiveReplySession(QChatReplySession replySession)
+    {
+        lock (activeReplySessionGate)
+        {
+            activeReplySessions.TryGetValue(replySession, out int count);
+            activeReplySessions[replySession] = count + 1;
+        }
+    }
+
+    void UnregisterActiveReplySession(QChatReplySession replySession)
+    {
+        lock (activeReplySessionGate)
+        {
+            if (activeReplySessions.TryGetValue(replySession, out int count) == false)
+                return;
+
+            if (count <= 1)
+                activeReplySessions.Remove(replySession);
+            else
+                activeReplySessions[replySession] = count - 1;
+        }
+    }
+
+    QChatReplySession? GetCurrentReplySessionForGuard()
     {
         QChatReplySession? replySession = currentReplySession.Value;
+        if (replySession != null)
+            return replySession;
+
+        lock (activeReplySessionGate)
+        {
+            return activeReplySessions.Count == 1
+                ? activeReplySessions.Keys.First()
+                : null;
+        }
+    }
+
+    bool HasActiveReplySessions()
+    {
+        lock (activeReplySessionGate)
+        {
+            return activeReplySessions.Count > 0;
+        }
+    }
+
+    bool TryEnsureQChatReplyTargetAllowed(OneBotMessageType type, long targetId, string source)
+    {
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
         if (replySession == null)
-            return;
+        {
+            if (HasActiveReplySessions() == false)
+                return true;
+
+            WriteQChatDiagnostic(
+                "qchat-reply-target-denied",
+                "QChat outbound target denied because inbound reply session context is ambiguous.",
+                new {
+                    source,
+                    requestedType = type,
+                    requestedTargetId = targetId
+                });
+            return false;
+        }
 
         if (replySession.MessageType == type && replySession.TargetId == targetId)
-            return;
+            return true;
 
-        throw new InvalidOperationException("QChat replies from an inbound QQ message can only target the current QQ session.");
+        WriteQChatDiagnostic(
+            "qchat-reply-target-denied",
+            "QChat outbound target denied because inbound replies can only target the current QQ session.",
+            new {
+                source,
+                requestedType = type,
+                requestedTargetId = targetId,
+                currentType = replySession.MessageType,
+                currentTargetId = replySession.TargetId,
+                replySession.SenderId,
+                replySession.SenderRole
+            });
+        return false;
     }
 
     static void WriteQChatDiagnostic(
