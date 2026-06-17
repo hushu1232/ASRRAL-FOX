@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
 using Alife.Function.Agent;
+using Alife.Function.Emotion;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Alife.Function.Speech;
@@ -39,7 +40,9 @@ public record QChatConfig
     public bool PersistedQuietModeEnabled { get; set; }
     public DateTimeOffset? PersistedQuietModeChangedAt { get; set; }
     public string? PersistedQuietModeReason { get; set; }
+    public string QuietModeWakeUserIds { get; set; } = "";
     public string AllowedGroupIds { get; set; } = "";
+    public bool AllowMentionOutsideAllowedGroups { get; set; } = true;
     public string AllowedPrivateUserIds { get; set; } = "";
     public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。决定不回复时不要输出“不回复/保持安静”等状态文字，直接不发送QQ消息。此外注意分清语境，群聊环境人声嘈杂，不要回复与自己无关的内容，回复时请加上CQat标签";
     //群监听唤醒
@@ -56,6 +59,7 @@ public record QChatConfig
     public int PassiveGroupReplyCooldownSeconds { get; set; } = 90;
     public bool SuppressLowInformationPassiveGroupMessages { get; set; } = true;
     public float MediaOnlyPassiveGroupReplyProbability { get; set; } = 0.15f;
+    public int ActiveGroupSoftAttentionSeconds { get; set; } = 120;
     //自动重连
 }
 
@@ -66,6 +70,7 @@ public class GroupState
     public bool IsEnabled { get; set; }
     public DateTime LastActivityTime { get; set; }
     public DateTime LastBotReplyTime { get; set; }
+    public DateTime LastAwakeningTime { get; set; }
     public DateTime LastFlushedTime { get; set; }
     public List<string> MessageBuffer { get; set; } = [];
     public AgentPermissionRequest? PermissionRequest { get; set; }
@@ -92,7 +97,26 @@ public sealed record QChatInboundMessage(
     QChatSenderRole SenderRole,
     AgentPermissionRequest PermissionRequest);
 
-sealed record QChatReplySession(OneBotMessageType MessageType, long TargetId);
+public sealed record QChatGroupDecisionSnapshot(
+    DateTimeOffset Timestamp,
+    long GroupId,
+    long UserId,
+    QChatSenderRole SenderRole,
+    bool IsMentionedOrWoken,
+    bool IsGroupEnabled,
+    string Decision,
+    string Reason,
+    string RawMessage,
+    float? SocialAttentionProbability = null,
+    int? CooldownRemainingSeconds = null,
+    int? ActiveSoftAttentionRemainingSeconds = null);
+
+sealed record QChatReplySession(
+    OneBotMessageType MessageType,
+    long TargetId,
+    long SenderId,
+    QChatSenderRole SenderRole,
+    AgentPermissionRequest PermissionRequest);
 
 [Module("QQ聊天", """
                 连接 OneBot v11 WebSocket 服务器，实现 QQ 消息收发及文件传输。
@@ -111,7 +135,8 @@ public class QChatService(
     AgentControlCenterService? agentControlCenter = null,
     AgentActionAuthorizationService? actionAuthorization = null,
     AgentActionGatewayService? actionGateway = null,
-    AgentAuditLogService? auditLog = null) :
+    AgentAuditLogService? auditLog = null,
+    PADEmotionEngine? emotionEngine = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -120,6 +145,22 @@ public class QChatService(
     IChatOutputSink,
     IModuleHealthReporter
 {
+    static readonly string[] QuietModeSleepAcknowledgements =
+    [
+        "主人真会使唤猫娘，咪绪先安静待命，叫我醒醒就回来喵",
+        "好哦，我把声音放轻一点，先趴在旁边等你叫我",
+        "收到，我先乖乖安静下来，你叫我醒醒我就回来",
+        "那我先眯一会儿，不吵你了，醒醒的时候叫我"
+    ];
+
+    static readonly string[] QuietModeWakeAcknowledgements =
+    [
+        "听到啦，咪绪回来陪你了喵",
+        "嗯，我醒着了，回来听你说",
+        "在呢，刚把耳朵竖起来",
+        "醒啦，我重新看这边"
+    ];
+
     [XmlFunction(FunctionMode.OneShot)]
     public void GetQChatGuide()
     {
@@ -186,8 +227,19 @@ public class QChatService(
             string message = ctx.FullContent.Trim();
             if (string.IsNullOrEmpty(message))
                 return;
+            if (IsInternalNoReplyStatus(message))
+            {
+                WriteQChatDiagnostic("qchat-internal-status-suppressed", "QChat XML tool output suppressed because it is an internal no-reply/status message.", new {
+                    type,
+                    targetId,
+                    message
+                });
+                return;
+            }
 
             EnsureQChatReplyTargetAllowed(type, targetId);
+            if (ShouldSuppressOutgoingForQuietMode(type, targetId, "xml-qchat"))
+                return;
 
             if (voice)
             {
@@ -222,7 +274,12 @@ public class QChatService(
         }
     }
 
-    public async Task SendChatAsync(string targetType, long targetId, string text, bool voice = false)
+    public Task SendChatAsync(string targetType, long targetId, string text, bool voice = false)
+    {
+        return SendChatAsyncCore(targetType, targetId, text, voice, bypassQuietMode: false);
+    }
+
+    async Task SendChatAsyncCore(string targetType, long targetId, string text, bool voice = false, bool bypassQuietMode = false)
     {
         OneBotMessageType type = targetType.Trim().ToLowerInvariant() switch {
             "group" => OneBotMessageType.Group,
@@ -235,6 +292,9 @@ public class QChatService(
 
         string message = text.Trim();
         if (string.IsNullOrEmpty(message))
+            return;
+
+        if (bypassQuietMode == false && ShouldSuppressOutgoingForQuietMode(type, targetId, "direct-qchat"))
             return;
 
         if (voice)
@@ -271,6 +331,9 @@ public class QChatService(
         [Description("true 表示进入安静模式，false 表示退出安静模式")] bool enabled,
         [Description("可选原因，会写入诊断和当前状态")] string? reason = null)
     {
+        if (TryAuthorizeQuietModeToolControl(enabled, reason) == false)
+            return;
+
         SetQuietMode(enabled, reason ?? "agent-control");
     }
 
@@ -792,6 +855,14 @@ public class QChatService(
     }
     public bool IsConnected => oneBotClient is { IsConnected: true };
     public IReadOnlyDictionary<long, GroupState> GroupStates => groupStates;
+    public IReadOnlyList<QChatGroupDecisionSnapshot> RecentGroupDecisions
+    {
+        get
+        {
+            lock (groupDecisionGate)
+                return recentGroupDecisions.ToArray();
+        }
+    }
     public string Name => "QQ";
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Communication;
     public string SelfDescription => "Your QQ social communication channel for private chats, group chats, images, files, forwarded messages, and message context.";
@@ -823,6 +894,9 @@ public class QChatService(
     string[] groupAwakingWords = [];
     string[] ignoredGroup = [];
     readonly Dictionary<long, GroupState> groupStates = new();
+    readonly object groupDecisionGate = new();
+    readonly List<QChatGroupDecisionSnapshot> recentGroupDecisions = [];
+    const int MaxRecentGroupDecisions = 50;
     readonly AsyncLocal<QChatReplySession?> currentReplySession = new();
     static readonly object emptyGroupFlushDiagnosticGate = new();
     static readonly Dictionary<long, DateTimeOffset> emptyGroupFlushDiagnosticTimes = new();
@@ -880,6 +954,7 @@ public class QChatService(
             Configuration.PassiveGroupReplyCooldownSeconds,
             Configuration.SuppressLowInformationPassiveGroupMessages,
             Configuration.FlushInterval,
+            Configuration.AllowedGroupIds,
             Configuration.WakingWords
         });
 
@@ -999,22 +1074,29 @@ public class QChatService(
                 string speaker = pokeEvent.GetSpeakerTag();
                 string content = $"戳了戳 {pokeEvent.TargetId}";
                 string formatted = $"{speaker} {content}";
-                formatted = QChatMessageSecurity.FormatForModel(config, basicMessageEvent, formatted);
+                bool isMentionedOrWoken = pokeEvent.TargetId == config.BotId;
+                formatted = BuildFormattedModelInput(
+                    config,
+                    basicMessageEvent,
+                    content,
+                    content,
+                    formatted,
+                    isMentionedOrWoken);
                 bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(
                     config,
                     basicMessageEvent,
-                    pokeEvent.TargetId == config.BotId,
+                    isMentionedOrWoken,
                     controlConfig);
                 AgentPermissionRequest permissionRequest = QChatMessageSecurity.BuildPermissionRequest(
                     config,
                     basicMessageEvent,
-                    pokeEvent.TargetId == config.BotId,
+                    isMentionedOrWoken,
                     content);
                 await HandleFormattedMessage(
                     basicMessageEvent,
                     formatted,
                     isAwakening,
-                    pokeEvent.TargetId == config.BotId,
+                    isMentionedOrWoken,
                     senderRole,
                     permissionRequest);
             }
@@ -1024,14 +1106,22 @@ public class QChatService(
                 string speaker = messageEvent.GetSpeakerTag();
                 IOneBotRuntime client = GetOneBotClient();
                 string content = await messageEvent.GetReadableMessage(client);
-                if (TryApplyOwnerQuietCommand(messageEvent, senderRole, content))
+                if (await TryApplyOwnerQuietCommandAsync(messageEvent, senderRole, content))
+                    return;
+                if (await TryApplyQuietModeWakeUserCommandAsync(messageEvent, content))
                     return;
 
                 string formatted = $"{speaker}：{content}";
-                formatted = QChatMessageSecurity.FormatForModel(config, messageEvent, formatted);
                 bool isMentionedOrWoken = messageEvent.GetAtID() == client.BotId ||
                                           groupAwakingWords.Any(word =>
                                               messageEvent.RawMessage.Contains(word, StringComparison.OrdinalIgnoreCase));
+                formatted = BuildFormattedModelInput(
+                    config,
+                    messageEvent,
+                    messageEvent.RawMessage,
+                    content,
+                    formatted,
+                    isMentionedOrWoken);
                 bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(config, messageEvent, isMentionedOrWoken, controlConfig);
                 AgentPermissionRequest permissionRequest = QChatMessageSecurity.BuildPermissionRequest(
                     config,
@@ -1065,6 +1155,26 @@ public class QChatService(
             WriteQChatDiagnostic("event-error", e.Message, exception: e);
         }
     }
+
+    string BuildFormattedModelInput(
+        QChatConfig config,
+        OneBotBasicMessageEvent messageEvent,
+        string rawMessage,
+        string readableMessage,
+        string formatted,
+        bool isMentionedOrWoken)
+    {
+        string cognition = QChatConversationCognition.BuildInternalPrompt(
+            config,
+            messageEvent,
+            rawMessage,
+            readableMessage,
+            isMentionedOrWoken,
+            IsQuietModeEnabled);
+        string secureMessage = QChatMessageSecurity.FormatForModel(config, messageEvent, formatted);
+        return $"{cognition}{Environment.NewLine}{secureMessage}";
+    }
+
     void OnAIGroupActivity(long groupId)
     {
         GroupState state = GetGroupInfo(groupId);
@@ -1122,11 +1232,17 @@ public class QChatService(
             GroupState state = GetGroupInfo(messageEvent.GroupId);
             state.Tag = messageEvent.GetGroupTag();
 
+            if (isAwakening)
+                state.LastAwakeningTime = DateTime.Now;
+
             if (isAwakening && state.IsEnabled == false)
                 QGroup(messageEvent.GroupId, true);
 
             if (state.IsEnabled)//群聊已激活时（直接接收）
             {
+                if (ShouldSkipPassiveGroupMessageOutsideAllowedScope(state, messageEvent, senderRole, isMentionedOrWoken))
+                    return;
+
                 if (QChatMessageSecurity.ShouldAcceptGroupMessage(
                         Configuration!,
                         messageEvent,
@@ -1146,12 +1262,16 @@ public class QChatService(
                     return;
                 }
 
-                if (ShouldSkipLowInformationPassiveGroupMessage(messageEvent, senderRole, isMentionedOrWoken))
+                if (ShouldSkipLowInformationPassiveGroupMessage(state, messageEvent, senderRole, isMentionedOrWoken))
                     return;
 
                 if (ShouldThrottlePassiveGroupMessage(state, messageEvent, senderRole, isMentionedOrWoken))
                     return;
 
+                if (ShouldSkipActiveGroupMessageBySoftAttention(state, messageEvent, senderRole, isMentionedOrWoken))
+                    return;
+
+                RecordAcceptedGroupDecision(state, messageEvent, senderRole, isMentionedOrWoken, isAwakening);
                 BufferGroupMessage(
                     state,
                     formatted,
@@ -1167,28 +1287,287 @@ public class QChatService(
                 if (isAwakening)
                     FlushGroupBuffer(state);
             }
-            else if (QChatMessageSecurity.ShouldAllowProactiveGroupChat(Configuration!, messageEvent, agentControlCenter?.Configuration) &&
-                     Random.Shared.NextSingle() < QChatMessageSecurity.GetProactiveChatProbability(Configuration!, agentControlCenter?.Configuration))//群聊未激活时（概率接收）
+            else if (QChatMessageSecurity.ShouldAllowProactiveGroupChat(Configuration!, messageEvent, agentControlCenter?.Configuration))//群聊未激活时（概率接收）
             {
-                if (ShouldSkipLowInformationPassiveGroupMessage(messageEvent, senderRole, isMentionedOrWoken))
+                if (ShouldSkipLowInformationPassiveGroupMessage(state, messageEvent, senderRole, isMentionedOrWoken))
                     return;
 
                 if (ShouldThrottlePassiveGroupMessage(state, messageEvent, senderRole, isMentionedOrWoken))
                     return;
 
+                if (ShouldSkipPassiveGroupMessageBySocialAttention(messageEvent, senderRole, isMentionedOrWoken))
+                    return;
+
+                RecordAcceptedGroupDecision(state, messageEvent, senderRole, isMentionedOrWoken, isAwakening);
                 BufferGroupMessage(state, formatted, permissionRequest: permissionRequest);
                 state.LastFlushedTime = DateTime.Now;
                 WriteQChatDiagnostic("group-buffered-proactive", "Group message buffered by proactive probability.", new {
                     state.GroupId,
                     bufferCount = state.MessageBuffer.Count,
                     Configuration!.ProactiveChatProbability,
-                    EffectiveProactiveChatProbability = QChatMessageSecurity.GetProactiveChatProbability(Configuration!, agentControlCenter?.Configuration)
+                    EffectiveProactiveChatProbability = QChatMessageSecurity.GetProactiveChatProbability(Configuration!, agentControlCenter?.Configuration),
+                    SocialAttentionProbability = GetSocialAttentionAdjustedProactiveProbability(messageEvent, isMentionedOrWoken)
                 });
+            }
+            else
+            {
+                if (ShouldSkipPassiveGroupMessageOutsideAllowedScope(state, messageEvent, senderRole, isMentionedOrWoken))
+                    return;
             }
         }
     }
 
+    bool ShouldSkipPassiveGroupMessageOutsideAllowedScope(
+        GroupState state,
+        OneBotBasicMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken)
+    {
+        if (messageEvent is not OneBotMessageEvent groupMessage)
+            return false;
+        if (messageEvent.MessageType != OneBotMessageType.Group)
+            return false;
+        if (senderRole == QChatSenderRole.Owner || isMentionedOrWoken)
+            return false;
+        if (QChatMessageSecurity.IsGroupInAllowedScope(Configuration!, messageEvent.GroupId))
+            return false;
+
+        RecordGroupDecision(
+            state,
+            messageEvent,
+            senderRole,
+            isMentionedOrWoken,
+            "suppressed",
+            "scope",
+            groupMessage.RawMessage,
+            0f);
+        WriteQChatDiagnostic("group-passive-scope-skipped", "Passive group message skipped because the group is outside the QQ allowlist.", new {
+            state.GroupId,
+            messageEvent.UserId,
+            senderRole,
+            isMentionedOrWoken,
+            Configuration!.AllowedGroupIds,
+            groupMessage.RawMessage
+        });
+        return true;
+    }
+
+    bool ShouldSkipPassiveGroupMessageBySocialAttention(
+        OneBotBasicMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken)
+    {
+        if (messageEvent is not OneBotMessageEvent groupMessage)
+            return false;
+        if (messageEvent.MessageType != OneBotMessageType.Group)
+            return false;
+        if (senderRole == QChatSenderRole.Owner || isMentionedOrWoken)
+            return false;
+
+        float probability = GetSocialAttentionAdjustedProactiveProbability(groupMessage, isMentionedOrWoken);
+        if (Random.Shared.NextSingle() < probability)
+            return false;
+
+        GroupState state = GetGroupInfo(messageEvent.GroupId);
+        RecordGroupDecision(
+            state,
+            messageEvent,
+            senderRole,
+            isMentionedOrWoken,
+            "suppressed",
+            "social-attention",
+            groupMessage.RawMessage,
+            probability);
+        WriteQChatDiagnostic("group-passive-social-attention-skipped", "Passive group message skipped by social attention gating.", new {
+            messageEvent.GroupId,
+            messageEvent.UserId,
+            senderRole,
+            isMentionedOrWoken,
+            probability,
+            groupMessage.RawMessage
+        });
+        return true;
+    }
+
+    void RecordGroupDecision(
+        GroupState state,
+        OneBotBasicMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken,
+        string decision,
+        string reason,
+        string rawMessage,
+        float? socialAttentionProbability = null)
+    {
+        QChatGroupDecisionSnapshot snapshot = new(
+            DateTimeOffset.Now,
+            messageEvent.GroupId,
+            messageEvent.UserId,
+            senderRole,
+            isMentionedOrWoken,
+            state.IsEnabled,
+            decision,
+            reason,
+            rawMessage,
+            socialAttentionProbability,
+            GetPassiveGroupCooldownRemainingSeconds(state, messageEvent, senderRole, isMentionedOrWoken),
+            GetActiveSoftAttentionRemainingSeconds(state));
+
+        lock (groupDecisionGate)
+        {
+            recentGroupDecisions.Add(snapshot);
+            int overflow = recentGroupDecisions.Count - MaxRecentGroupDecisions;
+            if (overflow > 0)
+                recentGroupDecisions.RemoveRange(0, overflow);
+        }
+
+        WriteQChatDiagnostic("group-decision", "Recorded group reply decision.", new {
+            state.GroupId,
+            messageEvent.UserId,
+            SenderRole = senderRole.ToString(),
+            IsMentionedOrWoken = isMentionedOrWoken,
+            IsGroupEnabled = state.IsEnabled,
+            Decision = decision,
+            Reason = reason,
+            RawMessage = rawMessage,
+            SocialAttentionProbability = socialAttentionProbability,
+            snapshot.CooldownRemainingSeconds,
+            snapshot.ActiveSoftAttentionRemainingSeconds
+        });
+    }
+
+    void RecordAcceptedGroupDecision(
+        GroupState state,
+        OneBotBasicMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken,
+        bool isAwakening)
+    {
+        string rawMessage = messageEvent is OneBotMessageEvent groupMessage
+            ? groupMessage.RawMessage
+            : "";
+        string reason = senderRole == QChatSenderRole.Owner && Configuration?.OwnerPriorityMode == true
+            ? "owner-priority"
+            : isMentionedOrWoken || isAwakening
+                ? "mention-or-wake"
+                : state.IsEnabled
+                    ? "active-window"
+                    : "social-attention";
+
+        RecordGroupDecision(
+            state,
+            messageEvent,
+            senderRole,
+            isMentionedOrWoken,
+            "accepted",
+            reason,
+            rawMessage,
+            isMentionedOrWoken || senderRole == QChatSenderRole.Owner
+                ? 1f
+                : GetSocialAttentionAdjustedProactiveProbability(messageEvent, isMentionedOrWoken));
+    }
+
+    int GetActiveSoftAttentionRemainingSeconds(GroupState state)
+    {
+        int softAttentionSeconds = Math.Max(0, Configuration?.ActiveGroupSoftAttentionSeconds ?? 0);
+        if (softAttentionSeconds <= 0 || state.LastAwakeningTime == default)
+            return 0;
+
+        double elapsedSeconds = (DateTime.Now - state.LastAwakeningTime).TotalSeconds;
+        return Math.Max(0, (int)Math.Ceiling(softAttentionSeconds - elapsedSeconds));
+    }
+
+    int GetPassiveGroupCooldownRemainingSeconds(
+        GroupState state,
+        OneBotBasicMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken)
+    {
+        int cooldownSeconds = GetEffectivePassiveGroupReplyCooldownSeconds();
+        if (cooldownSeconds <= 0 || messageEvent.MessageType != OneBotMessageType.Group)
+            return 0;
+        if (senderRole == QChatSenderRole.Owner || isMentionedOrWoken || state.LastBotReplyTime == default)
+            return 0;
+
+        double elapsedSeconds = (DateTime.Now - state.LastBotReplyTime).TotalSeconds;
+        return Math.Max(0, (int)Math.Ceiling(cooldownSeconds - elapsedSeconds));
+    }
+
+    bool ShouldSkipActiveGroupMessageBySoftAttention(
+        GroupState state,
+        OneBotBasicMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken)
+    {
+        if (messageEvent is not OneBotMessageEvent groupMessage)
+            return false;
+        if (messageEvent.MessageType != OneBotMessageType.Group)
+            return false;
+        if (senderRole == QChatSenderRole.Owner || isMentionedOrWoken)
+            return false;
+
+        int softAttentionSeconds = Math.Max(0, Configuration?.ActiveGroupSoftAttentionSeconds ?? 0);
+        if (softAttentionSeconds <= 0)
+            return false;
+        if (state.LastAwakeningTime == default)
+            return false;
+        if ((DateTime.Now - state.LastAwakeningTime).TotalSeconds <= softAttentionSeconds)
+            return false;
+
+        float probability = GetSocialAttentionAdjustedProactiveProbability(groupMessage, isMentionedOrWoken);
+        if (Random.Shared.NextSingle() < probability)
+            return false;
+
+        RecordGroupDecision(
+            state,
+            messageEvent,
+            senderRole,
+            isMentionedOrWoken,
+            "suppressed",
+            "active-soft-attention-expired",
+            groupMessage.RawMessage,
+            probability);
+        WriteQChatDiagnostic("group-active-soft-attention-skipped", "Active group message skipped because the wakeup attention window expired.", new {
+            state.GroupId,
+            messageEvent.UserId,
+            senderRole,
+            isMentionedOrWoken,
+            softAttentionSeconds,
+            probability,
+            groupMessage.RawMessage
+        });
+        return true;
+    }
+
+    float GetSocialAttentionAdjustedProactiveProbability(OneBotBasicMessageEvent messageEvent, bool isMentionedOrWoken)
+    {
+        string rawMessage = messageEvent is OneBotMessageEvent oneBotMessage
+            ? oneBotMessage.RawMessage
+            : "";
+
+        return QChatMessageSecurity.GetSocialAttentionAdjustedProactiveProbability(
+            Configuration!,
+            messageEvent,
+            isMentionedOrWoken,
+            rawMessage,
+            agentControlCenter?.Configuration,
+            BuildEmotionSocialDesireFactors());
+    }
+
+    QChatSocialDesireFactors? BuildEmotionSocialDesireFactors()
+    {
+        if (emotionEngine == null)
+            return null;
+
+        return QChatMessageSecurity.BuildSocialDesireFromEmotion(
+            emotionEngine.RawPleasure,
+            emotionEngine.RawArousal,
+            emotionEngine.RawDominance,
+            IsQuietModeEnabled);
+    }
+
     bool ShouldSkipLowInformationPassiveGroupMessage(
+        GroupState state,
         OneBotBasicMessageEvent messageEvent,
         QChatSenderRole senderRole,
         bool isMentionedOrWoken)
@@ -1218,6 +1597,14 @@ public class QChatService(
         if (IsLowInformationPassiveGroupMessage(groupMessage.RawMessage) == false)
             return false;
 
+        RecordGroupDecision(
+            state,
+            messageEvent,
+            senderRole,
+            isMentionedOrWoken,
+            "suppressed",
+            "low-information",
+            groupMessage.RawMessage);
         WriteQChatDiagnostic("group-passive-low-information-skipped", "Passive group message skipped because it has too little conversational content.", new {
             messageEvent.GroupId,
             messageEvent.UserId,
@@ -1291,6 +1678,17 @@ public class QChatService(
         if (elapsedSeconds >= cooldownSeconds)
             return false;
 
+        string rawMessage = messageEvent is OneBotMessageEvent groupMessage
+            ? groupMessage.RawMessage
+            : "";
+        RecordGroupDecision(
+            state,
+            messageEvent,
+            senderRole,
+            isMentionedOrWoken,
+            "suppressed",
+            "cooldown",
+            rawMessage);
         WriteQChatDiagnostic("group-passive-throttled", "Passive group message skipped because the bot replied recently.", new {
             state.GroupId,
             messageEvent.UserId,
@@ -1317,7 +1715,7 @@ public class QChatService(
         return Math.Max(configuredSeconds, controlFloor);
     }
 
-    bool TryApplyOwnerQuietCommand(OneBotMessageEvent messageEvent, QChatSenderRole senderRole, string readable)
+    async Task<bool> TryApplyOwnerQuietCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole, string readable)
     {
         if (senderRole != QChatSenderRole.Owner)
             return false;
@@ -1335,10 +1733,42 @@ public class QChatService(
         if (IsQuietSleepCommand(normalized))
         {
             SetQuietMode(true, messageEvent, "owner-sleep-command");
+            await SendQuietModeAcknowledgementAsync(messageEvent);
             return true;
         }
 
         return false;
+    }
+
+    Task SendQuietModeAcknowledgementAsync(OneBotMessageEvent messageEvent)
+    {
+        string targetType = messageEvent.MessageType == OneBotMessageType.Group ? "group" : "private";
+        long targetId = messageEvent.MessageType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+
+        if (targetId <= 0)
+            return Task.CompletedTask;
+
+        return SendChatAsyncCore(
+            targetType,
+            targetId,
+            SelectQuietModeAcknowledgement(messageEvent, QuietModeSleepAcknowledgements),
+            bypassQuietMode: true);
+    }
+
+    bool ShouldSuppressOutgoingForQuietMode(OneBotMessageType type, long targetId, string source)
+    {
+        if (IsQuietModeEnabled == false)
+            return false;
+
+        WriteQChatDiagnostic("qchat-quiet-outgoing-suppressed", "QQ outbound message suppressed because owner quiet mode is enabled.", new {
+            type,
+            targetId,
+            source,
+            QuietModeReason
+        });
+        return true;
     }
 
     bool ShouldSuppressForQuietMode(OneBotBasicMessageEvent messageEvent, QChatSenderRole senderRole, bool isMentionedOrWoken)
@@ -1354,6 +1784,63 @@ public class QChatService(
             isMentionedOrWoken
         });
         return true;
+    }
+
+    async Task<bool> TryApplyQuietModeWakeUserCommandAsync(OneBotMessageEvent messageEvent, string readable)
+    {
+        if (IsQuietModeEnabled == false)
+            return false;
+        if (IsQuietModeWakeUser(messageEvent.UserId) == false)
+            return false;
+
+        string normalized = NormalizeQuietCommandText(messageEvent.RawMessage, readable);
+        if (string.IsNullOrWhiteSpace(normalized) || IsQuietWakeCommand(normalized) == false)
+            return false;
+
+        SetQuietMode(false, messageEvent, "trusted-wake-user-command");
+        await SendQuietModeWakeAcknowledgementAsync(messageEvent);
+        return true;
+    }
+
+    Task SendQuietModeWakeAcknowledgementAsync(OneBotMessageEvent messageEvent)
+    {
+        string targetType = messageEvent.MessageType == OneBotMessageType.Group ? "group" : "private";
+        long targetId = messageEvent.MessageType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+
+        if (targetId <= 0)
+            return Task.CompletedTask;
+
+        string acknowledgement = SelectQuietModeAcknowledgement(messageEvent, QuietModeWakeAcknowledgements);
+        string message = messageEvent.MessageType == OneBotMessageType.Group
+            ? $"[CQ:at,qq={messageEvent.UserId}] {acknowledgement}"
+            : acknowledgement;
+
+        return SendChatAsyncCore(targetType, targetId, message, bypassQuietMode: true);
+    }
+
+    static string SelectQuietModeAcknowledgement(OneBotBaseEvent messageEvent, IReadOnlyList<string> acknowledgements)
+    {
+        if (acknowledgements.Count == 0)
+            return "";
+
+        long seed = messageEvent.Time;
+        if (seed <= 0)
+            return acknowledgements[0];
+
+        int index = (int)(seed % acknowledgements.Count);
+        return acknowledgements[index];
+    }
+
+    bool IsQuietModeWakeUser(long userId)
+    {
+        if (userId <= 0 || string.IsNullOrWhiteSpace(Configuration?.QuietModeWakeUserIds))
+            return false;
+
+        return Configuration.QuietModeWakeUserIds
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(id => long.TryParse(id, out long allowedId) && allowedId == userId);
     }
 
     void SetQuietMode(bool enabled, OneBotBasicMessageEvent messageEvent, string reason)
@@ -1374,11 +1861,35 @@ public class QChatService(
         });
     }
 
+    bool TryAuthorizeQuietModeToolControl(bool enabled, string? reason)
+    {
+        QChatReplySession? replySession = currentReplySession.Value;
+        if (replySession == null)
+            return true;
+
+        if (replySession.SenderRole == QChatSenderRole.Owner)
+            return true;
+
+        WriteQChatDiagnostic(
+            "qchat-quiet-mode-control-denied",
+            "QQ quiet mode tool control denied because current QQ sender is not owner.",
+            new {
+                enabled,
+                reason,
+                replySession.MessageType,
+                replySession.TargetId,
+                replySession.SenderId,
+                replySession.SenderRole
+            });
+        return false;
+    }
+
     void SetQuietModeCore(bool enabled, string reason, object data)
     {
         IsQuietModeEnabled = enabled;
         QuietModeChangedAt = DateTimeOffset.UtcNow;
         QuietModeReason = reason;
+        emotionEngine?.ApplyEventType(enabled ? EmotionEventType.FallAsleep : EmotionEventType.WakeUp);
         if (Configuration != null)
         {
             Configuration.PersistedQuietModeEnabled = enabled;
@@ -1527,6 +2038,7 @@ public class QChatService(
         if (enabled)
         {
             state.LastActivityTime = DateTime.Now;
+            state.LastAwakeningTime = DateTime.Now;
             state.LastFlushedTime = DateTime.Now;
         }
         else
@@ -1588,7 +2100,12 @@ public class QChatService(
     async Task DispatchInboundChatCoreAsync(QChatInboundMessage message)
     {
         QChatReplySession? previousSession = currentReplySession.Value;
-        currentReplySession.Value = new QChatReplySession(message.MessageType, message.TargetId);
+        currentReplySession.Value = new QChatReplySession(
+            message.MessageType,
+            message.TargetId,
+            message.SenderId,
+            message.SenderRole,
+            message.PermissionRequest);
         WriteQChatDiagnostic("model-dispatch-start", "Dispatching inbound QQ message to model.", new {
             message.MessageType,
             message.TargetId,
@@ -1730,7 +2247,7 @@ public class QChatService(
         while (normalized.Length >= 2 && IsWrappingPair(normalized[0], normalized[^1]))
             normalized = normalized[1..^1].Trim();
 
-        if (normalized.Length > 60)
+        if (normalized.Length > 180)
             return false;
 
         string compact = normalized
@@ -1755,6 +2272,12 @@ public class QChatService(
                || compact.Contains("默默看", StringComparison.Ordinal)
                || compact.Contains("安静看", StringComparison.Ordinal)
                || compact.Contains("安靜看", StringComparison.Ordinal)
+               || compact.Contains("听到", StringComparison.Ordinal)
+               || compact.Contains("指令后", StringComparison.Ordinal)
+               || compact.Contains("默默", StringComparison.Ordinal)
+               || compact.Contains("趴好", StringComparison.Ordinal)
+               || compact.Contains("等主人叫醒", StringComparison.Ordinal)
+               || compact.Contains("测试计时", StringComparison.Ordinal)
                || compact is "silent" or "stayquiet" or "noreply";
     }
 

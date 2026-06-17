@@ -552,6 +552,7 @@ public class QChatOwnerNotificationLiveTests
         public Task<OneBotFile?> GetGroupFileUrl(long groupId, string fileId) => inner.GetGroupFileUrl(groupId, fileId);
         public Task<OneBotMessageEvent?> GetMessage(long messageId) => inner.GetMessage(messageId);
         public Task<List<OneBotForwardMessage>?> GetForwardMessage(string forwardId) => inner.GetForwardMessage(forwardId);
+        public Task<IReadOnlyList<OneBotGroupInfo>> GetGroupList() => inner.GetGroupList();
         public Task<IReadOnlyList<OneBotGroupMember>> GetGroupMemberList(long groupId) => inner.GetGroupMemberList(groupId);
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

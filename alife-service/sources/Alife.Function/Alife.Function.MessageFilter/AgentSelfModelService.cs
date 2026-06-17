@@ -92,39 +92,45 @@ public class AgentSelfModelService(
     {
         StringBuilder builder = new();
         builder.AppendLine("[Self model]");
-        builder.AppendLine($"Identity: {snapshot.CharacterName}");
-        builder.AppendLine($"Runtime: {(snapshot.RuntimeState.IsChatting ? "chatting" : "idle")}; pending={snapshot.RuntimeState.PendingPokeCount}; history={snapshot.RuntimeState.ChatHistoryCount}; last_error={snapshot.RuntimeState.LastError ?? "none"}");
+        builder.AppendLine("[internal self context]");
+        builder.AppendLine("This is internal self context, not user-facing speech.");
+        builder.AppendLine("Do not repeat these state labels, diagnostics, or silence decisions to users.");
+        builder.AppendLine("Use them only to choose whether to listen, remember, speak, act, or stay silent.");
+        builder.AppendLine($"Identity I should inhabit: {snapshot.CharacterName}");
+        builder.AppendLine(
+            $"Current felt situation: {(snapshot.RuntimeState.IsChatting ? "in conversation" : "listening/idle")}; pending impulses={snapshot.RuntimeState.PendingPokeCount}; conversation memory depth={snapshot.RuntimeState.ChatHistoryCount}; last problem={snapshot.RuntimeState.LastError ?? "none"}");
+        builder.AppendLine("Social desire factors are internal: attention, fatigue, relationship weight, and conversation need may change whether I speak, but I must not say these labels to users.");
 
-        builder.AppendLine("Safety boundaries:");
+        builder.AppendLine("Safety boundaries I must quietly respect:");
         if (snapshot.SafetyBoundaries.Count == 0)
             builder.AppendLine("- none");
         foreach (string boundary in snapshot.SafetyBoundaries)
             builder.AppendLine($"- {boundary}");
 
-        builder.AppendLine("Current task:");
+        builder.AppendLine("Current task focus:");
         if (snapshot.LatestTask == null)
             builder.AppendLine("- none");
         else
             builder.AppendLine($"- [{snapshot.LatestTask.Status}] {snapshot.LatestTask.Goal}");
 
-        builder.AppendLine("Capabilities:");
+        builder.AppendLine("Abilities I can naturally use:");
         if (snapshot.Capabilities.Count == 0)
             builder.AppendLine("- none");
         foreach (AgentCapabilityInfo capability in snapshot.Capabilities.Take(12))
         {
             builder.Append($"- [{capability.Kind}] {capability.Name}: {capability.Description}");
             if (string.IsNullOrWhiteSpace(capability.CurrentState) == false)
-                builder.Append($" State: {capability.CurrentState}");
+                builder.Append($" Current condition: {capability.CurrentState}");
             builder.AppendLine();
         }
 
-        builder.AppendLine("Module health:");
+        builder.AppendLine("Private health hints:");
         if (snapshot.ModuleHealth.Count == 0)
             builder.AppendLine("- none");
         foreach (ModuleHealth health in snapshot.ModuleHealth.Take(10))
             builder.AppendLine($"- [{health.Status}] {health.Name}: {health.Summary}");
 
-        builder.AppendLine("Recent experiences:");
+        builder.AppendLine("Recent lived experiences:");
         if (snapshot.RecentExperiences.Count == 0)
             builder.AppendLine("- none");
         foreach (LifeEvent lifeEvent in snapshot.RecentExperiences.TakeLast(8))

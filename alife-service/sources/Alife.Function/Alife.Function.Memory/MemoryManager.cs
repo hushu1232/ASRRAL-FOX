@@ -157,10 +157,14 @@ public class MemoryManager
         {
             if (chatMessageContent.Content == null)
                 continue;
+            MemoryMeta memoryMeta = GetMemoryMetaData(chatMessageContent);
+            if (MemoryTextSanitizer.Default.ShouldDropHistoryRecord(chatMessageContent.Content, memoryMeta.Level))
+                continue;
+
             history.Add(new HistoryRecord(
                 chatMessageContent.Role,
                 chatMessageContent.Content,
-                GetMemoryMetaData(chatMessageContent)
+                memoryMeta
             ));
         }
 

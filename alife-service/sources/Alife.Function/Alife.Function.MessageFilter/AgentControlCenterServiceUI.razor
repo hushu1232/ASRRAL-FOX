@@ -705,10 +705,125 @@
                                             <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentQuietSuppressionCount</div>
                                         </div>
                                         <div class="anti-spam-metric">
+                                            <Text Type="TextElementType.Secondary">Scope</Text>
+                                            <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentScopeSuppressionCount</div>
+                                        </div>
+                                        <div class="anti-spam-metric">
                                             <Text Type="TextElementType.Secondary">Media</Text>
                                             <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentMediaChanceAllowedCount</div>
                                         </div>
                                     </div>
+                                    <div class="muted">
+                                        group scope @FormatAllowedGroups(snapshot.RuntimeVisibility.QChat.AntiSpam.AllowedGroupIds)
+                                    </div>
+                                    <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("8")" Style="margin-top: 10px;">
+                                        <div>
+                                            <Text Strong>Joined groups</Text>
+                                            <div class="muted">
+                                                @(qchatJoinedGroups?.Available == true
+                                                    ? $"{qchatJoinedGroups.Groups.Count} cached from OneBot"
+                                                    : "OneBot group list has not been loaded")
+                                            </div>
+                                        </div>
+                                        <Button Size="@ButtonSize.Small"
+                                                Icon="@IconType.Outline.Reload"
+                                                Disabled="@(Character == null || qchatJoinedGroupRefreshRunning)"
+                                                OnClick="RefreshJoinedQChatGroups">
+                                            Refresh joined groups
+                                        </Button>
+                                    </Flex>
+                                    @if (qchatJoinedGroups?.Groups.Count > 0)
+                                    {
+                                        <div class="joined-group-list">
+                                            @foreach (AgentQChatJoinedGroupVisibility group in qchatJoinedGroups.Groups)
+                                            {
+                                                <div class="joined-group-line">
+                                                    <div>
+                                                        <Text Strong>@group.GroupName</Text>
+                                                        <div class="muted">
+                                                            @group.GroupId · @group.MemberCount/@group.MaxMemberCount members
+                                                        </div>
+                                                    </div>
+                                                    <Space>
+                                                        <SpaceItem>
+                                                            <Tag Color="@(group.IsAllowed ? "green" : "default")">
+                                                                @(group.IsAllowed ? "allowed" : "outside")
+                                                            </Tag>
+                                                        </SpaceItem>
+                                                        <SpaceItem>
+                                                            <Button Size="@ButtonSize.Small"
+                                                                    Disabled="@(Character == null)"
+                                                                    OnClick="@(() => ToggleAllowedQChatGroup(group.GroupId, group.IsAllowed))">
+                                                                @(group.IsAllowed ? "Remove" : "Add")
+                                                            </Button>
+                                                        </SpaceItem>
+                                                    </Space>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    else if (qchatJoinedGroups?.Available == true)
+                                    {
+                                        <div class="empty-state compact">No joined groups in cache</div>
+                                    }
+                                    <div class="qchat-policy-editor">
+                                        <div class="policy-field wide">
+                                            <Text Type="TextElementType.Secondary">Allowed groups</Text>
+                                            <Input @bind-Value="qchatPolicyAllowedGroups"
+                                                   Disabled="@(Character == null)"
+                                                   Placeholder="867165927,1072509877" />
+                                        </div>
+                                        <div class="policy-field">
+                                            <Text Type="TextElementType.Secondary">Mode</Text>
+                                            <select class="policy-select" @bind="qchatPolicyMode" disabled="@(Character == null)">
+                                                <option value="silent">silent</option>
+                                                <option value="mention-only">mention only</option>
+                                                <option value="balanced">balanced</option>
+                                                <option value="active">active</option>
+                                            </select>
+                                        </div>
+                                        <div class="policy-field">
+                                            <Text Type="TextElementType.Secondary">Cooldown</Text>
+                                            <AntDesign.InputNumber @bind-Value="qchatPolicyCooldownSeconds"
+                                                                    Min="0"
+                                                                    Max="600"
+                                                                    Disabled="@(Character == null)" />
+                                        </div>
+                                        <div class="policy-field wide">
+                                            <Text Type="TextElementType.Secondary">Media chance @qchatPolicyMediaChance.ToString("P0")</Text>
+                                            <input class="policy-slider"
+                                                   type="range"
+                                                   min="0"
+                                                   max="0.5"
+                                                   step="0.01"
+                                                   @bind="qchatPolicyMediaChance"
+                                                   @bind:event="oninput"
+                                                   disabled="@(Character == null)" />
+                                        </div>
+                                        <div class="policy-field wide">
+                                            <Checkbox Checked="@qchatPolicyAllowMentionOutsideGroups"
+                                                      CheckedChanged="@((bool value) => qchatPolicyAllowMentionOutsideGroups = value)"
+                                                      Disabled="@(Character == null)">
+                                                Allow mentions outside scope
+                                            </Checkbox>
+                                            <div class="muted">off = only allowed groups can wake/reply, owner still wins</div>
+                                        </div>
+                                        <div class="policy-field action">
+                                            <Button Type="@ButtonType.Primary"
+                                                    Size="@ButtonSize.Small"
+                                                    Disabled="@(Character == null)"
+                                                    OnClick="ApplyQChatPolicy">
+                                                Apply QQ policy
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    @if (string.IsNullOrWhiteSpace(lastQChatPolicyMessage) == false)
+                                    {
+                                        <Alert Type="AlertType.Info"
+                                               ShowIcon="true"
+                                               Message="@lastQChatPolicyMessage"
+                                               Style="margin-top: 8px;" />
+                                    }
                                     <div class="muted">
                                         passive cooldown @FormatSeconds(snapshot.RuntimeVisibility.QChat.AntiSpam.PassiveCooldownSeconds),
                                         elapsed @FormatNullableSeconds(snapshot.RuntimeVisibility.QChat.AntiSpam.LastPassiveElapsedSeconds),
@@ -729,6 +844,47 @@
                                             @if (snapshot.RuntimeVisibility.QChat.AntiSpam.RecentSuppressionReasons.Count > 0)
                                             {
                                                 <span> / reasons: @string.Join(", ", snapshot.RuntimeVisibility.QChat.AntiSpam.RecentSuppressionReasons)</span>
+                                            }
+                                        </div>
+                                    }
+                                    @if (snapshot.RuntimeVisibility.QChat.AntiSpam.RecentGroupDecisions.Count > 0)
+                                    {
+                                        <div class="decision-list">
+                                            @foreach (AgentQChatGroupDecisionVisibility decision in snapshot.RuntimeVisibility.QChat.AntiSpam.RecentGroupDecisions)
+                                            {
+                                                <div class="decision-line">
+                                                    <div>
+                                                        <Text Strong>@decision.Timestamp?.ToString("HH:mm:ss")</Text>
+                                                        <span class="muted"> group @decision.GroupId / user @decision.UserId</span>
+                                                        <div class="muted">
+                                                            @decision.Reason,
+                                                            probability @FormatProbability(decision.SocialAttentionProbability),
+                                                            cooldown @FormatNullableIntSeconds(decision.CooldownRemainingSeconds),
+                                                            active window @FormatNullableIntSeconds(decision.ActiveSoftAttentionRemainingSeconds)
+                                                        </div>
+                                                        @if (string.IsNullOrWhiteSpace(decision.RawMessage) == false)
+                                                        {
+                                                            <div class="decision-message">@Truncate(decision.RawMessage, 96)</div>
+                                                        }
+                                                    </div>
+                                                    <Space>
+                                                        <SpaceItem>
+                                                            <Tag Color="@GetDecisionColor(decision.Decision)">@decision.Decision</Tag>
+                                                        </SpaceItem>
+                                                        @if (decision.IsMentionedOrWoken)
+                                                        {
+                                                            <SpaceItem>
+                                                                <Tag Color="@("blue")">wake</Tag>
+                                                            </SpaceItem>
+                                                        }
+                                                        @if (decision.IsGroupEnabled)
+                                                        {
+                                                            <SpaceItem>
+                                                                <Tag Color="@("green")">active</Tag>
+                                                            </SpaceItem>
+                                                        }
+                                                    </Space>
+                                                </div>
                                             }
                                         </div>
                                     }
@@ -893,6 +1049,15 @@
     string? lastProactiveActionMessage;
     string? lastMaintenanceActionMessage;
     string? lastCleanupActionMessage;
+    string? lastQChatPolicyMessage;
+    string qchatPolicyAllowedGroups = "";
+    string qchatPolicyMode = "balanced";
+    int qchatPolicyCooldownSeconds = 120;
+    double qchatPolicyMediaChance = 0.12;
+    bool qchatPolicyAllowMentionOutsideGroups = true;
+    string? qchatPolicyLoadedRoot;
+    AgentQChatJoinedGroupSnapshot? qchatJoinedGroups;
+    bool qchatJoinedGroupRefreshRunning;
 
     int HighRiskAuditCount => snapshot?.RecentAuditEntries.Count(entry => entry.RiskLevel == AgentAuditRiskLevel.High) ?? 0;
 
@@ -1014,6 +1179,70 @@
         return Task.CompletedTask;
     }
 
+    Task ApplyQChatPolicy()
+    {
+        if (Module == null || Character == null)
+        {
+            lastQChatPolicyMessage = "QChat policy requires an active character.";
+            return Task.CompletedTask;
+        }
+
+        AgentQChatPolicyChangeResult result = Module.ApplyQChatPolicyFromControlCenter(
+            Character.StorageKey,
+            qchatPolicyAllowedGroups,
+            qchatPolicyMode,
+            qchatPolicyCooldownSeconds,
+            (float)qchatPolicyMediaChance,
+            "agent-control-ui",
+            qchatPolicyAllowMentionOutsideGroups);
+        lastQChatPolicyMessage = result.Message;
+        if (result.Snapshot != null)
+            LoadQChatPolicyEditor(result.Snapshot);
+        RefreshQChatJoinedGroupsCache();
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    async Task RefreshJoinedQChatGroups()
+    {
+        if (Module == null || Character == null)
+        {
+            lastQChatPolicyMessage = "Joined group refresh requires an active character.";
+            return;
+        }
+
+        qchatJoinedGroupRefreshRunning = true;
+        try
+        {
+            qchatJoinedGroups = await Module.RefreshJoinedQChatGroupsFromControlCenter(Character.StorageKey);
+            lastQChatPolicyMessage = qchatJoinedGroups.Message;
+            RefreshQChatPolicyEditor();
+        }
+        finally
+        {
+            qchatJoinedGroupRefreshRunning = false;
+        }
+    }
+
+    Task ToggleAllowedQChatGroup(long groupId, bool isAllowed)
+    {
+        if (Module == null || Character == null)
+        {
+            lastQChatPolicyMessage = "QChat group scope editing requires an active character.";
+            return Task.CompletedTask;
+        }
+
+        AgentQChatPolicyChangeResult result = isAllowed
+            ? Module.RemoveAllowedQChatGroupFromControlCenter(Character.StorageKey, groupId, "agent-control-ui")
+            : Module.AddAllowedQChatGroupFromControlCenter(Character.StorageKey, groupId, "agent-control-ui");
+        lastQChatPolicyMessage = result.Message;
+        if (result.Snapshot != null)
+            LoadQChatPolicyEditor(result.Snapshot);
+        RefreshQChatJoinedGroupsCache();
+        Refresh();
+        return Task.CompletedTask;
+    }
+
     Task RepairMemoryConsistency()
     {
         if (Module == null)
@@ -1051,6 +1280,38 @@
             lastMaintenanceActionMessage = "Automatic self-check found new items for agent attention.";
 
         snapshot = Module.BuildSnapshot(runtime, characterName);
+        RefreshQChatPolicyEditor();
+        RefreshQChatJoinedGroupsCache();
+    }
+
+    void RefreshQChatPolicyEditor()
+    {
+        if (Module == null || Character == null)
+            return;
+
+        AgentQChatPolicySnapshot? policy = Module.GetQChatPolicySnapshotFromControlCenter(Character.StorageKey);
+        if (policy == null)
+            return;
+
+        LoadQChatPolicyEditor(policy);
+    }
+
+    void RefreshQChatJoinedGroupsCache()
+    {
+        if (Module == null || Character == null)
+            return;
+
+        qchatJoinedGroups = Module.GetJoinedQChatGroupsFromControlCenter(Character.StorageKey);
+    }
+
+    void LoadQChatPolicyEditor(AgentQChatPolicySnapshot policy)
+    {
+        qchatPolicyLoadedRoot = policy.CharacterRoot;
+        qchatPolicyAllowedGroups = policy.AllowedGroupIds;
+        qchatPolicyMode = string.IsNullOrWhiteSpace(policy.Mode) ? "balanced" : policy.Mode;
+        qchatPolicyCooldownSeconds = policy.PassiveCooldownSeconds;
+        qchatPolicyMediaChance = Math.Round(policy.MediaOnlyReplyProbability, 2);
+        qchatPolicyAllowMentionOutsideGroups = policy.AllowMentionOutsideAllowedGroups;
     }
 
     BadgeStatus GetRuntimeBadgeStatus()
@@ -1137,9 +1398,30 @@
         return seconds == null ? "unknown" : $"{seconds.Value:0.#}s";
     }
 
+    static string FormatNullableIntSeconds(int? seconds)
+    {
+        return seconds == null ? "unknown" : FormatSeconds(seconds.Value);
+    }
+
+    static string FormatAllowedGroups(string allowedGroupIds)
+    {
+        return string.IsNullOrWhiteSpace(allowedGroupIds)
+            ? "all groups"
+            : allowedGroupIds;
+    }
+
     static string FormatProbability(double? probability)
     {
         return probability == null ? "unknown" : $"{probability.Value:P0}";
+    }
+
+    static string GetDecisionColor(string decision)
+    {
+        return decision.Equals("accepted", StringComparison.OrdinalIgnoreCase)
+            ? "green"
+            : decision.Equals("suppressed", StringComparison.OrdinalIgnoreCase)
+                ? "orange"
+                : "default";
     }
 
     static string GetEnabledColor(bool enabled) => enabled ? "green" : "default";
@@ -1262,6 +1544,86 @@
         font-size: 18px;
         font-weight: 650;
         color: #1f2937;
+    }
+
+    .qchat-policy-editor {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+        align-items: end;
+    }
+
+    .joined-group-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 8px;
+    }
+
+    .joined-group-line {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fafafa;
+        padding: 8px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        overflow-wrap: anywhere;
+    }
+
+    .policy-field {
+        min-width: 0;
+    }
+
+    .policy-field.wide {
+        grid-column: span 2;
+    }
+
+    .policy-field.action {
+        display: flex;
+        align-items: end;
+    }
+
+    .policy-select,
+    .policy-slider {
+        width: 100%;
+    }
+
+    .policy-select {
+        height: 32px;
+        border: 1px solid #d9d9d9;
+        border-radius: 6px;
+        background: #fff;
+        padding: 0 8px;
+    }
+
+    .decision-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+    .decision-line {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 8px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+        overflow-wrap: anywhere;
+    }
+
+    .decision-message {
+        margin-top: 4px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        color: #334155;
+        overflow-wrap: anywhere;
     }
 
     .metric-value {

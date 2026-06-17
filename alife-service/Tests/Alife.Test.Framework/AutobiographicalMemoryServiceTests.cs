@@ -87,6 +87,73 @@ public class AutobiographicalMemoryServiceTests
     }
 
     [Test]
+    public async Task RememberRecentLife_ConvertsQChatRuntimeEventsIntoLivedExperience()
+    {
+        FakeLifeEventStream stream = new();
+        stream.Publish(Event(
+            LifeEventKind.Communication,
+            "QChat",
+            "group-decision decision=suppressed reason=social-attention group=867165927 user=2002 raw=路过说一句",
+            minute: 1));
+        stream.Publish(Event(
+            LifeEventKind.Communication,
+            "QChat",
+            "group-decision decision=accepted reason=mention-or-wake group=867165927 user=2001 raw=[CQ:at,qq=3340947887] 你在吗",
+            minute: 2));
+        stream.Publish(Event(
+            LifeEventKind.Communication,
+            "QChat",
+            "qchat-quiet-mode-enabled reason=owner-sleep-command",
+            minute: 3));
+        stream.Publish(Event(
+            LifeEventKind.Communication,
+            "QChat",
+            "qchat-quiet-mode-disabled reason=trusted-wake-user-command",
+            minute: 4));
+        FakeMemorySink sink = new();
+        AutobiographicalMemoryService service = new(stream, sink);
+
+        string? result = await service.RememberRecentLifeAsync();
+
+        Assert.That(result, Is.EqualTo("memory-1"));
+        Assert.That(sink.Writes, Has.Count.EqualTo(1));
+        Assert.That(sink.Writes[0].Summary, Does.Contain("群 867165927 有人在说话，但我判断那不是必须插话的时机"));
+        Assert.That(sink.Writes[0].Summary, Does.Contain("有人把我的注意力叫回群 867165927"));
+        Assert.That(sink.Writes[0].Content, Does.Contain("[Communication/QChat] 群 867165927 有人在说话，但我判断那不是必须插话的时机。"));
+        Assert.That(sink.Writes[0].Content, Does.Contain("[Communication/QChat] 有人把我的注意力叫回群 867165927，我短暂进入了回应状态。"));
+        Assert.That(sink.Writes[0].Content, Does.Contain("[Communication/QChat] 主人让我安静，我把 QQ 参与欲望降下来了。"));
+        Assert.That(sink.Writes[0].Content, Does.Contain("[Communication/QChat] 安静状态被唤醒，我可以重新关注 QQ 对话。"));
+        Assert.That(sink.Writes[0].Content, Does.Not.Contain("group-decision"));
+        Assert.That(sink.Writes[0].Content, Does.Not.Contain("qchat-quiet-mode-enabled"));
+        Assert.That(sink.Writes[0].Content, Does.Not.Contain("qchat-quiet-mode-disabled"));
+    }
+
+    [Test]
+    public async Task RememberRecentLife_SkipsRawQChatToolAndSystemNoise()
+    {
+        FakeLifeEventStream stream = new();
+        stream.Publish(Event(LifeEventKind.Browser, "Browser", "You opened a useful page.", minute: 1));
+        stream.Publish(Event(LifeEventKind.Communication, "QChat", "<qchat type=\"Group\" targetId=\"123\">bad xml</qchat>", minute: 2));
+        stream.Publish(Event(LifeEventKind.Communication, "System", "[XmlFunctionCaller] qchat tag error: invalid child closing tag", minute: 3));
+        stream.Publish(Event(LifeEventKind.Communication, "System", "[系统报点] timer fired; do not tell the owner this was automatic", minute: 4));
+        stream.Publish(Event(LifeEventKind.Browser, "Browser", "You finished reading the useful page.", minute: 5));
+        FakeMemorySink sink = new();
+        AutobiographicalMemoryService service = new(stream, sink);
+
+        string? result = await service.RememberRecentLifeAsync();
+
+        Assert.That(result, Is.EqualTo("memory-1"));
+        Assert.That(sink.Writes, Has.Count.EqualTo(1));
+        Assert.That(sink.Writes[0].Content, Does.Contain("You opened a useful page."));
+        Assert.That(sink.Writes[0].Content, Does.Contain("You finished reading the useful page."));
+        Assert.That(sink.Writes[0].Content, Does.Not.Contain("<qchat"));
+        Assert.That(sink.Writes[0].Content, Does.Not.Contain("XmlFunctionCaller"));
+        Assert.That(sink.Writes[0].Content, Does.Not.Contain("qchat tag error"));
+        Assert.That(sink.Writes[0].Content, Does.Not.Contain("系统报点"));
+        Assert.That(sink.Writes[0].Content, Does.Not.Contain("do not tell the owner"));
+    }
+
+    [Test]
     public async Task RememberRecentLife_IgnoresOlderUnpersistedEventsAfterPreviousMemory()
     {
         FakeLifeEventStream stream = new();

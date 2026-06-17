@@ -134,6 +134,12 @@
                                     <Switch @bind-Value="@Configuration.PersistQuietModeAcrossRestart" />
                                     <div class="quiet-hint">关闭时，重启后恢复正常 QQ 聊天；开启时会恢复上次安静/唤醒状态。</div>
                                 </FormItem>
+                                <FormItem Label="安静模式唤醒 QQ">
+                                    <TextArea @bind-Value="@Configuration.QuietModeWakeUserIds"
+                                              Rows="2"
+                                              Placeholder="英文逗号分隔，例如 3658431719" />
+                                    <div class="quiet-hint">这些 QQ 只能用醒醒、起床等命令解除安静模式，不会获得主人权限。</div>
+                                </FormItem>
                                 <FormItem Label="允许群成员聊天">
                                     <Switch @bind-Value="@Configuration.AllowGroupMemberChat" />
                                 </FormItem>

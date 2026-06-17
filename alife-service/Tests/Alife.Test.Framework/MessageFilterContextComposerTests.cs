@@ -61,11 +61,73 @@ public class MessageFilterContextComposerTests
         Assert.That(result, Does.EndWith("hello"));
     }
 
+    [Test]
+    public void FormatChatMessage_ScopesRecentQqExperiencesToCurrentSender()
+    {
+        FakeLifeEventStream stream = new();
+        stream.Publish(new LifeEvent(
+            new DateTimeOffset(2026, 6, 14, 10, 0, 0, TimeSpan.Zero),
+            LifeEventKind.Browser,
+            "Browser",
+            "Global browser context should stay visible."));
+        stream.Publish(new LifeEvent(
+            new DateTimeOffset(2026, 6, 14, 10, 1, 0, TimeSpan.Zero),
+            LifeEventKind.Communication,
+            "QChat",
+            "qq:3045846738 owner prefers balanced replies."));
+        stream.Publish(new LifeEvent(
+            new DateTimeOffset(2026, 6, 14, 10, 2, 0, TimeSpan.Zero),
+            LifeEventKind.Communication,
+            "QChat",
+            "qq:3658431719 mother can wake quiet mode."));
+        stream.Publish(new LifeEvent(
+            new DateTimeOffset(2026, 6, 14, 10, 3, 0, TimeSpan.Zero),
+            LifeEventKind.Communication,
+            "QChat",
+            "qq:2002 group member likes image replies."));
+        MessageFilterService service = new(stream)
+        {
+            Configuration = new MessageFilterData
+            {
+                EnableTimestamp = false,
+                MessageAppend = "",
+                MaxContextLength = 1000,
+                MaxMessageLength = 2000
+            }
+        };
+
+        string result = service.FormatChatMessage("[3045846738(owner)]：继续");
+
+        Assert.That(result, Does.Contain("Global browser context should stay visible."));
+        Assert.That(result, Does.Contain("qq:3045846738 owner prefers balanced replies."));
+        Assert.That(result, Does.Not.Contain("qq:3658431719 mother can wake quiet mode."));
+        Assert.That(result, Does.Not.Contain("qq:2002 group member likes image replies."));
+        Assert.That(result, Does.EndWith("[3045846738(owner)]：继续"));
+    }
+
     sealed class StubContextContributor(ContextContribution contribution) : IContextContributor
     {
         public IEnumerable<ContextContribution> GetContextContributions()
         {
             return [contribution];
+        }
+    }
+
+    sealed class FakeLifeEventStream : ILifeEventStream
+    {
+        readonly List<LifeEvent> events = new();
+
+        public void Publish(LifeEvent lifeEvent)
+        {
+            events.Add(lifeEvent);
+        }
+
+        public IReadOnlyList<LifeEvent> GetRecentEvents(int maxCount)
+        {
+            return events
+                .OrderBy(lifeEvent => lifeEvent.Timestamp)
+                .TakeLast(maxCount)
+                .ToArray();
         }
     }
 }

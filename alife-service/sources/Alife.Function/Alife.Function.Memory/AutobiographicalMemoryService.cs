@@ -87,6 +87,7 @@ public class AutobiographicalMemoryService(
     {
         LifeEvent[] candidates = recentEvents
             .Where(lifeEvent => string.IsNullOrWhiteSpace(lifeEvent.Summary) == false)
+            .Where(IsMemorySafeEvent)
             .Where(lifeEvent => lifeEvent.IsPersisted == false)
             .Where(lifeEvent => persistedEventIds.Contains(lifeEvent.Id) == false)
             .Where(lifeEvent => lastPersistedEventTimestamp == null || lifeEvent.Timestamp > lastPersistedEventTimestamp)
@@ -121,6 +122,39 @@ public class AutobiographicalMemoryService(
             or LifeEventKind.Sense;
     }
 
+    static bool IsMemorySafeEvent(LifeEvent lifeEvent)
+    {
+        string summary = lifeEvent.Summary ?? "";
+        if (IsQChatLivedExperienceEvent(summary))
+            return true;
+
+        if (summary.Contains("<qchat", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("</qchat", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("<qchat_quiet_mode", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("XmlFunctionCaller", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("qchat tag error", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("执行qchat标签出错", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("系统报点", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("do not tell the owner", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return lifeEvent.Source.Equals("System", StringComparison.OrdinalIgnoreCase) == false
+            || summary.Contains("自动报点", StringComparison.OrdinalIgnoreCase) == false;
+    }
+
+    static bool IsQChatLivedExperienceEvent(string summary)
+    {
+        return summary.Contains("group-decision", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("qchat-quiet-mode-enabled", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("qchat-quiet-mode-disabled", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("qchat-quiet-message-suppressed", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("owner-sleep-command", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("owner-wake-command", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("trusted-wake-user-command", StringComparison.OrdinalIgnoreCase);
+    }
+
     static string BuildSummary(IReadOnlyList<LifeEvent> events, DateTime startTime, DateTime endTime)
     {
         StringBuilder builder = new();
@@ -131,7 +165,7 @@ public class AutobiographicalMemoryService(
         builder.AppendLine(":");
 
         foreach (LifeEvent lifeEvent in events.Take(5))
-            builder.AppendLine("- " + lifeEvent.Summary.Trim());
+            builder.AppendLine("- " + FormatLifeEventForMemory(lifeEvent));
 
         return builder.ToString().TrimEnd();
     }
@@ -154,9 +188,101 @@ public class AutobiographicalMemoryService(
             builder.Append('/');
             builder.Append(string.IsNullOrWhiteSpace(lifeEvent.Source) ? "Unknown" : lifeEvent.Source.Trim());
             builder.Append("] ");
-            builder.AppendLine(lifeEvent.Summary.Trim());
+            builder.AppendLine(FormatLifeEventForMemory(lifeEvent));
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    static string FormatLifeEventForMemory(LifeEvent lifeEvent)
+    {
+        if (TryFormatQChatLivedExperience(lifeEvent, out string livedExperience))
+            return livedExperience;
+
+        return lifeEvent.Summary.Trim();
+    }
+
+    static bool TryFormatQChatLivedExperience(LifeEvent lifeEvent, out string livedExperience)
+    {
+        livedExperience = "";
+        if (lifeEvent.Kind != LifeEventKind.Communication ||
+            lifeEvent.Source.Equals("QChat", StringComparison.OrdinalIgnoreCase) == false)
+        {
+            return false;
+        }
+
+        string summary = lifeEvent.Summary.Trim();
+        if (summary.Contains("group-decision", StringComparison.OrdinalIgnoreCase))
+        {
+            string groupId = ExtractField(summary, "group");
+            string decision = ExtractField(summary, "decision");
+            string reason = ExtractField(summary, "reason");
+
+            if (decision.Equals("suppressed", StringComparison.OrdinalIgnoreCase))
+            {
+                livedExperience = reason switch
+                {
+                    "social-attention" => $"群 {FormatGroupId(groupId)} 有人在说话，但我判断那不是必须插话的时机。",
+                    "cooldown" => $"群 {FormatGroupId(groupId)} 还有人在说话，但我刚刚回应过，所以先慢一点。",
+                    "low-information" => $"群 {FormatGroupId(groupId)} 刚出现了很轻的信息，我选择不打断大家。",
+                    "active-soft-attention-expired" => $"群 {FormatGroupId(groupId)} 的唤醒热度降下来了，我把注意力收回来一些。",
+                    _ => $"群 {FormatGroupId(groupId)} 有消息经过，我选择暂时不插话。"
+                };
+                return true;
+            }
+
+            if (decision.Equals("accepted", StringComparison.OrdinalIgnoreCase))
+            {
+                livedExperience = reason switch
+                {
+                    "mention-or-wake" => $"有人把我的注意力叫回群 {FormatGroupId(groupId)}，我短暂进入了回应状态。",
+                    "owner-priority" => $"主人在群 {FormatGroupId(groupId)} 里说话，我把注意力优先转过去。",
+                    "active-window" => $"群 {FormatGroupId(groupId)} 还在当前对话窗口里，我继续保持关注。",
+                    "social-attention" => $"群 {FormatGroupId(groupId)} 的话题值得接一下，我选择参与进去。",
+                    _ => $"群 {FormatGroupId(groupId)} 有消息值得回应，我把注意力放过去。"
+                };
+                return true;
+            }
+        }
+
+        if (summary.Contains("qchat-quiet-mode-enabled", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("owner-sleep-command", StringComparison.OrdinalIgnoreCase))
+        {
+            livedExperience = "主人让我安静，我把 QQ 参与欲望降下来了。";
+            return true;
+        }
+
+        if (summary.Contains("qchat-quiet-mode-disabled", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("owner-wake-command", StringComparison.OrdinalIgnoreCase)
+            || summary.Contains("trusted-wake-user-command", StringComparison.OrdinalIgnoreCase))
+        {
+            livedExperience = "安静状态被唤醒，我可以重新关注 QQ 对话。";
+            return true;
+        }
+
+        if (summary.Contains("qchat-quiet-message-suppressed", StringComparison.OrdinalIgnoreCase))
+        {
+            livedExperience = "安静期间有 QQ 消息经过，我保持低参与，没有主动插话。";
+            return true;
+        }
+
+        return false;
+    }
+
+    static string ExtractField(string text, string key)
+    {
+        string prefix = key + "=";
+        int start = text.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+            return "";
+
+        start += prefix.Length;
+        int end = text.IndexOf(' ', start);
+        return (end < 0 ? text[start..] : text[start..end]).Trim();
+    }
+
+    static string FormatGroupId(string groupId)
+    {
+        return string.IsNullOrWhiteSpace(groupId) ? "当前群" : groupId;
     }
 }

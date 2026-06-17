@@ -36,6 +36,14 @@ public record MemoryStorageConsistencyReport(
     public static MemoryStorageConsistencyReport Empty { get; } = new(0, 0, 0, 0, 0, 0, []);
 }
 
+public record MemoryStorageSanitizationReport(
+    int SanitizedArchiveRecords,
+    int RemovedSegments,
+    int BackupFilesCreated)
+{
+    public static MemoryStorageSanitizationReport Empty { get; } = new(0, 0, 0);
+}
+
 public enum MemorySearchMode
 {
     Keyword,
@@ -219,6 +227,82 @@ public class MemoryStorage : IAsyncDisposable
         }
     }
 
+    public async Task<MemoryStorageSanitizationReport> SanitizeAsync(
+        MemoryTextSanitizer sanitizer,
+        bool createBackups = true,
+        bool revectorize = true)
+    {
+        int sanitizedArchiveRecords = 0;
+        int removedSegments = 0;
+        int backupFilesCreated = 0;
+        string backupSuffix = $".bak-sanitize-{DateTimeOffset.Now:yyyyMMdd-HHmmss}";
+
+        await databaseLock.WaitAsync();
+        try
+        {
+            Dictionary<string, IndexedMemoryRecord> indexedRecords = ReadIndexedRecordsNoLock();
+            foreach (IndexedMemoryRecord record in indexedRecords.Values)
+            {
+                MemoryTextSanitizationResult summary = sanitizer.SanitizeText(record.Summary);
+                MemoryTextSanitizationResult content = sanitizer.SanitizeText(record.Content);
+                if (summary.Changed == false && content.Changed == false)
+                    continue;
+
+                string sanitizedSummary = string.IsNullOrWhiteSpace(summary.Text)
+                    ? record.Summary
+                    : summary.Text;
+                string sanitizedContent = content.Text;
+                string archivePath = GetArchivePath(record.Level, record.Name);
+                if (createBackups && File.Exists(archivePath))
+                {
+                    File.Copy(archivePath, archivePath + backupSuffix, overwrite: false);
+                    backupFilesCreated++;
+                }
+
+                await WriteArchiveFileAtomicAsync(
+                    record.Name,
+                    record.Level,
+                    sanitizedSummary,
+                    sanitizedContent,
+                    record.StartTime,
+                    record.EndTime);
+                if (revectorize)
+                {
+                    float[] vector = await vectorizer.VectorizeAsync(sanitizedSummary);
+                    InsertIndexRecordNoLock(
+                        record.Name,
+                        record.Level,
+                        sanitizedSummary,
+                        sanitizedContent,
+                        record.StartTime,
+                        record.EndTime,
+                        ToVectorLiteral(vector));
+                }
+                else
+                {
+                    UpdateIndexedTextNoLock(
+                        record.Name,
+                        record.Level,
+                        sanitizedSummary,
+                        sanitizedContent);
+                }
+
+                sanitizedArchiveRecords++;
+                removedSegments += summary.RemovedSegments + content.RemovedSegments;
+            }
+
+            LastConsistencyReport = ScanConsistencyNoLock();
+            return new MemoryStorageSanitizationReport(
+                sanitizedArchiveRecords,
+                removedSegments,
+                backupFilesCreated);
+        }
+        finally
+        {
+            databaseLock.Release();
+        }
+    }
+
     /// <summary>
     /// 功能3：原生的 DuckDB 侧全库综合高能搜索。直接下推余弦计算并依靠索引剪枝！
     /// 当 question 为空时，退化为纯关键词搜索并按时间从早到晚排序。
@@ -357,6 +441,25 @@ public class MemoryStorage : IAsyncDisposable
         command.Parameters.Add(new DuckDBParameter(content));
         command.Parameters.Add(new DuckDBParameter(startTime.ToUnixTimeMilliseconds()));
         command.Parameters.Add(new DuckDBParameter(endTime.ToUnixTimeMilliseconds()));
+        command.ExecuteNonQuery();
+    }
+
+    void UpdateIndexedTextNoLock(
+        string name,
+        int level,
+        string summary,
+        string content)
+    {
+        using DuckDBCommand command = connection.CreateCommand();
+        command.CommandText = @"
+                UPDATE MemoryStorage
+                SET Summary = $1, Content = $2
+                WHERE Name = $3 AND Level = $4;
+            ";
+        command.Parameters.Add(new DuckDBParameter(summary));
+        command.Parameters.Add(new DuckDBParameter(content));
+        command.Parameters.Add(new DuckDBParameter(name));
+        command.Parameters.Add(new DuckDBParameter(level));
         command.ExecuteNonQuery();
     }
 

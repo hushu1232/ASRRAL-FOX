@@ -62,4 +62,12 @@ public static class OneBotExtensions
             new { group_id = groupId });
         return members ?? [];
     }
+
+    public static async Task<IReadOnlyList<OneBotGroupInfo>> GetGroupList(this OneBotClient client)
+    {
+        List<OneBotGroupInfo>? groups = await client.CallActionAsync<List<OneBotGroupInfo>>(
+            "get_group_list",
+            new { });
+        return groups ?? [];
+    }
 }

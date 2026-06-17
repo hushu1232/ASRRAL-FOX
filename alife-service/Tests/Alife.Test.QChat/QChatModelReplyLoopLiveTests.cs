@@ -37,18 +37,6 @@ public class QChatModelReplyLoopLiveTests
         bool privateOk = await WaitUntilAsync(() => runtime.PrivateMessages.Count >= 1, TimeSpan.FromSeconds(60));
         Assert.That(privateOk, Is.True, BuildDiagnostics(chatBot, sentMessages, receivedChunks, runtime));
 
-        runtime.Raise(new OneBotMessageEvent
-        {
-            SelfId = runtime.BotId,
-            UserId = 3425085583,
-            GroupId = 867165927,
-            GroupName = "AstralFoxTest",
-            Sender = new OneBotSender { UserId = 3425085583, Nickname = "test-user" },
-            RawMessage = $"[CQ:at,qq={runtime.BotId}] 闭环测试：群聊@回复 mention-ok"
-        });
-        bool mentionOk = await WaitUntilAsync(() => runtime.GroupMessages.Count >= 1, TimeSpan.FromSeconds(60));
-        Assert.That(mentionOk, Is.True, BuildDiagnostics(chatBot, sentMessages, receivedChunks, runtime));
-
         int beforePassive = runtime.GroupMessages.Count;
         runtime.Raise(new OneBotMessageEvent
         {
@@ -61,6 +49,18 @@ public class QChatModelReplyLoopLiveTests
         });
         bool passiveOk = await WaitUntilAsync(() => runtime.GroupMessages.Count > beforePassive, TimeSpan.FromSeconds(60));
         Assert.That(passiveOk, Is.True, BuildDiagnostics(chatBot, sentMessages, receivedChunks, runtime));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = runtime.BotId,
+            UserId = 3425085583,
+            GroupId = 867165927,
+            GroupName = "AstralFoxTest",
+            Sender = new OneBotSender { UserId = 3425085583, Nickname = "test-user" },
+            RawMessage = $"[CQ:at,qq={runtime.BotId}] 闭环测试：群聊@回复 mention-ok"
+        });
+        bool mentionOk = await WaitUntilAsync(() => runtime.GroupMessages.Count > beforePassive + 1, TimeSpan.FromSeconds(60));
+        Assert.That(mentionOk, Is.True, BuildDiagnostics(chatBot, sentMessages, receivedChunks, runtime));
 
         TestContext.Out.WriteLine($"Private replies: {runtime.PrivateMessages.Count}");
         TestContext.Out.WriteLine($"Group replies: {runtime.GroupMessages.Count}");
@@ -156,6 +156,7 @@ public class QChatModelReplyLoopLiveTests
                 AllowGroupMemberMentions = true,
                 AllowProactiveGroupChat = true,
                 ProactiveChatProbability = 1,
+                PassiveGroupReplyCooldownSeconds = 0,
                 FlushInterval = 0,
                 EnableBalancedTextStreaming = false,
                 AppendChatPrompt = """
@@ -292,6 +293,7 @@ public class QChatModelReplyLoopLiveTests
         public Task<OneBotFile?> GetGroupFileUrl(long groupId, string fileId) => inner.GetGroupFileUrl(groupId, fileId);
         public Task<OneBotMessageEvent?> GetMessage(long messageId) => inner.GetMessage(messageId);
         public Task<List<OneBotForwardMessage>?> GetForwardMessage(string forwardId) => inner.GetForwardMessage(forwardId);
+        public Task<IReadOnlyList<OneBotGroupInfo>> GetGroupList() => inner.GetGroupList();
         public Task<IReadOnlyList<OneBotGroupMember>> GetGroupMemberList(long groupId) => inner.GetGroupMemberList(groupId);
         public ValueTask DisposeAsync() => inner.DisposeAsync();
     }
@@ -330,6 +332,7 @@ public class QChatModelReplyLoopLiveTests
         public Task<OneBotFile?> GetGroupFileUrl(long groupId, string fileId) => Task.FromResult<OneBotFile?>(null);
         public Task<OneBotMessageEvent?> GetMessage(long messageId) => Task.FromResult<OneBotMessageEvent?>(null);
         public Task<List<OneBotForwardMessage>?> GetForwardMessage(string forwardId) => Task.FromResult<List<OneBotForwardMessage>?>([]);
+        public Task<IReadOnlyList<OneBotGroupInfo>> GetGroupList() => Task.FromResult<IReadOnlyList<OneBotGroupInfo>>([]);
         public Task<IReadOnlyList<OneBotGroupMember>> GetGroupMemberList(long groupId) => Task.FromResult<IReadOnlyList<OneBotGroupMember>>([]);
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         public void Raise(OneBotBaseEvent ev) => EventReceived?.Invoke(ev);

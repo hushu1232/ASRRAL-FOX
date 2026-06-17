@@ -179,6 +179,21 @@ public sealed record OneBotGroupMember
     }
 }
 
+public sealed record OneBotGroupInfo
+{
+    [JsonPropertyName("group_id")]
+    public long GroupId { get; init; }
+
+    [JsonPropertyName("group_name")]
+    public string GroupName { get; init; } = "";
+
+    [JsonPropertyName("member_count")]
+    public int MemberCount { get; init; }
+
+    [JsonPropertyName("max_member_count")]
+    public int MaxMemberCount { get; init; }
+}
+
 #endregion
 
 #region API 模型

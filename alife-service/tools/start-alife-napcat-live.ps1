@@ -7,6 +7,7 @@ param(
     [string]$OneBotToken = "",
     [long]$BotId = 3340947887,
     [long]$OwnerId = 3045846738,
+    [long]$MotherId = 3658431719,
     [long]$GroupId = 867165927,
     [long]$PrivateTestUserId = 3425085583,
     [int]$OneBotWaitSeconds = 90,
@@ -63,6 +64,19 @@ function Wait-TcpPort {
     }
 
     return $false
+}
+
+function Show-QChatLiveRegressionChecklist {
+    Write-Step "QQ live regression checklist"
+    Write-Step "Bot=$BotId Owner=$OwnerId Mother=$MotherId Group=$GroupId PrivateTestUser=$PrivateTestUserId OneBot=$OneBotUrl"
+    Write-Step "QQ-L1 Owner private text: expect one complete model reply."
+    Write-Step "QQ-L2 Group @ bot: expect one complete model reply."
+    Write-Step "QQ-L3 Group unmentioned chatter: expect balanced-mode suppression most of the time."
+    Write-Step "QQ-L4 Group image/sticker without @: expect only occasional passive reply, never every image."
+    Write-Step "QQ-L5 Owner sleep command: expect one persona acknowledgement, then quiet mode."
+    Write-Step "QQ-L6 Mother wake command: expect quiet-mode wake only, no owner permissions."
+    Write-Step "QQ-L7 Audit outgoing QQ text: no internal status, policy label, or diagnostic reason."
+    Write-Step "Record results without OneBot tokens, API keys, cookies, or private message content."
 }
 
 function Resolve-NapCatShell {
@@ -236,6 +250,10 @@ if (-not $SkipNapCat) {
 
 if (-not $SkipAlife) {
     Start-AlifeClient
+}
+
+if ($RunLiveSmoke -or $RunModelLoop) {
+    Show-QChatLiveRegressionChecklist
 }
 
 if ($RunLiveSmoke) {

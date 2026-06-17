@@ -151,6 +151,19 @@ public sealed record AgentQChatRuntimeVisibility(
         AgentQChatAntiSpamVisibility.Empty);
 }
 
+public sealed record AgentQChatGroupDecisionVisibility(
+    DateTimeOffset? Timestamp,
+    long GroupId,
+    long UserId,
+    string Decision,
+    string Reason,
+    bool IsMentionedOrWoken,
+    bool IsGroupEnabled,
+    double? SocialAttentionProbability,
+    int? CooldownRemainingSeconds,
+    int? ActiveSoftAttentionRemainingSeconds,
+    string RawMessage);
+
 public sealed record AgentQChatAntiSpamVisibility(
     int RecentGroupMessageCount,
     int RecentGroupBufferedCount,
@@ -158,15 +171,18 @@ public sealed record AgentQChatAntiSpamVisibility(
     int RecentLowInformationSuppressionCount,
     int RecentCooldownSuppressionCount,
     int RecentQuietSuppressionCount,
+    int RecentScopeSuppressionCount,
     int RecentMediaChanceAllowedCount,
     bool QuietModeEnabled,
     string QuietModeReason,
+    string AllowedGroupIds,
     int PassiveCooldownSeconds,
     double? LastPassiveElapsedSeconds,
     double? ObservedProactiveProbability,
     double? ObservedMediaOnlyReplyProbability,
     string LastSuppressionReason,
-    IReadOnlyList<string> RecentSuppressionReasons)
+    IReadOnlyList<string> RecentSuppressionReasons,
+    IReadOnlyList<AgentQChatGroupDecisionVisibility> RecentGroupDecisions)
 {
     public static AgentQChatAntiSpamVisibility Empty { get; } = new(
         0,
@@ -176,13 +192,16 @@ public sealed record AgentQChatAntiSpamVisibility(
         0,
         0,
         0,
+        0,
         false,
+        "",
         "",
         0,
         null,
         null,
         null,
         "",
+        [],
         []);
 }
 
@@ -219,6 +238,53 @@ public sealed record AgentControlCenterCleanupResult(
     int ArchivedMaintenanceProposalCount,
     int TrimmedDiagnosticLineCount,
     bool RequiresOwnerConfirmation);
+
+public sealed record AgentQChatPolicySnapshot(
+    string CharacterRoot,
+    string AllowedGroupIds,
+    string Mode,
+    int PassiveCooldownSeconds,
+    float ProactiveChatProbability,
+    float MediaOnlyReplyProbability,
+    bool AllowGroupMemberChat,
+    bool AllowGroupMemberMentions,
+    bool AllowMentionOutsideAllowedGroups,
+    bool AllowProactiveGroupChat);
+
+public sealed record AgentQChatPolicyChangeResult(
+    bool Applied,
+    string Message,
+    AgentQChatPolicySnapshot? Snapshot = null);
+
+public sealed record AgentQChatJoinedGroupSourceItem(
+    long GroupId,
+    string GroupName,
+    int MemberCount,
+    int MaxMemberCount);
+
+public sealed record AgentQChatJoinedGroupSourceSnapshot(
+    DateTimeOffset RefreshedAt,
+    IReadOnlyList<AgentQChatJoinedGroupSourceItem> Groups);
+
+public sealed record AgentQChatJoinedGroupVisibility(
+    long GroupId,
+    string GroupName,
+    int MemberCount,
+    int MaxMemberCount,
+    bool IsAllowed);
+
+public sealed record AgentQChatJoinedGroupSnapshot(
+    bool Available,
+    DateTimeOffset? RefreshedAt,
+    string Message,
+    IReadOnlyList<AgentQChatJoinedGroupVisibility> Groups);
+
+public interface IAgentQChatJoinedGroupProvider
+{
+    Task<AgentQChatJoinedGroupSourceSnapshot> RefreshAgentJoinedGroupsAsync();
+
+    AgentQChatJoinedGroupSourceSnapshot GetCachedAgentJoinedGroups();
+}
 
 public sealed record AgentControlCenterSnapshot(
     DateTimeOffset Timestamp,
@@ -267,6 +333,7 @@ public class AgentControlCenterService(
     AgentEnvironmentCheckService? environmentChecks = null,
     AgentEventPipeline? eventPipeline = null,
     IMemoryConsistencyReporter? memoryConsistencyReporter = null,
+    IAgentQChatJoinedGroupProvider? qchatJoinedGroups = null,
     Func<DateTimeOffset>? clock = null,
     string? qchatDiagnosticsPath = null)
     : InteractiveModule<AgentControlCenterService>, IConfigurable<AgentControlCenterConfig>
@@ -283,6 +350,7 @@ public class AgentControlCenterService(
     readonly AgentTaskService tasks = tasks ?? new AgentTaskService(auditLog);
     readonly string qchatDiagnosticsPath = Path.GetFullPath(
         qchatDiagnosticsPath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "qchat-diagnostics.jsonl"));
+    IAgentQChatJoinedGroupProvider? qchatJoinedGroups = qchatJoinedGroups;
     readonly AgentWorkspaceService workspace = workspace ?? new AgentWorkspaceService(
         workspacePolicy,
         auditLog: auditLog);
@@ -336,6 +404,15 @@ public class AgentControlCenterService(
         AgentControlCenterSnapshot snapshot = BuildSnapshot(ChatBot.GetRuntimeState(), Character.Name);
         auditLog.Record("agent.self_check", "agent", "read control-center self-check", AgentAuditRiskLevel.Low, true);
         Poke(FormatSelfCheckForAgent(snapshot.SelfCheck));
+    }
+
+    [XmlFunction(FunctionMode.OneShot, name: "agent_qchat_recent_decisions")]
+    [Description("Show an internal, agent-readable summary of recent QQ group reply decisions and suppression reasons.")]
+    public void ShowQChatRecentDecisions()
+    {
+        AgentControlCenterSnapshot snapshot = BuildSnapshot(ChatBot.GetRuntimeState(), Character.Name);
+        auditLog.Record("agent.qchat.recent_decisions", "agent", "read recent QQ group reply decisions", AgentAuditRiskLevel.Low, true);
+        Poke(FormatQChatRecentDecisionSummaryForAgent(snapshot.RuntimeVisibility.QChat.AntiSpam.RecentGroupDecisions));
     }
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_self_check_apply")]
@@ -1041,6 +1118,183 @@ public class AgentControlCenterService(
         }
     }
 
+    public AgentQChatPolicyChangeResult ApplyQChatPolicyFromControlCenter(
+        string characterRoot,
+        string allowedGroupIds,
+        string mode,
+        int passiveCooldownSeconds,
+        float mediaOnlyReplyProbability,
+        string actor,
+        bool allowMentionOutsideAllowedGroups = true)
+    {
+        if (configurationSystem == null)
+            return new AgentQChatPolicyChangeResult(false, "Configuration system is unavailable.");
+
+        Type? qchatServiceType = ResolveType("Alife.Function.QChat.QChatService");
+        if (qchatServiceType == null)
+            return new AgentQChatPolicyChangeResult(false, "QChat service type is unavailable.");
+
+        string normalizedCharacterRoot = string.IsNullOrWhiteSpace(characterRoot)
+            ? ""
+            : characterRoot.Trim();
+        string normalizedMode = NormalizeQChatPolicyMode(mode);
+        if (normalizedMode.Length == 0)
+            return new AgentQChatPolicyChangeResult(false, $"Unknown QChat policy mode: {mode}");
+
+        object? qchatConfig = configurationSystem.GetConfiguration(qchatServiceType, normalizedCharacterRoot);
+        if (qchatConfig == null)
+            return new AgentQChatPolicyChangeResult(false, "QChat configuration is unavailable.");
+
+        SetPropertyValue(qchatConfig, "AllowedGroupIds", NormalizeAllowedGroupIds(allowedGroupIds));
+        ApplyQChatPolicyMode(qchatConfig, normalizedMode);
+        SetPropertyValue(qchatConfig, "AllowMentionOutsideAllowedGroups", allowMentionOutsideAllowedGroups);
+        SetPropertyValue(qchatConfig, "PassiveGroupReplyCooldownSeconds", ClampPassiveCooldownSeconds(passiveCooldownSeconds));
+        SetPropertyValue(qchatConfig, "MediaOnlyPassiveGroupReplyProbability", ClampProbability(mediaOnlyReplyProbability, 0.5f));
+        configurationSystem.SetConfiguration(qchatServiceType, qchatConfig, normalizedCharacterRoot);
+
+        AgentQChatPolicySnapshot snapshot = BuildQChatPolicySnapshot(normalizedCharacterRoot, qchatConfig, normalizedMode);
+        auditLog.Record(
+            "agent.qchat.policy.applied",
+            string.IsNullOrWhiteSpace(actor) ? "agent-control-ui" : actor.Trim(),
+            $"root={normalizedCharacterRoot}; groups={snapshot.AllowedGroupIds}; mode={snapshot.Mode}; cooldown={snapshot.PassiveCooldownSeconds}; media={snapshot.MediaOnlyReplyProbability:0.###}",
+            AgentAuditRiskLevel.Low,
+            true);
+        return new AgentQChatPolicyChangeResult(true, "QChat policy applied.", snapshot);
+    }
+
+    public AgentQChatPolicySnapshot? GetQChatPolicySnapshotFromControlCenter(string characterRoot)
+    {
+        if (configurationSystem == null)
+            return null;
+
+        Type? qchatServiceType = ResolveType("Alife.Function.QChat.QChatService");
+        if (qchatServiceType == null)
+            return null;
+
+        string normalizedCharacterRoot = string.IsNullOrWhiteSpace(characterRoot)
+            ? ""
+            : characterRoot.Trim();
+        object? qchatConfig = configurationSystem.GetConfiguration(qchatServiceType, normalizedCharacterRoot);
+        return qchatConfig == null
+            ? null
+            : BuildQChatPolicySnapshot(
+                normalizedCharacterRoot,
+                qchatConfig,
+                InferQChatPolicyMode(qchatConfig));
+    }
+
+    public AgentQChatJoinedGroupSnapshot GetJoinedQChatGroupsFromControlCenter(string characterRoot)
+    {
+        if (qchatJoinedGroups == null)
+            return new AgentQChatJoinedGroupSnapshot(false, null, "QChat joined group provider is unavailable.", []);
+
+        return BuildJoinedQChatGroupSnapshot(
+            characterRoot,
+            qchatJoinedGroups.GetCachedAgentJoinedGroups(),
+            "QQ joined groups loaded from cached OneBot state.");
+    }
+
+    public async Task<AgentQChatJoinedGroupSnapshot> RefreshJoinedQChatGroupsFromControlCenter(string characterRoot)
+    {
+        if (qchatJoinedGroups == null)
+            return new AgentQChatJoinedGroupSnapshot(false, null, "QChat joined group provider is unavailable.", []);
+
+        try
+        {
+            AgentQChatJoinedGroupSourceSnapshot source = await qchatJoinedGroups.RefreshAgentJoinedGroupsAsync();
+            return BuildJoinedQChatGroupSnapshot(
+                characterRoot,
+                source,
+                "QQ joined groups refreshed from OneBot.");
+        }
+        catch (Exception exception)
+        {
+            return new AgentQChatJoinedGroupSnapshot(false, null, $"QQ joined group refresh failed: {exception.Message}", []);
+        }
+    }
+
+    public AgentQChatPolicyChangeResult AddAllowedQChatGroupFromControlCenter(
+        string characterRoot,
+        long groupId,
+        string actor)
+    {
+        return ChangeAllowedQChatGroupFromControlCenter(characterRoot, groupId, add: true, actor);
+    }
+
+    public AgentQChatPolicyChangeResult RemoveAllowedQChatGroupFromControlCenter(
+        string characterRoot,
+        long groupId,
+        string actor)
+    {
+        return ChangeAllowedQChatGroupFromControlCenter(characterRoot, groupId, add: false, actor);
+    }
+
+    AgentQChatPolicyChangeResult ChangeAllowedQChatGroupFromControlCenter(
+        string characterRoot,
+        long groupId,
+        bool add,
+        string actor)
+    {
+        if (groupId <= 0)
+            return new AgentQChatPolicyChangeResult(false, "QChat group id must be a positive number.");
+
+        AgentQChatPolicySnapshot? current = GetQChatPolicySnapshotFromControlCenter(characterRoot);
+        if (current == null)
+            return new AgentQChatPolicyChangeResult(false, "QChat configuration is unavailable.");
+
+        List<string> groupIds = ParseAllowedGroupIds(current.AllowedGroupIds).ToList();
+        string groupIdText = groupId.ToString();
+        if (add)
+        {
+            if (groupIds.Contains(groupIdText, StringComparer.Ordinal) == false)
+                groupIds.Add(groupIdText);
+        }
+        else
+        {
+            groupIds.RemoveAll(value => value.Equals(groupIdText, StringComparison.Ordinal));
+        }
+
+        AgentQChatPolicyChangeResult result = ApplyQChatPolicyFromControlCenter(
+            current.CharacterRoot,
+            string.Join(',', groupIds),
+            current.Mode,
+            current.PassiveCooldownSeconds,
+            current.MediaOnlyReplyProbability,
+            actor,
+            current.AllowMentionOutsideAllowedGroups);
+        if (result.Applied == false)
+            return result;
+
+        string action = add ? "added to" : "removed from";
+        return result with { Message = $"QChat group {groupId} {action} allowed scope." };
+    }
+
+    AgentQChatJoinedGroupSnapshot BuildJoinedQChatGroupSnapshot(
+        string characterRoot,
+        AgentQChatJoinedGroupSourceSnapshot source,
+        string message)
+    {
+        HashSet<string> allowedGroupIds = new(
+            ParseAllowedGroupIds(GetQChatPolicySnapshotFromControlCenter(characterRoot)?.AllowedGroupIds ?? ""),
+            StringComparer.Ordinal);
+        AgentQChatJoinedGroupVisibility[] groups = source.Groups
+            .Where(group => group.GroupId > 0)
+            .OrderBy(group => group.GroupId)
+            .Select(group => new AgentQChatJoinedGroupVisibility(
+                group.GroupId,
+                string.IsNullOrWhiteSpace(group.GroupName) ? "(unnamed)" : group.GroupName.Trim(),
+                Math.Max(0, group.MemberCount),
+                Math.Max(0, group.MaxMemberCount),
+                allowedGroupIds.Contains(group.GroupId.ToString())))
+            .ToArray();
+
+        return new AgentQChatJoinedGroupSnapshot(
+            true,
+            source.RefreshedAt == DateTimeOffset.MinValue ? null : source.RefreshedAt,
+            message,
+            groups);
+    }
+
     public static string BuildConfigurationProposalConfirmationText(AgentConfigurationChangeProposal proposal)
     {
         return $"confirm execute <agent_config_apply_proposal id=\"{EscapeXmlAttribute(proposal.Id)}\" />";
@@ -1050,6 +1304,12 @@ public class AgentControlCenterService(
     {
         await base.AwakeAsync(context);
         proactiveBehavior ??= context.Services.GetService(typeof(AgentProactiveBehaviorService)) as AgentProactiveBehaviorService;
+        qchatJoinedGroups ??= context.Services.GetService(typeof(IAgentQChatJoinedGroupProvider)) as IAgentQChatJoinedGroupProvider;
+        if (qchatJoinedGroups == null
+            && context.Services.GetService(typeof(IEnumerable<IAgentQChatJoinedGroupProvider>)) is IEnumerable<IAgentQChatJoinedGroupProvider> providers)
+        {
+            qchatJoinedGroups = providers.FirstOrDefault();
+        }
         if (context.Services.GetService(typeof(IEnumerable<IAgentProactiveSuggestionExecutor>)) is IEnumerable<IAgentProactiveSuggestionExecutor> executors)
             proactiveExecutors = executors.ToArray();
         functionCaller?.RegisterHandler(this);
@@ -1260,6 +1520,36 @@ public class AgentControlCenterService(
             builder.AppendLine($"  action: {item.RecommendedAction}");
             if (string.IsNullOrWhiteSpace(item.ActionId) == false)
                 builder.AppendLine($"  action_id: {item.ActionId}");
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    public static string FormatQChatRecentDecisionSummaryForAgent(
+        IReadOnlyList<AgentQChatGroupDecisionVisibility> decisions)
+    {
+        if (decisions.Count == 0)
+            return "Internal QQ group decision diagnostic: no recent group reply decisions. Keep this out of user-facing chat.";
+
+        StringBuilder builder = new();
+        builder.AppendLine("Internal QQ group decision diagnostic");
+        builder.AppendLine("Keep this out of user-facing chat.");
+        foreach (AgentQChatGroupDecisionVisibility decision in decisions.Take(10))
+        {
+            builder.Append("- ");
+            builder.Append(decision.Timestamp?.ToString("HH:mm:ss") ?? "time=unknown");
+            builder.Append($"; group={decision.GroupId}");
+            builder.Append($"; user={decision.UserId}");
+            builder.Append($"; decision={decision.Decision}");
+            builder.Append($"; reason={decision.Reason}");
+            builder.Append($"; wake={decision.IsMentionedOrWoken}");
+            builder.Append($"; active={decision.IsGroupEnabled}");
+            builder.Append($"; probability={FormatAgentProbability(decision.SocialAttentionProbability)}");
+            builder.Append($"; cooldown={FormatAgentSeconds(decision.CooldownRemainingSeconds)}");
+            builder.Append($"; activeWindow={FormatAgentSeconds(decision.ActiveSoftAttentionRemainingSeconds)}");
+            if (string.IsNullOrWhiteSpace(decision.RawMessage) == false)
+                builder.Append($"; message={TrimAgentDiagnostic(decision.RawMessage, 80)}");
+            builder.AppendLine();
         }
 
         return builder.ToString().TrimEnd();
@@ -1583,6 +1873,9 @@ public class AgentControlCenterService(
         QChatDiagnosticEntry[] quiet = suppressed
             .Where(entry => entry.EventName.Equals("qchat-quiet-message-suppressed", StringComparison.OrdinalIgnoreCase))
             .ToArray();
+        QChatDiagnosticEntry[] scope = suppressed
+            .Where(entry => entry.EventName.Equals("group-passive-scope-skipped", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
         QChatDiagnosticEntry? latestCooldown = cooldown.LastOrDefault();
         QChatDiagnosticEntry? latestProactive = entries.LastOrDefault(entry =>
             entry.EventName.Equals("group-buffered-proactive", StringComparison.OrdinalIgnoreCase));
@@ -1593,6 +1886,8 @@ public class AgentControlCenterService(
             || entry.EventName.Equals("qchat-quiet-mode-disabled", StringComparison.OrdinalIgnoreCase)
             || entry.EventName.Equals("qchat-quiet-mode-restored", StringComparison.OrdinalIgnoreCase)
             || entry.EventName.Equals("qchat-quiet-mode-restore-skipped", StringComparison.OrdinalIgnoreCase));
+        QChatDiagnosticEntry? latestStart = entries.LastOrDefault(entry =>
+            entry.EventName.Equals("start", StringComparison.OrdinalIgnoreCase));
         QChatDiagnosticEntry? latestSuppression = suppressed.LastOrDefault();
 
         return new AgentQChatAntiSpamVisibility(
@@ -1606,6 +1901,7 @@ public class AgentControlCenterService(
             lowInformation.Length,
             cooldown.Length,
             quiet.Length,
+            scope.Length,
             entries.Count(entry => entry.EventName.Equals("group-passive-media-chance-allowed", StringComparison.OrdinalIgnoreCase)),
             latestQuietMode?.EventName.Equals("qchat-quiet-mode-enabled", StringComparison.OrdinalIgnoreCase) == true
             || latestQuietMode?.EventName.Equals("qchat-quiet-mode-restored", StringComparison.OrdinalIgnoreCase) == true
@@ -1613,6 +1909,9 @@ public class AgentControlCenterService(
             latestQuietMode?.GetStringData("reason") is { Length: > 0 } reason
                 ? reason
                 : latestQuietMode?.GetStringData("QuietModeReason") ?? "",
+            latestStart?.GetStringData("AllowedGroupIds")
+            ?? scope.LastOrDefault()?.GetStringData("AllowedGroupIds")
+            ?? "",
             latestCooldown?.GetIntData("cooldownSeconds") ?? 0,
             latestCooldown?.GetDoubleData("elapsedSeconds"),
             latestProactive?.GetDoubleData("EffectiveProactiveChatProbability")
@@ -1623,7 +1922,30 @@ public class AgentControlCenterService(
                 .Select(entry => GetAntiSpamSuppressionReason(entry.EventName))
                 .Where(reason => reason.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray());
+                .ToArray(),
+            BuildQChatGroupDecisionVisibility(entries));
+    }
+
+    static IReadOnlyList<AgentQChatGroupDecisionVisibility> BuildQChatGroupDecisionVisibility(
+        IReadOnlyList<QChatDiagnosticEntry> entries)
+    {
+        return entries
+            .Where(entry => entry.EventName.Equals("group-decision", StringComparison.OrdinalIgnoreCase))
+            .TakeLast(10)
+            .Reverse()
+            .Select(entry => new AgentQChatGroupDecisionVisibility(
+                entry.Timestamp,
+                entry.GetLongData("GroupId") ?? 0,
+                entry.GetLongData("UserId") ?? 0,
+                entry.GetStringData("Decision"),
+                entry.GetStringData("Reason"),
+                entry.GetBoolData("IsMentionedOrWoken") ?? false,
+                entry.GetBoolData("IsGroupEnabled") ?? false,
+                entry.GetDoubleData("SocialAttentionProbability"),
+                entry.GetIntData("CooldownRemainingSeconds"),
+                entry.GetIntData("ActiveSoftAttentionRemainingSeconds"),
+                entry.GetStringData("RawMessage")))
+            .ToArray();
     }
 
     static string GetAntiSpamSuppressionReason(string eventName)
@@ -1634,6 +1956,12 @@ public class AgentControlCenterService(
             return "low-information";
         if (eventName.Equals("group-passive-throttled", StringComparison.OrdinalIgnoreCase))
             return "cooldown";
+        if (eventName.Equals("group-passive-social-attention-skipped", StringComparison.OrdinalIgnoreCase))
+            return "social-attention";
+        if (eventName.Equals("group-active-soft-attention-skipped", StringComparison.OrdinalIgnoreCase))
+            return "active-soft-attention-expired";
+        if (eventName.Equals("group-passive-scope-skipped", StringComparison.OrdinalIgnoreCase))
+            return "scope";
         if (eventName.Equals("qchat-quiet-message-suppressed", StringComparison.OrdinalIgnoreCase))
             return "quiet-mode";
         return "";
@@ -1705,6 +2033,11 @@ public class AgentControlCenterService(
             return int.TryParse(GetStringData(key), out int value) ? value : null;
         }
 
+        public long? GetLongData(string key)
+        {
+            return long.TryParse(GetStringData(key), out long value) ? value : null;
+        }
+
         public double? GetDoubleData(string key)
         {
             return double.TryParse(GetStringData(key), out double value) ? value : null;
@@ -1738,6 +2071,22 @@ public class AgentControlCenterService(
     static long? ToMilliseconds(TimeSpan? value)
     {
         return value == null ? null : (long)Math.Round(value.Value.TotalMilliseconds);
+    }
+
+    static string FormatAgentSeconds(int? seconds)
+    {
+        return seconds == null ? "unknown" : $"{Math.Max(0, seconds.Value)}s";
+    }
+
+    static string FormatAgentProbability(double? probability)
+    {
+        return probability == null ? "unknown" : $"{probability.Value:P0}";
+    }
+
+    static string TrimAgentDiagnostic(string value, int maxLength)
+    {
+        string trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength] + "...";
     }
 
     static bool IsExternalActionAuditEntry(AgentAuditLogEntry entry)
@@ -1917,6 +2266,135 @@ public class AgentControlCenterService(
             lastAutomaticSelfCheckWakeAt,
             lastAutomaticSelfCheckAt?.Add(interval),
             lastAutomaticSelfCheckSkipReason);
+    }
+
+    static Type? ResolveType(string fullName)
+    {
+        return AppDomain.CurrentDomain
+            .GetAssemblies()
+            .Select(assembly => assembly.GetType(fullName, throwOnError: false, ignoreCase: false))
+            .FirstOrDefault(type => type != null);
+    }
+
+    static string NormalizeQChatPolicyMode(string mode)
+    {
+        string normalized = string.IsNullOrWhiteSpace(mode)
+            ? "balanced"
+            : mode.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "silent" => "silent",
+            "mention-only" => "mention-only",
+            "mentiononly" => "mention-only",
+            "balanced" => "balanced",
+            "active" => "active",
+            _ => ""
+        };
+    }
+
+    static void ApplyQChatPolicyMode(object config, string mode)
+    {
+        switch (mode)
+        {
+            case "silent":
+                SetPropertyValue(config, "AllowGroupMemberChat", false);
+                SetPropertyValue(config, "AllowGroupMemberMentions", true);
+                SetPropertyValue(config, "AllowProactiveGroupChat", false);
+                SetPropertyValue(config, "ProactiveChatProbability", 0f);
+                break;
+            case "mention-only":
+                SetPropertyValue(config, "AllowGroupMemberChat", true);
+                SetPropertyValue(config, "AllowGroupMemberMentions", true);
+                SetPropertyValue(config, "AllowProactiveGroupChat", false);
+                SetPropertyValue(config, "ProactiveChatProbability", 0f);
+                break;
+            case "active":
+                SetPropertyValue(config, "AllowGroupMemberChat", true);
+                SetPropertyValue(config, "AllowGroupMemberMentions", true);
+                SetPropertyValue(config, "AllowProactiveGroupChat", true);
+                SetPropertyValue(config, "ProactiveChatProbability", 0.3f);
+                break;
+            default:
+                SetPropertyValue(config, "AllowGroupMemberChat", true);
+                SetPropertyValue(config, "AllowGroupMemberMentions", true);
+                SetPropertyValue(config, "AllowProactiveGroupChat", true);
+                SetPropertyValue(config, "ProactiveChatProbability", 0.15f);
+                break;
+        }
+    }
+
+    static AgentQChatPolicySnapshot BuildQChatPolicySnapshot(string characterRoot, object config, string mode)
+    {
+        return new AgentQChatPolicySnapshot(
+            characterRoot,
+            GetPropertyValue(config, "AllowedGroupIds")?.ToString() ?? "",
+            mode,
+            Convert.ToInt32(GetPropertyValue(config, "PassiveGroupReplyCooldownSeconds") ?? 0),
+            Convert.ToSingle(GetPropertyValue(config, "ProactiveChatProbability") ?? 0f),
+            Convert.ToSingle(GetPropertyValue(config, "MediaOnlyPassiveGroupReplyProbability") ?? 0f),
+            Convert.ToBoolean(GetPropertyValue(config, "AllowGroupMemberChat") ?? false),
+            Convert.ToBoolean(GetPropertyValue(config, "AllowGroupMemberMentions") ?? false),
+            Convert.ToBoolean(GetPropertyValue(config, "AllowMentionOutsideAllowedGroups") ?? true),
+            Convert.ToBoolean(GetPropertyValue(config, "AllowProactiveGroupChat") ?? false));
+    }
+
+    static string InferQChatPolicyMode(object config)
+    {
+        bool allowGroupMemberChat = Convert.ToBoolean(GetPropertyValue(config, "AllowGroupMemberChat") ?? false);
+        bool allowProactiveGroupChat = Convert.ToBoolean(GetPropertyValue(config, "AllowProactiveGroupChat") ?? false);
+        float probability = Convert.ToSingle(GetPropertyValue(config, "ProactiveChatProbability") ?? 0f);
+
+        if (allowGroupMemberChat == false)
+            return "silent";
+        if (allowProactiveGroupChat == false || probability <= 0f)
+            return "mention-only";
+        return probability >= 0.3f ? "active" : "balanced";
+    }
+
+    static string NormalizeAllowedGroupIds(string allowedGroupIds)
+    {
+        return string.Join(
+            ',',
+            ParseAllowedGroupIds(allowedGroupIds));
+    }
+
+    static IReadOnlyList<string> ParseAllowedGroupIds(string allowedGroupIds)
+    {
+        return (allowedGroupIds ?? "")
+            .Split([',', ';', '\n', '\r', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(value => value.All(char.IsDigit))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    static int ClampPassiveCooldownSeconds(int seconds) => Math.Clamp(seconds, 0, 600);
+
+    static float ClampProbability(float probability, float max)
+    {
+        if (float.IsNaN(probability) || float.IsInfinity(probability))
+            return 0f;
+        return Math.Clamp(probability, 0f, max);
+    }
+
+    static object? GetPropertyValue(object target, string propertyName)
+    {
+        return target.GetType().GetProperty(propertyName)?.GetValue(target);
+    }
+
+    static void SetPropertyValue(object target, string propertyName, object value)
+    {
+        System.Reflection.PropertyInfo? property = target.GetType().GetProperty(propertyName);
+        if (property == null || property.CanWrite == false)
+            throw new InvalidOperationException($"QChat configuration key is unavailable: {propertyName}");
+
+        object converted = property.PropertyType == typeof(float)
+            ? Convert.ToSingle(value)
+            : property.PropertyType == typeof(int)
+                ? Convert.ToInt32(value)
+                : property.PropertyType == typeof(bool)
+                    ? Convert.ToBoolean(value)
+                    : value.ToString() ?? "";
+        property.SetValue(target, converted);
     }
 
     AgentControlCenterConfig EnsureConfiguration()

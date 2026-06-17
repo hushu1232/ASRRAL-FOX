@@ -2,6 +2,7 @@ using Alife.Framework;
 using Alife.Function.Agent;
 using Alife.Function.Interpreter;
 using Alife.Function.MessageFilter;
+using Alife.Function.QChat;
 using Alife.Platform;
 
 namespace Alife.Test.Framework;
@@ -1697,6 +1698,439 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void AgentControlCenterBuildsQChatGroupScopeVisibility()
+    {
+        string root = CreateTempWorkspace();
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        File.WriteAllLines(diagnosticsPath, [
+            """{"timestamp":"2026-06-16T10:00:00+08:00","eventName":"start","detail":"QChat service starting.","data":{"BotId":3340947887,"AllowedGroupIds":"867165927"},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:01+08:00","eventName":"group-passive-scope-skipped","detail":"Passive group message skipped because the group is outside the QQ allowlist.","data":{"GroupId":768420784,"UserId":2001,"AllowedGroupIds":"867165927","RawMessage":"outside scope"},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:02+08:00","eventName":"group-decision","detail":"Recorded group reply decision.","data":{"GroupId":768420784,"UserId":2001,"Decision":"suppressed","Reason":"scope","SenderRole":"Member","IsMentionedOrWoken":false,"IsGroupEnabled":false,"SocialAttentionProbability":0,"CooldownRemainingSeconds":0,"ActiveSoftAttentionRemainingSeconds":0,"RawMessage":"outside scope"},"exception":null}"""
+        ]);
+        AgentControlCenterService service = new(qchatDiagnosticsPath: diagnosticsPath);
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        AgentQChatAntiSpamVisibility antiSpam = snapshot.RuntimeVisibility.QChat.AntiSpam;
+        Assert.That(antiSpam.AllowedGroupIds, Is.EqualTo("867165927"));
+        Assert.That(antiSpam.RecentScopeSuppressionCount, Is.EqualTo(1));
+        Assert.That(antiSpam.LastSuppressionReason, Is.EqualTo("scope"));
+        Assert.That(antiSpam.RecentSuppressionReasons, Does.Contain("scope"));
+        Assert.That(antiSpam.RecentGroupDecisions[0].Reason, Is.EqualTo("scope"));
+    }
+
+    [Test]
+    public void AgentControlCenterAppliesQChatPolicyToCharacterConfiguration()
+    {
+        string root = CreateTempWorkspace();
+        string previousStorage = AlifePath.StorageFolderPath;
+        try
+        {
+            AlifePath.SetStorageFolderPath(root, persist: false);
+            ConfigurationSystem configurationSystem = new(new StorageSystem());
+            AgentControlCenterService service = new(configurationSystem: configurationSystem);
+            const string characterRoot = "Character\\真央";
+            configurationSystem.SetConfiguration(
+                typeof(QChatService),
+                new QChatConfig
+                {
+                    BotId = 3340947887,
+                    OwnerId = 3045846738,
+                    Token = "do-not-touch",
+                    AllowedGroupIds = "",
+                    ProactiveChatProbability = 0.5f,
+                    PassiveGroupReplyCooldownSeconds = 30,
+                    MediaOnlyPassiveGroupReplyProbability = 0.5f
+                },
+                characterRoot);
+
+            AgentQChatPolicyChangeResult result = service.ApplyQChatPolicyFromControlCenter(
+                characterRoot,
+                allowedGroupIds: "867165927, 867165927, abc, 1072509877",
+                mode: "balanced",
+                passiveCooldownSeconds: 120,
+                mediaOnlyReplyProbability: 0.12f,
+                actor: "agent-control-ui");
+
+            Assert.That(result.Applied, Is.True);
+            Assert.That(result.Message, Does.Contain("QChat policy applied"));
+            QChatConfig updated =
+                (QChatConfig)configurationSystem.GetConfiguration(typeof(QChatService), characterRoot)!;
+            Assert.That(updated.Token, Is.EqualTo("do-not-touch"));
+            Assert.That(updated.OwnerId, Is.EqualTo(3045846738));
+            Assert.That(updated.AllowedGroupIds, Is.EqualTo("867165927,1072509877"));
+            Assert.That(updated.AllowMentionOutsideAllowedGroups, Is.True);
+            Assert.That(updated.AllowGroupMemberChat, Is.True);
+            Assert.That(updated.AllowGroupMemberMentions, Is.True);
+            Assert.That(updated.AllowProactiveGroupChat, Is.True);
+            Assert.That(updated.ProactiveChatProbability, Is.EqualTo(0.15f).Within(0.001f));
+            Assert.That(updated.PassiveGroupReplyCooldownSeconds, Is.EqualTo(120));
+            Assert.That(updated.MediaOnlyPassiveGroupReplyProbability, Is.EqualTo(0.12f).Within(0.001f));
+        }
+        finally
+        {
+            AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [TestCase("silent", false, true, false, 0f)]
+    [TestCase("mention-only", true, true, false, 0f)]
+    [TestCase("balanced", true, true, true, 0.15f)]
+    [TestCase("active", true, true, true, 0.3f)]
+    public void AgentControlCenterQChatPolicyModesMapToConservativeValues(
+        string mode,
+        bool allowGroupMemberChat,
+        bool allowGroupMemberMentions,
+        bool allowProactiveGroupChat,
+        float proactiveProbability)
+    {
+        string root = CreateTempWorkspace();
+        string previousStorage = AlifePath.StorageFolderPath;
+        try
+        {
+            AlifePath.SetStorageFolderPath(root, persist: false);
+            ConfigurationSystem configurationSystem = new(new StorageSystem());
+            AgentControlCenterService service = new(configurationSystem: configurationSystem);
+            const string characterRoot = "Character\\真央";
+            configurationSystem.SetConfiguration(typeof(QChatService), new QChatConfig(), characterRoot);
+
+            AgentQChatPolicyChangeResult result = service.ApplyQChatPolicyFromControlCenter(
+                characterRoot,
+                allowedGroupIds: "867165927",
+                mode: mode,
+                passiveCooldownSeconds: 999,
+                mediaOnlyReplyProbability: 9f,
+                actor: "agent-control-ui");
+
+            Assert.That(result.Applied, Is.True);
+            QChatConfig updated =
+                (QChatConfig)configurationSystem.GetConfiguration(typeof(QChatService), characterRoot)!;
+            Assert.That(updated.AllowGroupMemberChat, Is.EqualTo(allowGroupMemberChat));
+            Assert.That(updated.AllowGroupMemberMentions, Is.EqualTo(allowGroupMemberMentions));
+            Assert.That(updated.AllowProactiveGroupChat, Is.EqualTo(allowProactiveGroupChat));
+            Assert.That(updated.ProactiveChatProbability, Is.EqualTo(proactiveProbability).Within(0.001f));
+            Assert.That(updated.PassiveGroupReplyCooldownSeconds, Is.EqualTo(600));
+            Assert.That(updated.MediaOnlyPassiveGroupReplyProbability, Is.EqualTo(0.5f).Within(0.001f));
+            Assert.That(result.Snapshot?.Mode, Is.EqualTo(mode));
+        }
+        finally
+        {
+            AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
+    public void AgentControlCenterQChatPolicyRejectsUnknownMode()
+    {
+        string root = CreateTempWorkspace();
+        string previousStorage = AlifePath.StorageFolderPath;
+        try
+        {
+            AlifePath.SetStorageFolderPath(root, persist: false);
+            ConfigurationSystem configurationSystem = new(new StorageSystem());
+            AgentControlCenterService service = new(configurationSystem: configurationSystem);
+            const string characterRoot = "Character\\真央";
+            configurationSystem.SetConfiguration(
+                typeof(QChatService),
+                new QChatConfig { ProactiveChatProbability = 0.22f },
+                characterRoot);
+
+            AgentQChatPolicyChangeResult result = service.ApplyQChatPolicyFromControlCenter(
+                characterRoot,
+                allowedGroupIds: "867165927",
+                mode: "loud",
+                passiveCooldownSeconds: 120,
+                mediaOnlyReplyProbability: 0.1f,
+                actor: "agent-control-ui");
+
+            Assert.That(result.Applied, Is.False);
+            Assert.That(result.Message, Does.Contain("Unknown QChat policy mode"));
+            QChatConfig updated =
+                (QChatConfig)configurationSystem.GetConfiguration(typeof(QChatService), characterRoot)!;
+            Assert.That(updated.ProactiveChatProbability, Is.EqualTo(0.22f).Within(0.001f));
+        }
+        finally
+        {
+            AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
+    public void AgentControlCenterQChatPolicyFailsWhenConfigurationSystemIsUnavailable()
+    {
+        AgentControlCenterService service = new();
+
+        AgentQChatPolicyChangeResult result = service.ApplyQChatPolicyFromControlCenter(
+            "Character\\真央",
+            allowedGroupIds: "867165927",
+            mode: "balanced",
+            passiveCooldownSeconds: 120,
+            mediaOnlyReplyProbability: 0.1f,
+            actor: "agent-control-ui");
+
+        Assert.That(result.Applied, Is.False);
+        Assert.That(result.Message, Does.Contain("Configuration system is unavailable"));
+    }
+
+    [Test]
+    public void AgentControlCenterQChatPolicyCanDisallowMentionOutsideAllowedGroups()
+    {
+        string root = CreateTempWorkspace();
+        string previousStorage = AlifePath.StorageFolderPath;
+        try
+        {
+            AlifePath.SetStorageFolderPath(root, persist: false);
+            ConfigurationSystem configurationSystem = new(new StorageSystem());
+            AgentControlCenterService service = new(configurationSystem: configurationSystem);
+            const string characterRoot = "Character\\真央";
+            configurationSystem.SetConfiguration(
+                typeof(QChatService),
+                new QChatConfig { AllowMentionOutsideAllowedGroups = true },
+                characterRoot);
+
+            AgentQChatPolicyChangeResult result = service.ApplyQChatPolicyFromControlCenter(
+                characterRoot,
+                allowedGroupIds: "867165927",
+                mode: "balanced",
+                passiveCooldownSeconds: 120,
+                mediaOnlyReplyProbability: 0.12f,
+                actor: "agent-control-ui",
+                allowMentionOutsideAllowedGroups: false);
+
+            Assert.That(result.Applied, Is.True);
+            Assert.That(result.Snapshot?.AllowMentionOutsideAllowedGroups, Is.False);
+            QChatConfig updated =
+                (QChatConfig)configurationSystem.GetConfiguration(typeof(QChatService), characterRoot)!;
+            Assert.That(updated.AllowMentionOutsideAllowedGroups, Is.False);
+        }
+        finally
+        {
+            AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
+    public void AgentControlCenterQChatPolicySnapshotReadsCharacterConfiguration()
+    {
+        string root = CreateTempWorkspace();
+        string previousStorage = AlifePath.StorageFolderPath;
+        try
+        {
+            AlifePath.SetStorageFolderPath(root, persist: false);
+            ConfigurationSystem configurationSystem = new(new StorageSystem());
+            AgentControlCenterService service = new(configurationSystem: configurationSystem);
+            const string characterRoot = "Character\\真央";
+            configurationSystem.SetConfiguration(
+                typeof(QChatService),
+                new QChatConfig
+                {
+                    AllowedGroupIds = "867165927",
+                    AllowGroupMemberChat = true,
+                    AllowGroupMemberMentions = true,
+                    AllowMentionOutsideAllowedGroups = false,
+                    AllowProactiveGroupChat = true,
+                    ProactiveChatProbability = 0.15f,
+                    PassiveGroupReplyCooldownSeconds = 120,
+                    MediaOnlyPassiveGroupReplyProbability = 0.12f
+                },
+                characterRoot);
+
+            AgentQChatPolicySnapshot? snapshot =
+                service.GetQChatPolicySnapshotFromControlCenter(characterRoot);
+
+            Assert.That(snapshot, Is.Not.Null);
+            Assert.That(snapshot!.AllowedGroupIds, Is.EqualTo("867165927"));
+            Assert.That(snapshot.Mode, Is.EqualTo("balanced"));
+            Assert.That(snapshot.AllowMentionOutsideAllowedGroups, Is.False);
+            Assert.That(snapshot.PassiveCooldownSeconds, Is.EqualTo(120));
+            Assert.That(snapshot.MediaOnlyReplyProbability, Is.EqualTo(0.12f).Within(0.001f));
+        }
+        finally
+        {
+            AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
+    public void AgentControlCenterShowsJoinedQChatGroupsWithAllowedScopeState()
+    {
+        string root = CreateTempWorkspace();
+        string previousStorage = AlifePath.StorageFolderPath;
+        try
+        {
+            AlifePath.SetStorageFolderPath(root, persist: false);
+            ConfigurationSystem configurationSystem = new(new StorageSystem());
+            FakeJoinedQChatGroupProvider groupProvider = new();
+            groupProvider.CachedSnapshot = new AgentQChatJoinedGroupSourceSnapshot(
+                DateTimeOffset.Parse("2026-06-17T12:00:00+08:00"),
+                [
+                    new AgentQChatJoinedGroupSourceItem(867165927, "test group", 3, 200),
+                    new AgentQChatJoinedGroupSourceItem(1072509877, "music group", 106, 200)
+                ]);
+            AgentControlCenterService service = new(
+                configurationSystem: configurationSystem,
+                qchatJoinedGroups: groupProvider);
+            const string characterRoot = "Character\\鐪熷ぎ";
+            configurationSystem.SetConfiguration(
+                typeof(QChatService),
+                new QChatConfig { AllowedGroupIds = "867165927" },
+                characterRoot);
+
+            AgentQChatJoinedGroupSnapshot snapshot =
+                service.GetJoinedQChatGroupsFromControlCenter(characterRoot);
+
+            Assert.That(snapshot.Available, Is.True);
+            Assert.That(snapshot.Groups, Has.Count.EqualTo(2));
+            Assert.That(snapshot.Groups.Single(group => group.GroupId == 867165927).IsAllowed, Is.True);
+            Assert.That(snapshot.Groups.Single(group => group.GroupId == 1072509877).IsAllowed, Is.False);
+            Assert.That(snapshot.Groups[0].GroupName, Is.EqualTo("test group"));
+            Assert.That(snapshot.Message, Does.Contain("cached"));
+        }
+        finally
+        {
+            AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
+    public void AgentControlCenterAddsAndRemovesJoinedQChatGroupWithoutTouchingSensitiveFields()
+    {
+        string root = CreateTempWorkspace();
+        string previousStorage = AlifePath.StorageFolderPath;
+        try
+        {
+            AlifePath.SetStorageFolderPath(root, persist: false);
+            ConfigurationSystem configurationSystem = new(new StorageSystem());
+            AgentControlCenterService service = new(configurationSystem: configurationSystem);
+            const string characterRoot = "Character\\鐪熷ぎ";
+            configurationSystem.SetConfiguration(
+                typeof(QChatService),
+                new QChatConfig
+                {
+                    BotId = 3340947887,
+                    OwnerId = 3045846738,
+                    Token = "do-not-touch",
+                    AllowedGroupIds = "867165927",
+                    AllowGroupMemberChat = true,
+                    AllowGroupMemberMentions = true,
+                    AllowMentionOutsideAllowedGroups = false,
+                    AllowProactiveGroupChat = true,
+                    ProactiveChatProbability = 0.15f,
+                    PassiveGroupReplyCooldownSeconds = 90,
+                    MediaOnlyPassiveGroupReplyProbability = 0.15f
+                },
+                characterRoot);
+
+            AgentQChatPolicyChangeResult addResult = service.AddAllowedQChatGroupFromControlCenter(
+                characterRoot,
+                1072509877,
+                "agent-control-ui");
+            AgentQChatPolicyChangeResult removeResult = service.RemoveAllowedQChatGroupFromControlCenter(
+                characterRoot,
+                867165927,
+                "agent-control-ui");
+
+            Assert.That(addResult.Applied, Is.True);
+            Assert.That(removeResult.Applied, Is.True);
+            QChatConfig updated =
+                (QChatConfig)configurationSystem.GetConfiguration(typeof(QChatService), characterRoot)!;
+            Assert.That(updated.Token, Is.EqualTo("do-not-touch"));
+            Assert.That(updated.OwnerId, Is.EqualTo(3045846738));
+            Assert.That(updated.AllowedGroupIds, Is.EqualTo("1072509877"));
+            Assert.That(updated.AllowMentionOutsideAllowedGroups, Is.False);
+            Assert.That(updated.ProactiveChatProbability, Is.EqualTo(0.15f).Within(0.001f));
+            Assert.That(updated.PassiveGroupReplyCooldownSeconds, Is.EqualTo(90));
+            Assert.That(updated.MediaOnlyPassiveGroupReplyProbability, Is.EqualTo(0.15f).Within(0.001f));
+        }
+        finally
+        {
+            AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
+    public void AgentControlCenterBuildsQChatRecentGroupDecisionVisibility()
+    {
+        string root = CreateTempWorkspace();
+        string diagnosticsPath = Path.Combine(root, "qchat-diagnostics.jsonl");
+        File.WriteAllLines(diagnosticsPath, [
+            """{"timestamp":"2026-06-16T10:00:00+08:00","eventName":"start","detail":"QChat service starting.","data":{"BotId":3340947887},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:01+08:00","eventName":"group-decision","detail":"Recorded group reply decision.","data":{"GroupId":867165927,"UserId":2001,"Decision":"accepted","Reason":"mention-or-wake","SenderRole":"Member","IsMentionedOrWoken":true,"IsGroupEnabled":true,"SocialAttentionProbability":1,"CooldownRemainingSeconds":0,"ActiveSoftAttentionRemainingSeconds":120,"RawMessage":"[CQ:at,qq=3340947887] 你在吗"},"exception":null}""",
+            """{"timestamp":"2026-06-16T10:00:02+08:00","eventName":"group-decision","detail":"Recorded group reply decision.","data":{"GroupId":867165927,"UserId":2002,"Decision":"suppressed","Reason":"social-attention","SenderRole":"Member","IsMentionedOrWoken":false,"IsGroupEnabled":false,"SocialAttentionProbability":0.05,"CooldownRemainingSeconds":44,"ActiveSoftAttentionRemainingSeconds":0,"RawMessage":"路过说一句"},"exception":null}"""
+        ]);
+        AgentControlCenterService service = new(qchatDiagnosticsPath: diagnosticsPath);
+
+        AgentControlCenterSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "Kira");
+
+        AgentQChatAntiSpamVisibility antiSpam = snapshot.RuntimeVisibility.QChat.AntiSpam;
+        Assert.That(antiSpam.RecentGroupDecisions, Has.Count.EqualTo(2));
+        Assert.That(antiSpam.RecentGroupDecisions[0].Decision, Is.EqualTo("suppressed"));
+        Assert.That(antiSpam.RecentGroupDecisions[0].Reason, Is.EqualTo("social-attention"));
+        Assert.That(antiSpam.RecentGroupDecisions[0].GroupId, Is.EqualTo(867165927));
+        Assert.That(antiSpam.RecentGroupDecisions[0].UserId, Is.EqualTo(2002));
+        Assert.That(antiSpam.RecentGroupDecisions[0].IsMentionedOrWoken, Is.False);
+        Assert.That(antiSpam.RecentGroupDecisions[0].IsGroupEnabled, Is.False);
+        Assert.That(antiSpam.RecentGroupDecisions[0].SocialAttentionProbability, Is.EqualTo(0.05).Within(0.001));
+        Assert.That(antiSpam.RecentGroupDecisions[0].CooldownRemainingSeconds, Is.EqualTo(44));
+        Assert.That(antiSpam.RecentGroupDecisions[0].ActiveSoftAttentionRemainingSeconds, Is.Zero);
+        Assert.That(antiSpam.RecentGroupDecisions[0].RawMessage, Is.EqualTo("路过说一句"));
+        Assert.That(antiSpam.RecentGroupDecisions[1].Decision, Is.EqualTo("accepted"));
+        Assert.That(antiSpam.RecentGroupDecisions[1].Reason, Is.EqualTo("mention-or-wake"));
+        Assert.That(antiSpam.RecentGroupDecisions[1].ActiveSoftAttentionRemainingSeconds, Is.EqualTo(120));
+    }
+
+    [Test]
+    public void AgentControlCenterFormatsQChatRecentDecisionSummaryForAgent()
+    {
+        AgentQChatGroupDecisionVisibility accepted = new(
+            DateTimeOffset.Parse("2026-06-16T10:00:01+08:00"),
+            867165927,
+            2001,
+            "accepted",
+            "mention-or-wake",
+            true,
+            true,
+            1,
+            0,
+            120,
+            "[CQ:at,qq=3340947887] 你在吗");
+        AgentQChatGroupDecisionVisibility suppressed = new(
+            DateTimeOffset.Parse("2026-06-16T10:00:02+08:00"),
+            867165927,
+            2002,
+            "suppressed",
+            "social-attention",
+            false,
+            false,
+            0.05,
+            44,
+            0,
+            "路过说一句");
+
+        string summary = AgentControlCenterService.FormatQChatRecentDecisionSummaryForAgent([suppressed, accepted]);
+
+        Assert.That(summary, Does.Contain("Internal QQ group decision diagnostic"));
+        Assert.That(summary, Does.Contain("group=867165927"));
+        Assert.That(summary, Does.Contain("user=2002"));
+        Assert.That(summary, Does.Contain("decision=suppressed"));
+        Assert.That(summary, Does.Contain("reason=social-attention"));
+        Assert.That(summary, Does.Contain("cooldown=44s"));
+        Assert.That(summary, Does.Contain("activeWindow=0s"));
+        Assert.That(summary, Does.Contain("probability=5%"));
+        Assert.That(summary, Does.Contain("user=2001"));
+        Assert.That(summary, Does.Contain("decision=accepted"));
+        Assert.That(summary, Does.Contain("reason=mention-or-wake"));
+        Assert.That(summary, Does.Contain("wake=True"));
+        Assert.That(summary, Does.Contain("active=True"));
+        Assert.That(summary, Does.Contain("Keep this out of user-facing chat"));
+        Assert.That(summary, Does.Not.Contain("<qchat"));
+    }
+
+    [Test]
     public void AgentControlCenterScopesQChatVisibilityToLatestRuntimeStart()
     {
         string root = CreateTempWorkspace();
@@ -2919,6 +3353,22 @@ public class AgentCapabilityServiceTests
         {
             ExecutedIds.Add(pending.Id);
             return Task.FromResult(new AgentProactiveExternalExecutionResult(true, "executed by stub"));
+        }
+    }
+
+    sealed class FakeJoinedQChatGroupProvider : IAgentQChatJoinedGroupProvider
+    {
+        public AgentQChatJoinedGroupSourceSnapshot CachedSnapshot { get; set; } =
+            new(DateTimeOffset.MinValue, []);
+
+        public Task<AgentQChatJoinedGroupSourceSnapshot> RefreshAgentJoinedGroupsAsync()
+        {
+            return Task.FromResult(CachedSnapshot);
+        }
+
+        public AgentQChatJoinedGroupSourceSnapshot GetCachedAgentJoinedGroups()
+        {
+            return CachedSnapshot;
         }
     }
 }

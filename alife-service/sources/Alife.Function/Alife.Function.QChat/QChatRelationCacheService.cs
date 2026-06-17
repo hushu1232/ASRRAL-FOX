@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Alife.Framework;
+using Alife.Function.Agent;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 
@@ -15,6 +16,10 @@ public sealed record QChatGroupMemberCacheSnapshot(
     DateTimeOffset RefreshedAt,
     IReadOnlyList<OneBotGroupMember> Members);
 
+public sealed record QChatGroupListCacheSnapshot(
+    DateTimeOffset RefreshedAt,
+    IReadOnlyList<OneBotGroupInfo> Groups);
+
 [Module(
     "QQ Relation Cache",
     "Caches QQ group member lists for safer context-aware interaction planning.",
@@ -23,11 +28,34 @@ public sealed record QChatGroupMemberCacheSnapshot(
 public class QChatRelationCacheService(
     IOneBotRuntime? oneBotRuntime = null,
     XmlFunctionCaller? functionCaller = null)
-    : InteractiveModule<QChatRelationCacheService>, IContextContributor, IModuleHealthReporter
+    : InteractiveModule<QChatRelationCacheService>, IContextContributor, IModuleHealthReporter, IAgentQChatJoinedGroupProvider
 {
     readonly IOneBotRuntime? oneBotRuntime = oneBotRuntime;
     readonly Dictionary<long, QChatGroupMemberCacheSnapshot> groupMemberCache = new();
+    QChatGroupListCacheSnapshot joinedGroupsCache = new(DateTimeOffset.MinValue, []);
     readonly object syncRoot = new();
+
+    [XmlFunction(FunctionMode.OneShot, name: "qchat_joined_groups_refresh")]
+    [Description("Refresh and cache the QQ groups this bot has joined. This is read-only and does not send messages.")]
+    public async Task RefreshJoinedGroups()
+    {
+        try
+        {
+            QChatGroupListCacheSnapshot snapshot = await RefreshJoinedGroupsAsync();
+            Poke(FormatGroupList(snapshot, maxGroups: 30));
+        }
+        catch (Exception exception)
+        {
+            Poke($"QQ joined group refresh failed: {exception.Message}");
+        }
+    }
+
+    [XmlFunction(FunctionMode.OneShot, name: "qchat_joined_groups_cache")]
+    [Description("Show the cached QQ groups this bot has joined without contacting OneBot.")]
+    public void ShowCachedJoinedGroups()
+    {
+        Poke(FormatGroupList(GetCachedJoinedGroups(), maxGroups: 30));
+    }
 
     [XmlFunction(FunctionMode.OneShot, name: "qchat_group_members_refresh")]
     [Description("Refresh and cache the QQ group member list for a group. This is read-only and does not send messages.")]
@@ -49,6 +77,24 @@ public class QChatRelationCacheService(
     public void ShowCachedGroupMembers(long groupId)
     {
         Poke(FormatSnapshot(GetCachedGroupMembers(groupId), maxMembers: 20));
+    }
+
+    public async Task<QChatGroupListCacheSnapshot> RefreshJoinedGroupsAsync()
+    {
+        if (oneBotRuntime == null)
+            throw new InvalidOperationException("OneBot runtime is unavailable.");
+
+        IReadOnlyList<OneBotGroupInfo> groups = await oneBotRuntime.GetGroupList();
+        OneBotGroupInfo[] normalizedGroups = groups
+            .Where(group => group.GroupId != 0)
+            .OrderBy(group => group.GroupId)
+            .ToArray();
+        QChatGroupListCacheSnapshot snapshot = new(DateTimeOffset.Now, normalizedGroups);
+
+        lock (syncRoot)
+            joinedGroupsCache = snapshot;
+
+        return snapshot;
     }
 
     public async Task<QChatGroupMemberCacheSnapshot> RefreshGroupMembersAsync(long groupId)
@@ -88,6 +134,22 @@ public class QChatRelationCacheService(
             return groupMemberCache.Values.OrderByDescending(snapshot => snapshot.RefreshedAt).ToArray();
     }
 
+    public QChatGroupListCacheSnapshot GetCachedJoinedGroups()
+    {
+        lock (syncRoot)
+            return joinedGroupsCache;
+    }
+
+    public async Task<AgentQChatJoinedGroupSourceSnapshot> RefreshAgentJoinedGroupsAsync()
+    {
+        return ToAgentJoinedGroupSourceSnapshot(await RefreshJoinedGroupsAsync());
+    }
+
+    public AgentQChatJoinedGroupSourceSnapshot GetCachedAgentJoinedGroups()
+    {
+        return ToAgentJoinedGroupSourceSnapshot(GetCachedJoinedGroups());
+    }
+
     public OneBotGroupMember? TryGetMember(long groupId, long userId)
     {
         return GetCachedGroupMembers(groupId).Members.FirstOrDefault(member => member.UserId == userId);
@@ -100,13 +162,35 @@ public class QChatRelationCacheService(
             snapshots = groupMemberCache.Values.OrderByDescending(snapshot => snapshot.RefreshedAt).Take(3).ToArray();
 
         if (snapshots.Length == 0)
-            return [];
+        {
+            QChatGroupListCacheSnapshot groupSnapshot = GetCachedJoinedGroups();
+            if (groupSnapshot.Groups.Count == 0)
+                return [];
+
+            return [
+                new ContextContribution(
+                    "qchat-relation-cache",
+                    FormatGroupList(groupSnapshot),
+                    Priority: 720,
+                    MaxLength: 1800,
+                    TrustLevel: ContextTrustLevel.UntrustedExternal)
+            ];
+        }
 
         StringBuilder builder = new();
         builder.AppendLine("[QQ relation cache]");
+        QChatGroupListCacheSnapshot joinedGroups = GetCachedJoinedGroups();
+        if (joinedGroups.Groups.Count > 0)
+        {
+            builder.AppendLine($"Joined groups: {joinedGroups.Groups.Count}");
+            foreach (OneBotGroupInfo group in joinedGroups.Groups.Take(12))
+                builder.AppendLine($"- {group.GroupId} {FormatGroupName(group)} members={group.MemberCount}/{group.MaxMemberCount}");
+        }
+
         foreach (QChatGroupMemberCacheSnapshot snapshot in snapshots)
         {
-            builder.AppendLine($"Group {snapshot.GroupId}: {snapshot.Members.Count} cached members");
+            string groupName = joinedGroups.Groups.FirstOrDefault(group => group.GroupId == snapshot.GroupId)?.GroupName ?? "";
+            builder.AppendLine($"Group {snapshot.GroupId}{(string.IsNullOrWhiteSpace(groupName) ? "" : $" {groupName}")}: {snapshot.Members.Count} cached members");
             foreach (OneBotGroupMember member in snapshot.Members.Take(12))
             {
                 builder.Append("- ");
@@ -137,10 +221,12 @@ public class QChatRelationCacheService(
 
         int cachedGroups;
         int cachedMembers;
+        int joinedGroups;
         lock (syncRoot)
         {
             cachedGroups = groupMemberCache.Count;
             cachedMembers = groupMemberCache.Values.Sum(snapshot => snapshot.Members.Count);
+            joinedGroups = joinedGroupsCache.Groups.Count;
         }
 
         if (oneBotRuntime.IsConnected == false)
@@ -148,13 +234,13 @@ public class QChatRelationCacheService(
             return new ModuleHealth(
                 "QChatRelationCache",
                 ModuleHealthStatus.Degraded,
-                $"OneBot is disconnected; {FormatCacheCounts(cachedGroups, cachedMembers)}.");
+                $"OneBot is disconnected; {FormatCacheCounts(cachedGroups, cachedMembers, joinedGroups)}.");
         }
 
         return new ModuleHealth(
             "QChatRelationCache",
             ModuleHealthStatus.Healthy,
-            $"OneBot is connected; {FormatCacheCounts(cachedGroups, cachedMembers)}.");
+            $"OneBot is connected; {FormatCacheCounts(cachedGroups, cachedMembers, joinedGroups)}.");
     }
 
     public override async Task AwakeAsync(AwakeContext context)
@@ -188,8 +274,43 @@ public class QChatRelationCacheService(
         return builder.ToString().TrimEnd();
     }
 
-    static string FormatCacheCounts(int groups, int members)
+    public static string FormatGroupList(QChatGroupListCacheSnapshot snapshot, int maxGroups = 30)
     {
-        return $"{groups} cached {(groups == 1 ? "group" : "groups")}, {members} {(members == 1 ? "member" : "members")} cached";
+        StringBuilder builder = new();
+        builder.AppendLine("QQ joined groups");
+        builder.AppendLine(snapshot.RefreshedAt == DateTimeOffset.MinValue
+            ? "- cache: empty"
+            : $"- refreshed: {snapshot.RefreshedAt:yyyy-MM-dd HH:mm:ss}");
+        builder.AppendLine($"- count: {snapshot.Groups.Count}");
+
+        foreach (OneBotGroupInfo group in snapshot.Groups.Take(Math.Max(0, maxGroups)))
+            builder.AppendLine($"- {group.GroupId} {FormatGroupName(group)} members={group.MemberCount}/{group.MaxMemberCount}");
+
+        return builder.ToString().TrimEnd();
+    }
+
+    static string FormatGroupName(OneBotGroupInfo group)
+    {
+        return string.IsNullOrWhiteSpace(group.GroupName)
+            ? "(unnamed)"
+            : group.GroupName.Trim();
+    }
+
+    static AgentQChatJoinedGroupSourceSnapshot ToAgentJoinedGroupSourceSnapshot(QChatGroupListCacheSnapshot snapshot)
+    {
+        return new AgentQChatJoinedGroupSourceSnapshot(
+            snapshot.RefreshedAt,
+            snapshot.Groups
+                .Select(group => new AgentQChatJoinedGroupSourceItem(
+                    group.GroupId,
+                    FormatGroupName(group),
+                    group.MemberCount,
+                    group.MaxMemberCount))
+                .ToArray());
+    }
+
+    static string FormatCacheCounts(int groups, int members, int joinedGroups)
+    {
+        return $"{joinedGroups} joined {(joinedGroups == 1 ? "group" : "groups")}, {groups} member-list {(groups == 1 ? "group" : "groups")}, {members} {(members == 1 ? "member" : "members")} cached";
     }
 }

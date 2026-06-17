@@ -91,7 +91,7 @@ public class MessageFilterService(
 
         if (lifeEventStream != null)
         {
-            string recentExperiences = LifeEventStreamService.FormatRecentExperiences(lifeEventStream.GetRecentEvents(8));
+            string recentExperiences = LifeEventStreamService.FormatRecentExperiences(lifeEventStream.GetRecentEvents(8), message);
             if (string.IsNullOrWhiteSpace(recentExperiences) == false)
                 contributions.Add(new ContextContribution("recent-experiences", recentExperiences, Priority: 800, MaxLength: 1200));
         }

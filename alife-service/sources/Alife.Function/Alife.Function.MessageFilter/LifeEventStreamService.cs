@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Platform;
@@ -106,11 +107,14 @@ public class LifeEventStreamService
 
     public static string FormatRecentExperiences(
         IEnumerable<LifeEvent> recentEvents,
+        string? currentMessage = null,
         int maxCount = 8,
         int maxSummaryLength = 180)
     {
+        HashSet<string> currentQqIds = ExtractQqIds(currentMessage ?? "");
         LifeEvent[] selectedEvents = recentEvents
             .Where(lifeEvent => string.IsNullOrWhiteSpace(lifeEvent.Summary) == false)
+            .Where(lifeEvent => IsRelevantToCurrentMessage(lifeEvent, currentQqIds))
             .OrderBy(lifeEvent => lifeEvent.Timestamp)
             .TakeLast(Math.Max(0, maxCount))
             .ToArray();
@@ -138,6 +142,31 @@ public class LifeEventStreamService
             return text;
 
         return text[..maxLength] + "...";
+    }
+
+    static bool IsRelevantToCurrentMessage(LifeEvent lifeEvent, IReadOnlySet<string> currentQqIds)
+    {
+        if (currentQqIds.Count == 0)
+            return true;
+        if (lifeEvent.Kind != LifeEventKind.Communication ||
+            lifeEvent.Source.Equals("QChat", StringComparison.OrdinalIgnoreCase) == false)
+        {
+            return true;
+        }
+
+        HashSet<string> eventQqIds = ExtractQqIds($"{lifeEvent.Source} {lifeEvent.Summary}");
+        return eventQqIds.Count == 0 || eventQqIds.Overlaps(currentQqIds);
+    }
+
+    static HashSet<string> ExtractQqIds(string text)
+    {
+        HashSet<string> ids = new(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(text))
+            return ids;
+
+        foreach (Match match in Regex.Matches(text, @"(?<!\d)\d{4,12}(?!\d)"))
+            ids.Add(match.Value);
+        return ids;
     }
 
     void LoadPersistedEvents()
