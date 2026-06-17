@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Alife.Framework;
 using Alife.Function.Agent;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace Alife.Test.Framework;
@@ -21,9 +22,20 @@ public class CharacterPersonaRuntimeConfigTests
         string[] requiredModules =
         [
             "Alife.Function.MessageFilter.LifeEventStreamService",
+            "Alife.Function.MessageFilter.SystemHealthService",
             "Alife.Function.MessageFilter.SelfContextService",
-            "Alife.Function.MessageFilter.AgentDiagnosticsService",
-            "Alife.Function.MessageFilter.AgentSelfModelService",
+            "Alife.Function.Agent.AgentDiagnosticsService",
+            "Alife.Function.Agent.AgentSelfModelService",
+            "Alife.Function.Agent.AgentIssueReportService",
+            "Alife.Function.Agent.AgentTaskService",
+            "Alife.Function.Agent.AgentWorkspaceService",
+            "Alife.Function.Agent.AgentCommandService",
+            "Alife.Function.Agent.AgentProjectStatusService",
+            "Alife.Function.Agent.AgentMaintenanceService",
+            "Alife.Function.Agent.AgentProactiveBehaviorService",
+            "Alife.Function.Agent.AgentControlCenterService",
+            "Alife.Function.MessageFilter.EmbodiedActionService",
+            "Alife.Function.QChat.QChatRelationCacheService",
             "Alife.Function.Memory.AutobiographicalMemoryService"
         ];
 
@@ -38,6 +50,22 @@ public class CharacterPersonaRuntimeConfigTests
             Array.IndexOf(modules, "Alife.Function.MessageFilter.SelfContextService"),
             Is.LessThan(Array.IndexOf(modules, "Alife.Function.MessageFilter.MessageFilterService")),
             "Self context should be available before message context composition starts.");
+    }
+
+    [Test]
+    public void ActivePersonaModulesResolveInModuleSystem()
+    {
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(GetActiveCharacterPath()));
+        string[] modules = document.RootElement
+            .GetProperty("Modules")
+            .EnumerateArray()
+            .Select(item => item.GetString() ?? string.Empty)
+            .ToArray();
+        PreloadRuntimeModuleAssemblies();
+        ModuleSystem moduleSystem = new(new StorageSystem(), new NullLogger<ModuleSystem>());
+
+        foreach (string module in modules)
+            Assert.That(moduleSystem.GetModule(module), Is.Not.Null, $"Active persona module should resolve: {module}");
     }
 
     [Test]
@@ -121,5 +149,23 @@ public class CharacterPersonaRuntimeConfigTests
         }
 
         throw new DirectoryNotFoundException("Could not locate Alife repository root.");
+    }
+
+    static void PreloadRuntimeModuleAssemblies()
+    {
+        _ = new[]
+        {
+            typeof(Alife.Framework.OpenAILanguageModel).Assembly,
+            typeof(Alife.Function.QChat.QChatService).Assembly,
+            typeof(Alife.Function.FunctionCaller.XmlFunctionCaller).Assembly,
+            typeof(Alife.Function.Mcp.McpService).Assembly,
+            typeof(Alife.Function.Skill.SkillService).Assembly,
+            typeof(Alife.Function.Emotion.PADEmotionEngine).Assembly,
+            typeof(Alife.Function.Developer.DeveloperService).Assembly,
+            typeof(Alife.Function.Memory.MemoryService).Assembly,
+            typeof(Alife.Function.MessageFilter.MessageFilterService).Assembly,
+            typeof(Alife.Function.SystemEvent.SystemEventService).Assembly,
+            typeof(Alife.Function.VirtualWorld.VirtualWorldService).Assembly
+        };
     }
 }
