@@ -44,7 +44,7 @@ public record QChatConfig
     public string AllowedGroupIds { get; set; } = "";
     public bool AllowMentionOutsideAllowedGroups { get; set; } = true;
     public string AllowedPrivateUserIds { get; set; } = "";
-    public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。决定不回复时不要输出“不回复/保持安静”等状态文字，直接不发送QQ消息。群聊普通聊天不要默认@，需要指向某人时优先用自然称呼，例如主人、妈妈、群名片、昵称或“你”；只有强提醒、重要触达或主人明确要求时才使用CQ at。";
+    public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。决定不回复时不要输出“不回复/保持安静”等状态文字，直接不发送QQ消息。群聊普通聊天不要默认@，需要指向某人时优先用自然称呼，例如主人、妈妈、群名片、昵称或“你”；只有强提醒、重要触达或主人明确要求时才使用CQ at。回答前先在内部判断依据是否可靠，但不要展示思考过程。不能把记忆或猜测当作实时事实；涉及当前群列表、群成员、权限、报错、接口状态等实时问题时，必须优先使用工具、日志或当前配置确认。没有可靠依据时要自然承认不确定，或说需要先查一下，不要编造。";
     //群监听唤醒
     public string IgnoredGroup { get; set; } = "";//完全屏蔽消息的群，不会收到这些群的任何信息
     public string WakingWords { get; set; } = "";//原始群消息中触发开启群消息监听的唤醒词，以逗号分隔

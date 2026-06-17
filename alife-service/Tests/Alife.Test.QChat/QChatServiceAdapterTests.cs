@@ -84,6 +84,16 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public void DefaultAppendChatPromptRequiresHonestNoGuessingAndHiddenReasoning()
+    {
+        QChatConfig config = new();
+
+        Assert.That(config.AppendChatPrompt, Does.Contain("不要展示思考过程"));
+        Assert.That(config.AppendChatPrompt, Does.Contain("不能把记忆或猜测当作实时事实"));
+        Assert.That(config.AppendChatPrompt, Does.Contain("没有可靠依据时要自然承认不确定"));
+    }
+
+    [Test]
     public void SendChatAsync_SendFailureDoesNotThrowWhenChatContextIsUnavailable()
     {
         FakeOneBotRuntime runtime = new()
