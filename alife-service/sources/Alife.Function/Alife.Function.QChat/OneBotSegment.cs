@@ -45,7 +45,7 @@ public static class OneBotSegment
     /// <summary>
     /// 将消息转换为 AI 友好的可读文本（处理回复、@、图片、表情等）。
     /// </summary>
-    public static async Task<string> GetReadableMessage(this OneBotMessageEvent messageEvent, IOneBotRuntime oneBotClient)
+    public static async Task<string> GetReadableMessage(this OneBotMessageEvent messageEvent, IOneBotRuntime oneBotClient, bool includeFiles = true)
     {
         string content = string.IsNullOrEmpty(messageEvent.RawMessage) && messageEvent.Message is System.Text.Json.JsonElement elem
             ? elem.ToCQString()
@@ -53,7 +53,8 @@ public static class OneBotSegment
         content = FilterFace(content);
         content = FilterAt(content);
         content = await FilterReply(content, oneBotClient);
-        content = await FilterFile(content, messageEvent.GroupId, oneBotClient);
+        if (includeFiles)
+            content = await FilterFile(content, messageEvent.GroupId, oneBotClient);
         content = FilterForward(content);
         content = FilterImage(content);
         return content;

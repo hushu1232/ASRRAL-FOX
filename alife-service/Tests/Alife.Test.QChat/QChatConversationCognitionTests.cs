@@ -6,7 +6,7 @@ namespace Alife.Test.QChat;
 public class QChatConversationCognitionTests
 {
     [Test]
-    public void BuildInternalPrompt_DescribesOwnerQuestionAsHighNeedMediumReply()
+    public void BuildInternalPrompt_DescribesOwnerQuestionAsPrivateWarmReplyHint()
     {
         QChatConfig config = new()
         {
@@ -26,12 +26,14 @@ public class QChatConversationCognitionTests
             "how should we improve memory?",
             isMentionedOrWoken: false);
 
-        Assert.That(prompt, Does.Contain("[QQ cognition]"));
+        Assert.That(prompt, Does.Contain("[private QQ routing hint - never quote or paraphrase]"));
         Assert.That(prompt, Does.Contain("relationship=owner"));
-        Assert.That(prompt, Does.Contain("intent=question"));
-        Assert.That(prompt, Does.Contain("reply_need=high"));
-        Assert.That(prompt, Does.Contain("reply_length=medium"));
-        Assert.That(prompt, Does.Contain("[/QQ cognition]"));
+        Assert.That(prompt, Does.Contain("message_intent=question"));
+        Assert.That(prompt, Does.Contain("social_action=reply_warmly"));
+        Assert.That(prompt, Does.Contain("expected_length=medium"));
+        Assert.That(prompt, Does.Contain("[/private QQ routing hint]"));
+        Assert.That(prompt, Does.Not.Contain("[QQ cognition]"));
+        Assert.That(prompt, Does.Not.Contain("reply_need="));
     }
 
     [Test]
@@ -56,9 +58,9 @@ public class QChatConversationCognitionTests
             isMentionedOrWoken: false);
 
         Assert.That(prompt, Does.Contain("relationship=mother"));
-        Assert.That(prompt, Does.Contain("intent=command"));
-        Assert.That(prompt, Does.Contain("reply_need=medium"));
-        Assert.That(prompt, Does.Contain("reply_length=short"));
+        Assert.That(prompt, Does.Contain("message_intent=command"));
+        Assert.That(prompt, Does.Contain("social_action=reply_concisely"));
+        Assert.That(prompt, Does.Contain("expected_length=short"));
         Assert.That(prompt, Does.Not.Contain("priority=owner"));
     }
 
@@ -85,9 +87,9 @@ public class QChatConversationCognitionTests
             isMentionedOrWoken: false);
 
         Assert.That(prompt, Does.Contain("relationship=group-member"));
-        Assert.That(prompt, Does.Contain("intent=reaction"));
-        Assert.That(prompt, Does.Contain("reply_need=low"));
-        Assert.That(prompt, Does.Contain("reply_length=short"));
+        Assert.That(prompt, Does.Contain("message_intent=reaction"));
+        Assert.That(prompt, Does.Contain("social_action=reply_concisely"));
+        Assert.That(prompt, Does.Contain("expected_length=short"));
     }
 
     [Test]
@@ -111,9 +113,9 @@ public class QChatConversationCognitionTests
             "",
             isMentionedOrWoken: false);
 
-        Assert.That(prompt, Does.Contain("intent=image-reaction"));
-        Assert.That(prompt, Does.Contain("reply_need=low"));
-        Assert.That(prompt, Does.Contain("reply_length=short"));
+        Assert.That(prompt, Does.Contain("message_intent=image-reaction"));
+        Assert.That(prompt, Does.Contain("social_action=reply_concisely"));
+        Assert.That(prompt, Does.Contain("expected_length=short"));
     }
 
     [Test]
@@ -138,8 +140,8 @@ public class QChatConversationCognitionTests
             isMentionedOrWoken: false);
 
         Assert.That(prompt, Does.Contain("relationship=group-member"));
-        Assert.That(prompt, Does.Contain("intent=low-information"));
-        Assert.That(prompt, Does.Contain("reply_need=silent"));
-        Assert.That(prompt, Does.Contain("reply_length=short"));
+        Assert.That(prompt, Does.Contain("message_intent=low-information"));
+        Assert.That(prompt, Does.Contain("social_action=ignore_or_cold_ack"));
+        Assert.That(prompt, Does.Contain("expected_length=short"));
     }
 }

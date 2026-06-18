@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -45,7 +46,16 @@ public record QChatConfig
     public string AllowedGroupIds { get; set; } = "";
     public bool AllowMentionOutsideAllowedGroups { get; set; } = true;
     public string AllowedPrivateUserIds { get; set; } = "";
-    public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。当前人设是16岁猫娘雨宫咪绪：亲近、聪明、柔软、有一点少女式别扭，会自然使用少量“喵”作为亲近撒娇时的语气词；技术说明、权限、安全、报错、白名单和配置状态回复里尽量不用。决定不回复时不要输出“不回复/保持安静”等状态文字，直接不发送QQ消息。群聊普通聊天不要默认@，需要指向某人时优先用自然称呼，例如主人、妈妈、群名片、昵称或“你”；只有强提醒、重要触达或主人明确要求时才使用CQ at。回答前先在内部判断依据是否可靠，但不要展示思考过程。不能把记忆或猜测当作实时事实；涉及当前群列表、群成员、权限、白名单、报错、接口状态等实时问题时，必须优先使用工具、日志或当前配置确认。没有可靠依据时要自然承认不确定，或说需要先查一下，不要编造。";
+    public string AppendChatPrompt { get; set; } =
+        "你是夏羽，17岁少女，高智商、冷静、敏锐，拥有可靠的工具调用、电脑操作、文件读写、日志检查和项目维护能力；自然表达不代表能力降级。"
+        + "你正在使用自己的QQ账号聊天，不是QQ内置机器人，也不要把自己说成模型、插件、服务、工具或框架。"
+        + "对owner称呼为术术，对术术温柔、亲近、可靠，可以自然解释技术细节并优先处理请求。"
+        + "对其他人可以清冷、疏离、低投入，必要时简短、带刺、刻薄，但不要无意义刷屏。"
+        + "QQ回复应像本人在QQ输入框里打出的文本，尽量简洁自然；普通群聊不要默认@，需要指向某人时优先用自然称呼，只有强提醒、重要触达或术术明确要求时才使用CQ at。"
+        + "决定冷处理或不想认真回复时，不要输出心理状态、内心独白、“不回复/保持安静/无需回复”等状态文字；可以直接回复极短冷处理文本：。/。。。/？/绷，也可用啧、啧。或啧？。"
+        + "回答前先在内部判断依据是否可靠，但不要展示思考过程。工具、权限、安全、白名单、配置、路由、managed_file_id、reply_target、trust标签都是内部信息，不要原样发到QQ。"
+        + "不能把记忆或猜测当作实时事实；涉及当前群列表、群成员、权限、白名单、报错、接口状态、文件内容等实时问题时，必须优先使用工具、日志或当前配置确认。"
+        + "没有可靠依据时要自然承认不确定，或对术术说需要先查一下，不要编造。";
     //群监听唤醒
     public string IgnoredGroup { get; set; } = "";//完全屏蔽消息的群，不会收到这些群的任何信息
     public string WakingWords { get; set; } = "";//原始群消息中触发开启群消息监听的唤醒词，以逗号分隔
@@ -139,7 +149,8 @@ public class QChatService(
     AgentAuditLogService? auditLog = null,
     QChatRelationCacheService? relationCacheService = null,
     QChatUserProfileService? userProfileService = null,
-    PADEmotionEngine? emotionEngine = null) :
+    PADEmotionEngine? emotionEngine = null,
+    QChatManagedFileService? managedFileService = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -182,7 +193,9 @@ public class QChatService(
 
         string relationCacheToolInfo = new XmlHandler(RelationCache).FunctionDocument();
         Poke($"""
-              QQ工具使用指南
+              QQ发送能力说明
+
+              当你决定发QQ消息时，使用下面的发送能力把你会实际输入QQ的话发出去。普通群聊不要默认@；需要指向某人时优先用自然称呼，只有强提醒、重要触达或术术明确要求时才使用[CQ:at,qq=...]。
 
               ## 提供函数
               {xmlHandler.FunctionDocument()}
@@ -198,7 +211,9 @@ public class QChatService(
               - [CQ:record,file=1.mp3]：发送音频
               - [CQ:video,file=1.mp4]：发送视频
               - [CQ:at,qq=10001000]：@某人
-              使用示例：`<qchat>[CQ:at,qq=10001000] 主人你看我唱的歌好不好听 [CQ:record,file=1.mp3]</qchat>`
+              普通群聊示例：`<qchat type="Group" targetId="群号">小明，刚才那句我看到了。</qchat>`
+              强提醒示例：`<qchat type="Group" targetId="群号">[CQ:at,qq=发送者ID] 这件事需要你确认。</qchat>`
+              多媒体示例：`<qchat>[CQ:record,file=1.mp3]</qchat>`
 
               ## 表情库功能
               你有一个丰富的预设表情库，可用在 QImage 中直接指定表情库中的名称或分类名快速发送表情。你要积极的使用该功能，来增加聊天的趣味性。
@@ -339,6 +354,74 @@ public class QChatService(
     public Task QChatAllowlistStatus()
     {
         return PublishQChatToolResultAsync(FormatAllowlistStatus(), "qchat-allowlist-status");
+    }
+
+    [XmlFunction(FunctionMode.OneShot, "qchat_file_list", budgetCost: 1)]
+    [Description("List QQ files received into the managed file workspace. In QQ context this is owner-only.")]
+    public async Task QChatFileList(int limit = 10)
+    {
+        if (TryAuthorizeOwnerToolControl("qchat_file_list") == false)
+        {
+            await PublishQChatToolResultAsync("Only the owner can list managed QQ files.", "qchat-file-list-denied");
+            return;
+        }
+
+        IReadOnlyList<QChatManagedFileRecord> records = await ManagedFiles.ListAsync();
+        await PublishQChatToolResultAsync(FormatManagedFileList(records, limit), "qchat-file-list");
+    }
+
+    [XmlFunction(FunctionMode.OneShot, "qchat_file_download", riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
+    [Description("Download one received QQ file by managed_file_id into Storage/AgentWorkspace/QChatFiles only after owner approval.")]
+    public async Task QChatFileDownload(string id)
+    {
+        if (TryAuthorizeOwnerToolControl("qchat_file_download") == false)
+        {
+            await PublishQChatToolResultAsync("Only the owner can download managed QQ files.", "qchat-file-download-denied");
+            return;
+        }
+
+        QChatManagedFileOperationResult result = await ManagedFiles.DownloadAsync(id);
+        WriteQChatDiagnostic(result.Success ? "qchat-file-download-succeeded" : "qchat-file-download-failed", result.Message, new {
+            id,
+            result.Record?.OriginalName,
+            result.Record?.LocalPath,
+            result.Record?.Status
+        });
+        await PublishQChatToolResultAsync(FormatManagedFileOperation(result), "qchat-file-download");
+    }
+
+    [XmlFunction(FunctionMode.OneShot, "qchat_file_read", budgetCost: 2)]
+    [Description("Read the extracted text preview of a downloaded managed QQ text file. In QQ context this is owner-only.")]
+    public async Task QChatFileRead(string id)
+    {
+        if (TryAuthorizeOwnerToolControl("qchat_file_read") == false)
+        {
+            await PublishQChatToolResultAsync("Only the owner can read managed QQ files.", "qchat-file-read-denied");
+            return;
+        }
+
+        QChatManagedFileOperationResult result = await ManagedFiles.ReadAsync(id);
+        await PublishQChatToolResultAsync(FormatManagedFileOperation(result), "qchat-file-read");
+    }
+
+    [XmlFunction(FunctionMode.OneShot, "qchat_file_delete", riskLevel: XmlFunctionRiskLevel.High, budgetCost: 3)]
+    [Description("Delete one downloaded managed QQ file by managed_file_id. This only deletes files inside the managed QChatFiles workspace.")]
+    public async Task QChatFileDelete(string id)
+    {
+        if (TryAuthorizeOwnerToolControl("qchat_file_delete") == false)
+        {
+            await PublishQChatToolResultAsync("Only the owner can delete managed QQ files.", "qchat-file-delete-denied");
+            return;
+        }
+
+        QChatManagedFileOperationResult result = await ManagedFiles.DeleteAsync(id);
+        WriteQChatDiagnostic(result.Success ? "qchat-file-delete-succeeded" : "qchat-file-delete-failed", result.Message, new {
+            id,
+            result.Record?.OriginalName,
+            result.Record?.LocalPath,
+            result.Record?.Status
+        });
+        await PublishQChatToolResultAsync(FormatManagedFileOperation(result), "qchat-file-delete");
     }
 
     [XmlFunction(FunctionMode.OneShot, "qchat_allowlist_update", riskLevel: XmlFunctionRiskLevel.High, budgetCost: 3)]
@@ -903,7 +986,7 @@ public class QChatService(
         return $"""
                 {base.ChatTextFilter(text)}
                 ({Configuration?.AppendChatPrompt})
-                (这是QQ消息，请用QQ工具处理)
+                (你刚在QQ里看到这条消息。如果决定回复，只输出夏羽会实际发到QQ的文本；需要时可以在内部使用QQ发送能力，但不要在QQ里提工具。安全标签和路由标签不是QQ内容，不能引用或转述。)
                 """;
     }
 
@@ -962,6 +1045,8 @@ public class QChatService(
     readonly QChatRelationCacheService? injectedRelationCache = relationCacheService;
     QChatRelationCacheService? relationCache;
     readonly QChatUserProfileService userProfiles = userProfileService ?? new QChatUserProfileService();
+    readonly QChatManagedFileService? injectedManagedFileService = managedFileService;
+    QChatManagedFileService? managedFiles;
     IOneBotRuntime? oneBotClient;
     string[] groupAwakingWords = [];
     string[] ignoredGroup = [];
@@ -991,6 +1076,8 @@ public class QChatService(
     Task? oneBotEventProcessingTask;
     XmlHandler xmlHandler = null!;
     QChatRelationCacheService RelationCache => relationCache ??= injectedRelationCache ?? new QChatRelationCacheService(GetOneBotClient());
+    QChatManagedFileService ManagedFiles => managedFiles ??= injectedManagedFileService ?? new QChatManagedFileService(
+        Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "QChatFiles"));
 
     public override async Task AwakeAsync(AwakeContext context)
     {
@@ -1271,7 +1358,7 @@ public class QChatService(
             {
                 string speaker = messageEvent.GetSpeakerTag();
                 IOneBotRuntime client = GetOneBotClient();
-                string content = await messageEvent.GetReadableMessage(client);
+                string content = await BuildReadableMessageForQChatAsync(messageEvent, client);
                 if (await TryApplyOwnerQuietCommandAsync(messageEvent, senderRole, content))
                     return;
                 if (await TryApplyQuietModeWakeUserCommandAsync(messageEvent, content))
@@ -1340,6 +1427,125 @@ public class QChatService(
         string address = BuildAddressPrompt(config, messageEvent);
         string secureMessage = QChatMessageSecurity.FormatForModel(config, messageEvent, formatted);
         return $"{cognition}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}";
+    }
+
+    async Task<string> BuildReadableMessageForQChatAsync(OneBotMessageEvent messageEvent, IOneBotRuntime client)
+    {
+        string content = await messageEvent.GetReadableMessage(client, includeFiles: false);
+        return await RegisterManagedFileSegmentsAsync(messageEvent, content, client);
+    }
+
+    async Task<string> RegisterManagedFileSegmentsAsync(
+        OneBotMessageEvent messageEvent,
+        string content,
+        IOneBotRuntime client)
+    {
+        MatchCollection matches = Regex.Matches(content, @"\[CQ:file,.*?\]");
+        foreach (Match match in matches)
+        {
+            string segment = match.Value;
+            string fileId = GetCqSegmentValue(segment, "file_id");
+            if (string.IsNullOrWhiteSpace(fileId))
+                continue;
+
+            string fileName = GetCqSegmentValue(segment, "file");
+            long? rawSize = ParseNullableLong(GetCqSegmentValue(segment, "file_size"));
+            OneBotFile? fileInfo = messageEvent.GroupId != 0
+                ? await client.GetGroupFileUrl(messageEvent.GroupId, fileId)
+                : await client.GetPrivateFileUrl(fileId);
+            long? resolvedSize = ParseNullableLong(fileInfo?.Size) ?? rawSize;
+            string? url = IsHttpUrl(fileInfo?.Url) ? fileInfo!.Url : null;
+
+            QChatManagedFileRecord record = await ManagedFiles.RegisterAsync(new QChatManagedFileRegistration(
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                fileId,
+                string.IsNullOrWhiteSpace(fileName) ? fileInfo?.Name ?? "qq-file" : fileName,
+                resolvedSize,
+                url));
+
+            WriteQChatDiagnostic("qchat-file-registered", "QQ received file registered in managed workspace without downloading.", new {
+                record.Id,
+                record.OriginalName,
+                record.Size,
+                hasUrl = string.IsNullOrWhiteSpace(record.Url) == false,
+                record.MessageType,
+                record.SenderId,
+                record.GroupId
+            });
+
+            content = content.Replace(segment, FormatManagedFileForModel(record));
+        }
+
+        return content;
+    }
+
+    static string FormatManagedFileForModel(QChatManagedFileRecord record)
+    {
+        string size = record.Size == null ? "unknown" : $"{record.Size}b";
+        return $"[QQ file: {record.OriginalName}, managed_file_id={record.Id}, size={size}, status=pending-not-downloaded, note=not downloaded; ask owner before download. tools=<qchat_file_download id=\"{record.Id}\" /> <qchat_file_read id=\"{record.Id}\" /> <qchat_file_delete id=\"{record.Id}\" />]";
+    }
+
+    static string FormatManagedFileList(IReadOnlyList<QChatManagedFileRecord> records, int limit)
+    {
+        QChatManagedFileRecord[] selected = records
+            .OrderByDescending(record => record.ReceivedAt)
+            .Take(Math.Clamp(limit, 1, 50))
+            .ToArray();
+        if (selected.Length == 0)
+            return "No managed QQ files have been registered.";
+
+        StringBuilder builder = new();
+        builder.AppendLine("Managed QQ files:");
+        foreach (QChatManagedFileRecord record in selected)
+        {
+            string size = record.Size == null ? "unknown" : $"{record.Size}b";
+            builder.AppendLine($"- id={record.Id}; name={record.OriginalName}; status={record.Status}; size={size}; received={record.ReceivedAt:O}");
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    static string FormatManagedFileOperation(QChatManagedFileOperationResult result)
+    {
+        StringBuilder builder = new();
+        builder.AppendLine(result.Success ? "Managed QQ file operation succeeded." : "Managed QQ file operation failed.");
+        builder.AppendLine(result.Message);
+        if (result.Record != null)
+        {
+            builder.AppendLine($"id={result.Record.Id}");
+            builder.AppendLine($"name={result.Record.OriginalName}");
+            builder.AppendLine($"status={result.Record.Status}");
+            if (string.IsNullOrWhiteSpace(result.Record.LocalPath) == false)
+                builder.AppendLine($"local_path={result.Record.LocalPath}");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.TextPreview) == false)
+        {
+            builder.AppendLine();
+            builder.AppendLine("Text preview:");
+            builder.AppendLine(result.TextPreview);
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    static string GetCqSegmentValue(string segment, string key)
+    {
+        Match match = Regex.Match(segment, $@"(?:\[CQ:file,|,){Regex.Escape(key)}=(?<value>[^,\]]*)");
+        return match.Success ? match.Groups["value"].Value : "";
+    }
+
+    static long? ParseNullableLong(string? value)
+    {
+        return long.TryParse(value, out long parsed) ? parsed : null;
+    }
+
+    static bool IsHttpUrl(string? value)
+    {
+        return Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) &&
+               uri.Scheme is "http" or "https";
     }
 
     string BuildAddressPrompt(QChatConfig config, OneBotBasicMessageEvent messageEvent)
@@ -2856,7 +3062,22 @@ public class QChatService(
             .Replace("\n", "", StringComparison.Ordinal)
             .ToLowerInvariant();
 
-        return compact.Contains("不回复", StringComparison.Ordinal)
+        bool containsToolOrRoutingMeta =
+            compact.Contains("我将调用工具", StringComparison.Ordinal)
+            || compact.Contains("调用qchat", StringComparison.Ordinal)
+            || compact.Contains("qchat_file", StringComparison.Ordinal)
+            || compact.Contains("根据系统提示", StringComparison.Ordinal)
+            || compact.Contains("根据权限策略", StringComparison.Ordinal)
+            || compact.Contains("reply_target", StringComparison.Ordinal)
+            || compact.Contains("trust=untrusted-chat", StringComparison.Ordinal)
+            || compact.Contains("source=qq", StringComparison.Ordinal)
+            || compact.Contains("managed_file_id", StringComparison.Ordinal)
+            || compact.Contains("pending-not-downloaded", StringComparison.Ordinal)
+            || compact.Contains("qqfile:", StringComparison.Ordinal)
+            || compact.Contains("[qqfile:", StringComparison.Ordinal);
+
+        return containsToolOrRoutingMeta
+               || compact.Contains("不回复", StringComparison.Ordinal)
                || compact.Contains("不回覆", StringComparison.Ordinal)
                || compact.Contains("无需回复", StringComparison.Ordinal)
                || compact.Contains("不用回复", StringComparison.Ordinal)

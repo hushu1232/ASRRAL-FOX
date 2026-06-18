@@ -17,15 +17,32 @@ public static class QChatConversationCognition
         string intent = GetIntent(rawMessage, readableMessage);
         string replyNeed = GetReplyNeed(relationship, intent, messageEvent, isMentionedOrWoken, isQuietMode);
         string replyLength = GetReplyLength(relationship, intent, replyNeed);
+        string socialAction = GetSocialAction(relationship, intent, replyNeed);
 
         return $"""
-                [QQ cognition]
+                [private QQ routing hint - never quote or paraphrase]
                 relationship={relationship}
-                intent={intent}
-                reply_need={replyNeed}
-                reply_length={replyLength}
-                [/QQ cognition]
+                message_intent={intent}
+                social_action={socialAction}
+                expected_length={replyLength}
+                [/private QQ routing hint]
                 """;
+    }
+
+    static string GetSocialAction(string relationship, string intent, string replyNeed)
+    {
+        if (replyNeed == "silent")
+            return "ignore_or_cold_ack";
+        if (relationship == "owner")
+            return "reply_warmly";
+        if (relationship == "private-guest")
+            return "guarded_reply";
+        if (relationship == "mother")
+            return "reply_concisely";
+        if (intent == "low-information")
+            return "ignore_or_cold_ack";
+
+        return "reply_concisely";
     }
 
     static string GetRelationship(QChatConfig config, OneBotBasicMessageEvent messageEvent)
