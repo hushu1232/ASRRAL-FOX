@@ -35,9 +35,14 @@ public class MessageFilterData
     LaunchOrder = -100, EditorUI = typeof(MessageFilterServiceUI))]
 public class MessageFilterService(
     ILifeEventStream? lifeEventStream = null,
-    IEnumerable<IContextContributor>? contextContributors = null)
+    IEnumerable<IContextContributor>? contextContributors = null,
+    PromptStablePrefixService? promptStablePrefixService = null,
+    PromptDynamicTailComposer? promptDynamicTailComposer = null)
     : InteractiveModule<MessageFilterService>, IConfigurable<MessageFilterData>
 {
+    readonly PromptStablePrefixService stablePrefixService = promptStablePrefixService ?? new PromptStablePrefixService();
+    readonly PromptDynamicTailComposer dynamicTailComposer = promptDynamicTailComposer ?? new PromptDynamicTailComposer();
+
     public MessageFilterData? Configuration { get; set; }
 
     public override async Task AwakeAsync(AwakeContext context)

@@ -95,11 +95,16 @@ public class AgentPermissionPolicy(AgentPermissionConfig? config = null)
     {
         if (request.Source == AgentRequestSource.System)
             return AgentActorPriority.System;
-        if (request.ActorUserId != null && config.OwnerUserIds.Contains(request.ActorUserId.Value))
+        if (request.ActorUserId != null && IsOwner(request.ActorUserId.Value))
             return AgentActorPriority.Owner;
         if (request.Source == AgentRequestSource.GroupChat)
             return AgentActorPriority.GroupParticipant;
         return AgentActorPriority.Guest;
+    }
+
+    public bool IsOwner(long userId)
+    {
+        return userId != 0 && config.OwnerUserIds.Contains(userId);
     }
 
     static AgentPermissionDecision Allow(AgentActorPriority priority, string reason) => new(true, priority, reason);

@@ -15,6 +15,7 @@ using Alife.Function.Agent;
 using Alife.Function.Emotion;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
+using Alife.Function.MessageFilter;
 using Alife.Function.Speech;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
@@ -137,7 +138,7 @@ sealed record QChatReplySession(
                 """,
     defaultCategory: "Alife 官方/交互方式",
     editorUI: typeof(QChatServiceUI), LaunchOrder = 10)]
-public class QChatService(
+public partial class QChatService(
     XmlFunctionCaller functionService,
     ILogger<QChatService> logger,
     ISpeechModel? speechModel = null,
@@ -150,7 +151,10 @@ public class QChatService(
     QChatRelationCacheService? relationCacheService = null,
     QChatUserProfileService? userProfileService = null,
     PADEmotionEngine? emotionEngine = null,
-    QChatManagedFileService? managedFileService = null) :
+    QChatManagedFileService? managedFileService = null,
+    AgentApprovalService? approvalService = null,
+    AgentEditCheckpointService? checkpointService = null,
+    AgentTaskService? taskService = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -1046,6 +1050,10 @@ public class QChatService(
     QChatRelationCacheService? relationCache;
     readonly QChatUserProfileService userProfiles = userProfileService ?? new QChatUserProfileService();
     readonly QChatManagedFileService? injectedManagedFileService = managedFileService;
+    readonly AgentApprovalService approvals = approvalService ?? new AgentApprovalService();
+    readonly AgentEditCheckpointService editCheckpoints = checkpointService
+        ?? new AgentEditCheckpointService(Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "checkpoints"));
+    readonly AgentTaskService agentTasks = taskService ?? new AgentTaskService();
     QChatManagedFileService? managedFiles;
     IOneBotRuntime? oneBotClient;
     string[] groupAwakingWords = [];
@@ -1359,6 +1367,12 @@ public class QChatService(
                 string speaker = messageEvent.GetSpeakerTag();
                 IOneBotRuntime client = GetOneBotClient();
                 string content = await BuildReadableMessageForQChatAsync(messageEvent, client);
+                if (await TryHandleApprovalCommandAsync(messageEvent, senderRole, content))
+                    return;
+                if (await TryHandleRollbackCommandAsync(messageEvent, senderRole))
+                    return;
+                if (await TryHandleStatusCommandAsync(messageEvent, senderRole))
+                    return;
                 if (await TryApplyOwnerQuietCommandAsync(messageEvent, senderRole, content))
                     return;
                 if (await TryApplyQuietModeWakeUserCommandAsync(messageEvent, content))
@@ -2240,6 +2254,141 @@ public class QChatService(
         return true;
     }
 
+    async Task<bool> TryHandleApprovalCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string readable)
+    {
+        string text = OneBotSegment.GetPlainText(readable);
+        if (TryParseApprovalCommand(text, out string command, out long approvalId) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        string result;
+        bool handled;
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            handled = false;
+            result = $"approval #{approvalId} can only be handled by owner";
+        }
+        else if (command == "approve")
+        {
+            handled = approvals.TryApprove(approvalId, messageEvent.UserId, out result);
+        }
+        else
+        {
+            handled = approvals.TryDeny(approvalId, messageEvent.UserId, out result);
+        }
+
+        await SendTextOrMediaMessageAsync(targetType, targetId, result, streamText: false);
+        WriteQChatDiagnostic(
+            handled ? "agent-approval-command-handled" : "agent-approval-command-rejected",
+            "QQ approval command handled.",
+            new {
+                command,
+                approvalId,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                senderRole,
+                result
+            });
+        return true;
+    }
+
+    static bool TryParseApprovalCommand(string? text, out string command, out long approvalId)
+    {
+        command = "";
+        approvalId = 0;
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        Match match = Regex.Match(
+            text.Trim(),
+            @"^/(approve|deny)\s+(\d+)$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (match.Success == false)
+            return false;
+
+        if (long.TryParse(match.Groups[2].Value, out approvalId) == false)
+            return false;
+
+        command = match.Groups[1].Value.ToLowerInvariant();
+        return true;
+    }
+
+    async Task<bool> TryHandleRollbackCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || parts[0].Equals("/rollback", StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can roll back file edits.", streamText: false);
+            return true;
+        }
+
+        AgentEditRollbackResult result = editCheckpoints.Rollback(parts[1]);
+        string message = result.Errors.Count == 0
+            ? $"Restored {result.RestoredFiles} file(s) for {result.TaskId}."
+            : $"Restored {result.RestoredFiles} file(s), errors: {string.Join("; ", result.Errors)}";
+        await SendTextOrMediaMessageAsync(targetType, targetId, message, streamText: false);
+        WriteQChatDiagnostic("agent-rollback-command", "QQ rollback command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            result.TaskId,
+            result.RestoredFiles,
+            result.Errors
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleStatusCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (text.Equals("/status", StringComparison.OrdinalIgnoreCase) == false
+            && text.Equals("/tasks", StringComparison.OrdinalIgnoreCase) == false)
+        {
+            return false;
+        }
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can view agent task status.", streamText: false);
+            return true;
+        }
+
+        string status = agentTasks.FormatStatus();
+        await SendTextOrMediaMessageAsync(targetType, targetId, status, streamText: false);
+        WriteQChatDiagnostic("agent-status-command", "QQ task status command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            command = text
+        });
+        return true;
+    }
+
     async Task<bool> TryApplyQuietModeWakeUserCommandAsync(OneBotMessageEvent messageEvent, string readable)
     {
         if (IsQuietModeEnabled == false)
@@ -2740,7 +2889,7 @@ public class QChatService(
             }
 
             if (Volatile.Read(ref outboundMessageVersion) == outboundBefore &&
-                TryBuildPlainTextFallbackResponse(modelResponse, out string fallbackMessage))
+                TryBuildPlainTextFallbackResponse(modelResponse, message.MessageType, out string fallbackMessage))
             {
                 await SendTextOrMediaMessageAsync(message.MessageType, message.TargetId, fallbackMessage, streamText: true);
                 WriteQChatDiagnostic("plain-fallback-sent", "Model returned plain text without using qchat; sent it to the current QQ session.", new {
@@ -3023,7 +3172,7 @@ public class QChatService(
         }
     }
 
-    static bool TryBuildPlainTextFallbackResponse(string? modelResponse, out string message)
+    static bool TryBuildPlainTextFallbackResponse(string? modelResponse, OneBotMessageType messageType, out string message)
     {
         message = "";
         if (string.IsNullOrWhiteSpace(modelResponse))
@@ -3036,6 +3185,10 @@ public class QChatService(
             return false;
         }
 
+        trimmed = SelectPlainTextFallbackSectionForCurrentSession(trimmed, messageType);
+        if (string.IsNullOrWhiteSpace(trimmed))
+            return false;
+
         if (IsInternalNoReplyStatus(trimmed))
             return false;
 
@@ -3044,6 +3197,86 @@ public class QChatService(
             ? trimmed
             : trimmed[..MaxFallbackLength].TrimEnd() + "...";
         return string.IsNullOrWhiteSpace(message) == false;
+    }
+
+    static string SelectPlainTextFallbackSectionForCurrentSession(string text, OneBotMessageType messageType)
+    {
+        string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        List<(PlainFallbackSectionKind Kind, string Content)> sections = [];
+        PlainFallbackSectionKind currentKind = PlainFallbackSectionKind.None;
+        StringBuilder currentContent = new();
+        bool foundLabel = false;
+
+        foreach (string line in normalized.Split('\n'))
+        {
+            Match match = PlainFallbackSectionLabelRegex().Match(line);
+            if (match.Success)
+            {
+                FlushSection();
+                foundLabel = true;
+                currentKind = GetPlainFallbackSectionKind(match.Groups["label"].Value);
+                string rest = match.Groups["rest"].Value.Trim();
+                if (string.IsNullOrEmpty(rest) == false)
+                    currentContent.AppendLine(rest);
+                continue;
+            }
+
+            currentContent.AppendLine(line);
+        }
+
+        FlushSection();
+        if (foundLabel == false)
+            return text.Trim();
+
+        PlainFallbackSectionKind desiredKind = messageType == OneBotMessageType.Private
+            ? PlainFallbackSectionKind.Private
+            : PlainFallbackSectionKind.Group;
+        string selected = sections
+            .Where(section => section.Kind == desiredKind)
+            .Select(section => section.Content.Trim())
+            .FirstOrDefault(content => string.IsNullOrWhiteSpace(content) == false) ?? "";
+        return selected;
+
+        void FlushSection()
+        {
+            if (currentKind == PlainFallbackSectionKind.None)
+            {
+                currentContent.Clear();
+                return;
+            }
+
+            string content = currentContent.ToString().Trim();
+            sections.Add((currentKind, content));
+            currentContent.Clear();
+        }
+    }
+
+    static PlainFallbackSectionKind GetPlainFallbackSectionKind(string label)
+    {
+        string compact = label.Trim()
+            .Replace(" ", "", StringComparison.Ordinal)
+            .Replace("\t", "", StringComparison.Ordinal);
+        if (compact.Contains("私聊", StringComparison.Ordinal) ||
+            compact.Contains("主人", StringComparison.Ordinal))
+        {
+            return PlainFallbackSectionKind.Private;
+        }
+
+        if (compact.Contains("群", StringComparison.Ordinal))
+            return PlainFallbackSectionKind.Group;
+
+        return PlainFallbackSectionKind.None;
+    }
+
+    [GeneratedRegex(@"^\s*(?<label>私聊主人|私聊回复|私聊回应|主人私聊|给?主人私聊|群里回复|群里回应|群聊回复|群聊回应|群内回复|群回复)\s*[:：]\s*(?<rest>.*)$")]
+    private static partial Regex PlainFallbackSectionLabelRegex();
+
+    enum PlainFallbackSectionKind
+    {
+        None,
+        Private,
+        Group
     }
 
     static bool IsInternalNoReplyStatus(string value)
@@ -3081,6 +3314,12 @@ public class QChatService(
                || compact.Contains("不回覆", StringComparison.Ordinal)
                || compact.Contains("无需回复", StringComparison.Ordinal)
                || compact.Contains("不用回复", StringComparison.Ordinal)
+               || compact.Contains("不回应", StringComparison.Ordinal)
+               || compact.Contains("不回應", StringComparison.Ordinal)
+               || compact.Contains("不作回应", StringComparison.Ordinal)
+               || compact.Contains("不作回應", StringComparison.Ordinal)
+               || compact.Contains("不做回应", StringComparison.Ordinal)
+               || compact.Contains("不做回應", StringComparison.Ordinal)
                || compact.Contains("保持安静", StringComparison.Ordinal)
                || compact.Contains("保持安靜", StringComparison.Ordinal)
                || compact.Contains("安静听着", StringComparison.Ordinal)
@@ -3106,7 +3345,7 @@ public class QChatService(
                || compact.Contains("趴好", StringComparison.Ordinal)
                || compact.Contains("等主人叫醒", StringComparison.Ordinal)
                || compact.Contains("测试计时", StringComparison.Ordinal)
-               || compact is "silent" or "stayquiet" or "noreply";
+               || compact is "沉默" or "silent" or "stayquiet" or "noreply";
     }
 
     static bool IsWrappingPair(char start, char end)

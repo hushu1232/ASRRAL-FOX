@@ -1,6 +1,7 @@
 using System.IO;
 using System.IO.Compression;
 using System.Text;
+using Alife.Function.Agent;
 using Alife.Function.QChat;
 using NUnit.Framework;
 
@@ -75,6 +76,38 @@ public class QChatManagedFileServiceTests
         Assert.That(deleted.Success, Is.True);
         Assert.That(File.Exists(downloaded.Record!.LocalPath!), Is.False);
         Assert.That(deleted.Record!.Status, Is.EqualTo(QChatManagedFileStatus.Deleted));
+    }
+
+    [Test]
+    public async Task DeleteAsync_NonOwnerGroupUserRequiresApproval()
+    {
+        string root = CreateTempRoot();
+        QChatManagedFileService service = new(root, (_, _) => Task.FromResult(Encoding.UTF8.GetBytes("keep me")));
+        QChatManagedFileRecord record = await service.RegisterAsync(new QChatManagedFileRegistration(
+            MessageType: OneBotMessageType.Group,
+            SenderId: 2002,
+            GroupId: 3003,
+            FileId: "qq-file-permission",
+            OriginalName: "note.txt",
+            Size: 7,
+            Url: "https://example.invalid/note.txt"));
+        QChatManagedFileOperationResult downloaded = await service.DownloadAsync(record.Id);
+        AgentPermissionGate gate = new(new AgentPermissionPolicy(new AgentPermissionConfig
+        {
+            OwnerUserIds = [3045846738],
+            RequireConfirmationForHighRisk = true
+        }));
+
+        QChatManagedFileOperationResult deleted = await service.DeleteAsync(
+            record.Id,
+            actorUserId: 2002,
+            source: AgentRequestSource.GroupChat,
+            permissionGate: gate);
+
+        Assert.That(deleted.Success, Is.False);
+        Assert.That(deleted.Message, Does.Contain("owner"));
+        Assert.That(File.Exists(downloaded.Record!.LocalPath!), Is.True);
+        Assert.That((await service.ListAsync()).Single(item => item.Id == record.Id).Status, Is.EqualTo(QChatManagedFileStatus.Downloaded));
     }
 
     [Test]

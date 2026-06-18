@@ -3,6 +3,7 @@ using Alife.Function.Agent;
 using Alife.Function.Emotion;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
+using Alife.Function.MessageFilter;
 using Alife.Framework;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.SemanticKernel;
@@ -741,6 +742,127 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerApproveCommandApprovesPendingAgentApproval()
+    {
+        FakeOneBotRuntime runtime = new();
+        AgentApprovalService approvals = new();
+        AgentApprovalRequest request = approvals.CreateRequest(
+            1001,
+            "改配置",
+            AgentApprovalRisk.High,
+            "修改配置",
+            TimeSpan.FromMinutes(10));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        }, approvalService: approvals);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = $"/approve {request.Id}"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
+        Assert.That(approvals.GetRequest(request.Id)!.Status, Is.EqualTo(AgentApprovalStatus.Approved));
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain($"approval #{request.Id} approved"));
+    }
+
+    [Test]
+    public async Task OwnerDenyCommandDeniesPendingAgentApproval()
+    {
+        FakeOneBotRuntime runtime = new();
+        AgentApprovalService approvals = new();
+        AgentApprovalRequest request = approvals.CreateRequest(
+            1001,
+            "删除文件",
+            AgentApprovalRisk.Medium,
+            "删除托管文件",
+            TimeSpan.FromMinutes(10));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        }, approvalService: approvals);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = $"/deny {request.Id}"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
+        Assert.That(approvals.GetRequest(request.Id)!.Status, Is.EqualTo(AgentApprovalStatus.Denied));
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain($"approval #{request.Id} denied"));
+    }
+
+    [Test]
+    public async Task OwnerRollbackCommandRestoresCheckpoint()
+    {
+        string root = Path.Combine(TestContext.CurrentContext.WorkDirectory, "rollback-qchat-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        string file = Path.Combine(root, "config.txt");
+        File.WriteAllText(file, "old");
+        AgentEditCheckpointService checkpoints = new(Path.Combine(root, "checkpoints"));
+        checkpoints.CaptureBeforeWrite("task-7", file);
+        File.WriteAllText(file, "new");
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        }, checkpointService: checkpoints);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "/rollback task-7"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
+        Assert.That(File.ReadAllText(file), Is.EqualTo("old"));
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("Restored 1"));
+    }
+
+    [Test]
+    public async Task OwnerStatusCommandReturnsAgentTaskStatus()
+    {
+        string root = Path.Combine(TestContext.CurrentContext.WorkDirectory, "status-qchat-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        FakeOneBotRuntime runtime = new();
+        AgentTaskService tasks = new(taskStorePath: Path.Combine(root, "agent-tasks.json"));
+        AgentTaskState task = tasks.CreateTask("agent", "检查后台错误", ["读取 qchat diagnostics"]);
+        tasks.StartTask(task.Id, "agent");
+        tasks.RecordProgress(task.Id, "agent", "读取最新日志");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        }, taskService: tasks);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "/status"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("检查后台错误"));
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("读取最新日志"));
+    }
+
+    [Test]
     public async Task QChatAllowlistUpdateOwnerCanAddGroupDuringQqContext()
     {
         FakeOneBotRuntime runtime = new();
@@ -1441,6 +1563,40 @@ public class QChatServiceAdapterTests
         Assert.That(runtime.GroupMessages, Is.Empty);
     }
 
+    [TestCase("（沉默，不作回应）")]
+    [TestCase("（沉默，不作任何回应）")]
+    [TestCase("沉默")]
+    public async Task IncomingGroupSilentStatusDoesNotFallBackToQqMessage(string modelReply)
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        PlainReplyQChatService service = new(functionCaller, runtime, modelReply)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowGroupMemberMentions = true,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "[CQ:at,qq=999] silent status"
+        });
+
+        await service.WaitForDispatchAsync();
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
     [Test]
     public async Task IncomingGroupMentionPlainModelReplyFallsBackToGroupChat()
     {
@@ -1471,6 +1627,79 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => runtime.GroupMessages.Count > 0);
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "[CQ:at,qq=2001] plain-group-reply") }));
+    }
+
+    [Test]
+    public async Task PlainGroupFallbackSelectsGroupSectionFromMultiSceneDraft()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        PlainReplyQChatService service = new(functionCaller, runtime, """
+            私聊主人：
+            才不是挑食喵！这叫有品位！小鱼干才是猫娘该吃的高级货嘛！
+
+            群里回复：
+            我这不是挑食～是有品位！而且小鱼干比猫粮听起来高级多啦！
+            """)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowGroupMemberMentions = true,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "[CQ:at,qq=999] 你挑食"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count > 0);
+        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "我这不是挑食～是有品位！而且小鱼干比猫粮听起来高级多啦！") }));
+        Assert.That(runtime.PrivateMessages, Is.Empty);
+    }
+
+    [Test]
+    public async Task PlainPrivateFallbackSelectsPrivateSectionFromMultiSceneDraft()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        PlainReplyQChatService service = new(functionCaller, runtime, """
+            私聊主人：
+            才不是挑食喵！这叫有品位！小鱼干才是猫娘该吃的高级货嘛！
+
+            群聊回复：
+            我这不是挑食～是有品位！而且小鱼干比猫粮听起来高级多啦！
+            """)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "你挑食"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
+        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] { (1001L, "才不是挑食喵！这叫有品位！小鱼干才是猫娘该吃的高级货嘛！") }));
+        Assert.That(runtime.GroupMessages, Is.Empty);
     }
 
     [Test]
@@ -3318,10 +3547,13 @@ public class QChatServiceAdapterTests
         FakeOneBotRuntime runtime,
         QChatConfig config,
         AgentControlCenterService? controlCenter = null,
-        PADEmotionEngine? emotionEngine = null)
+        PADEmotionEngine? emotionEngine = null,
+        AgentApprovalService? approvalService = null,
+        AgentEditCheckpointService? checkpointService = null,
+        AgentTaskService? taskService = null)
     {
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
-        QChatService service = new(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime, agentControlCenter: controlCenter, emotionEngine: emotionEngine)
+        QChatService service = new(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime, agentControlCenter: controlCenter, emotionEngine: emotionEngine, approvalService: approvalService, checkpointService: checkpointService, taskService: taskService)
         {
             Configuration = config
         };

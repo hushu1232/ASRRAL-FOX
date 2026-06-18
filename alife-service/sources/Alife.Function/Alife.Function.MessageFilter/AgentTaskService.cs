@@ -192,6 +192,26 @@ public class AgentTaskService(
         }
     }
 
+    public string FormatStatus()
+    {
+        AgentTaskState? latest = GetLatestTask();
+        if (latest == null)
+            return "当前没有活动任务。";
+
+        AgentTaskEvent? progressEvent = latest.Events.LastOrDefault(taskEvent =>
+            string.Equals(taskEvent.Kind, "progress", StringComparison.OrdinalIgnoreCase));
+        string progress = progressEvent?.Detail
+            ?? latest.Events.LastOrDefault()?.Detail
+            ?? "暂无进度记录";
+
+        return $"""
+                当前任务：
+                #{latest.Id} {latest.Goal}
+                状态：{latest.Status}
+                最新进度：{progress}
+                """.Trim();
+    }
+
     public IReadOnlyList<AgentTaskState> GetTasks()
     {
         lock (syncRoot)

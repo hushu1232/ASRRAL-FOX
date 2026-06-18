@@ -12,6 +12,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using Alife.Function.Agent;
 
 namespace Alife.Function.QChat;
 
@@ -181,6 +182,38 @@ public sealed class QChatManagedFileService
     public async Task<QChatManagedFileOperationResult> DeleteAsync(
         string id,
         CancellationToken cancellationToken = default)
+    {
+        return await DeleteCoreAsync(id, cancellationToken);
+    }
+
+    public async Task<QChatManagedFileOperationResult> DeleteAsync(
+        string id,
+        long actorUserId,
+        AgentRequestSource source,
+        AgentPermissionGate permissionGate,
+        CancellationToken cancellationToken = default)
+    {
+        List<QChatManagedFileRecord> records = await LoadRecordsAsync(cancellationToken);
+        QChatManagedFileRecord? record = FindRecord(records, id);
+        if (record == null)
+            return new QChatManagedFileOperationResult(false, $"QQ file '{id}' was not found.");
+
+        AgentPermissionGateDecision decision = permissionGate.Evaluate(new AgentPermissionRequest(
+            ActorUserId: actorUserId,
+            Source: source,
+            IsMentioned: false,
+            RiskLevel: AgentRiskLevel.Medium,
+            HasExplicitConfirmation: false,
+            Action: "delete-managed-qq-file"));
+        if (decision.Kind != AgentPermissionDecisionKind.Allow)
+            return new QChatManagedFileOperationResult(false, decision.Reason, record);
+
+        return await DeleteCoreAsync(id, cancellationToken);
+    }
+
+    async Task<QChatManagedFileOperationResult> DeleteCoreAsync(
+        string id,
+        CancellationToken cancellationToken)
     {
         List<QChatManagedFileRecord> records = await LoadRecordsAsync(cancellationToken);
         QChatManagedFileRecord? record = FindRecord(records, id);

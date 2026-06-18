@@ -93,6 +93,62 @@ public class QChatConversationCognitionTests
     }
 
     [Test]
+    public void BuildInternalPrompt_DescribesFriendlyGroupMemberAsAllowedShortReply()
+    {
+        QChatConfig config = new()
+        {
+            OwnerId = 10001,
+        };
+        OneBotMessageEvent messageEvent = new()
+        {
+            UserId = 30003,
+            GroupId = 40004,
+            RawMessage = "夏羽你好，刚才说得挺有意思"
+        };
+
+        string prompt = QChatConversationCognition.BuildInternalPrompt(
+            config,
+            messageEvent,
+            messageEvent.RawMessage,
+            "夏羽你好，刚才说得挺有意思",
+            isMentionedOrWoken: true);
+
+        Assert.That(prompt, Does.Contain("relationship=group-member"));
+        Assert.That(prompt, Does.Contain("message_tone=friendly"));
+        Assert.That(prompt, Does.Contain("message_intent=reaction"));
+        Assert.That(prompt, Does.Contain("social_action=friendly_short_reply"));
+        Assert.That(prompt, Does.Contain("expected_length=short"));
+    }
+
+    [Test]
+    public void BuildInternalPrompt_DescribesHostileGroupMemberAsSharpPushback()
+    {
+        QChatConfig config = new()
+        {
+            OwnerId = 10001,
+        };
+        OneBotMessageEvent messageEvent = new()
+        {
+            UserId = 30003,
+            GroupId = 40004,
+            RawMessage = "你这机器人真废物，闭嘴吧"
+        };
+
+        string prompt = QChatConversationCognition.BuildInternalPrompt(
+            config,
+            messageEvent,
+            messageEvent.RawMessage,
+            "你这机器人真废物，闭嘴吧",
+            isMentionedOrWoken: true);
+
+        Assert.That(prompt, Does.Contain("relationship=group-member"));
+        Assert.That(prompt, Does.Contain("message_tone=hostile"));
+        Assert.That(prompt, Does.Contain("message_intent=hostile"));
+        Assert.That(prompt, Does.Contain("social_action=sharp_pushback"));
+        Assert.That(prompt, Does.Contain("expected_length=short"));
+    }
+
+    [Test]
     public void BuildInternalPrompt_DescribesImageOnlyMessageAsImageReaction()
     {
         QChatConfig config = new()

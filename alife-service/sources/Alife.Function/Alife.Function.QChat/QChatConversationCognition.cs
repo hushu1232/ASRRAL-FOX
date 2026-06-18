@@ -14,14 +14,16 @@ public static class QChatConversationCognition
         bool isQuietMode = false)
     {
         string relationship = GetRelationship(config, messageEvent);
-        string intent = GetIntent(rawMessage, readableMessage);
+        string tone = GetTone(rawMessage, readableMessage);
+        string intent = GetIntent(rawMessage, readableMessage, tone);
         string replyNeed = GetReplyNeed(relationship, intent, messageEvent, isMentionedOrWoken, isQuietMode);
         string replyLength = GetReplyLength(relationship, intent, replyNeed);
-        string socialAction = GetSocialAction(relationship, intent, replyNeed);
+        string socialAction = GetSocialAction(relationship, intent, tone, replyNeed);
 
         return $"""
                 [private QQ routing hint - never quote or paraphrase]
                 relationship={relationship}
+                message_tone={tone}
                 message_intent={intent}
                 social_action={socialAction}
                 expected_length={replyLength}
@@ -29,12 +31,16 @@ public static class QChatConversationCognition
                 """;
     }
 
-    static string GetSocialAction(string relationship, string intent, string replyNeed)
+    static string GetSocialAction(string relationship, string intent, string tone, string replyNeed)
     {
         if (replyNeed == "silent")
             return "ignore_or_cold_ack";
         if (relationship == "owner")
             return "reply_warmly";
+        if (tone == "hostile")
+            return "sharp_pushback";
+        if (tone == "friendly" && relationship == "group-member")
+            return "friendly_short_reply";
         if (relationship == "private-guest")
             return "guarded_reply";
         if (relationship == "mother")
@@ -58,7 +64,7 @@ public static class QChatConversationCognition
             : "private-guest";
     }
 
-    static string GetIntent(string rawMessage, string readableMessage)
+    static string GetTone(string rawMessage, string readableMessage)
     {
         string raw = rawMessage ?? "";
         string readable = readableMessage ?? "";
@@ -67,6 +73,25 @@ public static class QChatConversationCognition
             : readable;
         string compact = CompactText(plain);
 
+        if (LooksHostile(compact))
+            return "hostile";
+        if (LooksFriendly(compact))
+            return "friendly";
+
+        return "neutral";
+    }
+
+    static string GetIntent(string rawMessage, string readableMessage, string tone)
+    {
+        string raw = rawMessage ?? "";
+        string readable = readableMessage ?? "";
+        string plain = string.IsNullOrWhiteSpace(readable)
+            ? OneBotSegment.GetPlainText(raw)
+            : readable;
+        string compact = CompactText(plain);
+
+        if (tone == "hostile")
+            return "hostile";
         if (IsMediaOnly(raw, plain))
             return "image-reaction";
         if (IsLowInformation(compact))
@@ -159,6 +184,41 @@ public static class QChatConversationCognition
                || text.Contains("sleep", StringComparison.OrdinalIgnoreCase)
                || text.Contains("quiet", StringComparison.OrdinalIgnoreCase)
                || text.Contains("wake up", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool LooksHostile(string compact)
+    {
+        return compact.Contains("\u5e9f\u7269", StringComparison.Ordinal)
+               || compact.Contains("\u50bb\u903c", StringComparison.Ordinal)
+               || compact.Contains("\u6eda", StringComparison.Ordinal)
+               || compact.Contains("\u95ed\u5634", StringComparison.Ordinal)
+               || compact.Contains("\u7231\u8bf4\u8bdd", StringComparison.Ordinal) && compact.Contains("\u522b", StringComparison.Ordinal)
+               || compact.Contains("\u771f\u83dc", StringComparison.Ordinal)
+               || compact.Contains("\u4ec0\u4e48\u5783\u573e", StringComparison.Ordinal)
+               || compact.Contains("\u5783\u573e", StringComparison.Ordinal)
+               || compact.Contains("\u8111\u6b8b", StringComparison.Ordinal)
+               || compact.Contains("\u6709\u75c5", StringComparison.Ordinal)
+               || compact.Contains("\u4f60\u7b97\u4ec0\u4e48", StringComparison.Ordinal)
+               || compact.Contains("stupid", StringComparison.OrdinalIgnoreCase)
+               || compact.Contains("idiot", StringComparison.OrdinalIgnoreCase)
+               || compact.Contains("shutup", StringComparison.OrdinalIgnoreCase)
+               || compact.Contains("trash", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool LooksFriendly(string compact)
+    {
+        return compact.Contains("\u4f60\u597d", StringComparison.Ordinal)
+               || compact.Contains("\u8c22\u8c22", StringComparison.Ordinal)
+               || compact.Contains("\u8c22\u4e86", StringComparison.Ordinal)
+               || compact.Contains("\u8bf4\u5f97\u633a\u597d", StringComparison.Ordinal)
+               || compact.Contains("\u8bf4\u5f97\u5f88\u597d", StringComparison.Ordinal)
+               || compact.Contains("\u6709\u610f\u601d", StringComparison.Ordinal)
+               || compact.Contains("\u5389\u5bb3", StringComparison.Ordinal)
+               || compact.Contains("\u559c\u6b22\u4f60", StringComparison.Ordinal)
+               || compact.Contains("\u597d\u806a\u660e", StringComparison.Ordinal)
+               || compact.Contains("thanks", StringComparison.OrdinalIgnoreCase)
+               || compact.Contains("thankyou", StringComparison.OrdinalIgnoreCase)
+               || compact.Contains("nice", StringComparison.OrdinalIgnoreCase);
     }
 
     static bool IsLowInformation(string compact)
