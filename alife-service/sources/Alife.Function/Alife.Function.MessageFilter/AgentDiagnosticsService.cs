@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
+using Autofac;
 
 namespace Alife.Function.Agent;
 
@@ -31,14 +32,10 @@ public sealed record AgentStateSnapshot(
     "Exposes self-state, module health, recent runtime events, and current embodied capabilities.",
     defaultCategory: "Alife Official/Agent",
     LaunchOrder = -65)]
-public class AgentDiagnosticsService(
-    IEnumerable<IModuleHealthReporter>? healthReporters = null,
-    IEnumerable<IEmbodiedCapability>? capabilities = null,
-    XmlFunctionCaller? functionCaller = null)
-    : InteractiveModule<AgentDiagnosticsService>
+public class AgentDiagnosticsService(XmlFunctionCaller? functionCaller = null) : InteractiveModule<AgentDiagnosticsService>
 {
-    readonly IEnumerable<IModuleHealthReporter> healthReporters = healthReporters ?? [];
-    readonly IEnumerable<IEmbodiedCapability> capabilities = capabilities ?? [];
+    public IEnumerable<IModuleHealthReporter>? HealthReporterSourceOverride { get; set; }
+    public IEnumerable<IEmbodiedCapability>? CapabilitySourceOverride { get; set; }
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_state")]
     [Description("Show the bot's self-state, recent runtime events, module health, and current embodied capabilities.")]
@@ -87,7 +84,7 @@ public class AgentDiagnosticsService(
 
     public IReadOnlyList<ModuleHealth> GetHealthSnapshot()
     {
-        return healthReporters
+        return ResolveHealthReporters()
             .Where(reporter => ReferenceEquals(reporter, this) == false)
             .Select(GetHealthSafely)
             .OrderBy(health => health.Status)
@@ -97,7 +94,7 @@ public class AgentDiagnosticsService(
 
     public IReadOnlyList<AgentCapabilityInfo> GetCapabilitySnapshot()
     {
-        return capabilities
+        return ResolveCapabilities()
             .Where(capability => ReferenceEquals(capability, this) == false)
             .Select(GetCapabilitySafely)
             .OrderBy(capability => capability.Kind)
@@ -144,6 +141,36 @@ public class AgentDiagnosticsService(
     {
         await base.AwakeAsync(context);
         functionCaller?.RegisterHandler(this);
+    }
+
+    IEnumerable<IModuleHealthReporter> ResolveHealthReporters()
+    {
+        if (HealthReporterSourceOverride != null)
+            return HealthReporterSourceOverride;
+
+        try
+        {
+            return ChatActivity.ModuleService.Resolve<IEnumerable<IModuleHealthReporter>>();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    IEnumerable<IEmbodiedCapability> ResolveCapabilities()
+    {
+        if (CapabilitySourceOverride != null)
+            return CapabilitySourceOverride;
+
+        try
+        {
+            return ChatActivity.ModuleService.Resolve<IEnumerable<IEmbodiedCapability>>();
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     static ModuleHealth GetHealthSafely(IModuleHealthReporter reporter)

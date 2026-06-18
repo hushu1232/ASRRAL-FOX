@@ -11,6 +11,7 @@ using Alife.Framework;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Alife.Platform;
+using Autofac;
 
 namespace Alife.Function.Agent;
 
@@ -333,7 +334,6 @@ public class AgentControlCenterService(
     AgentEnvironmentCheckService? environmentChecks = null,
     AgentEventPipeline? eventPipeline = null,
     IMemoryConsistencyReporter? memoryConsistencyReporter = null,
-    IAgentQChatJoinedGroupProvider? qchatJoinedGroups = null,
     Func<DateTimeOffset>? clock = null,
     string? qchatDiagnosticsPath = null)
     : InteractiveModule<AgentControlCenterService>, IConfigurable<AgentControlCenterConfig>
@@ -350,7 +350,6 @@ public class AgentControlCenterService(
     readonly AgentTaskService tasks = tasks ?? new AgentTaskService(auditLog);
     readonly string qchatDiagnosticsPath = Path.GetFullPath(
         qchatDiagnosticsPath ?? Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "qchat-diagnostics.jsonl"));
-    IAgentQChatJoinedGroupProvider? qchatJoinedGroups = qchatJoinedGroups;
     readonly AgentWorkspaceService workspace = workspace ?? new AgentWorkspaceService(
         workspacePolicy,
         auditLog: auditLog);
@@ -369,6 +368,7 @@ public class AgentControlCenterService(
     string lastAutomaticSelfCheckSkipReason = "not-run";
 
     public AgentControlCenterConfig? Configuration { get; set; } = new();
+    public IAgentQChatJoinedGroupProvider? QChatJoinedGroupProviderOverride { get; set; }
     public AgentProactiveBehaviorService? ProactiveBehavior
     {
         get => proactiveBehavior;
@@ -1185,23 +1185,25 @@ public class AgentControlCenterService(
 
     public AgentQChatJoinedGroupSnapshot GetJoinedQChatGroupsFromControlCenter(string characterRoot)
     {
-        if (qchatJoinedGroups == null)
+        IAgentQChatJoinedGroupProvider? joinedGroups = ResolveQChatJoinedGroupProvider();
+        if (joinedGroups == null)
             return new AgentQChatJoinedGroupSnapshot(false, null, "QChat joined group provider is unavailable.", []);
 
         return BuildJoinedQChatGroupSnapshot(
             characterRoot,
-            qchatJoinedGroups.GetCachedAgentJoinedGroups(),
+            joinedGroups.GetCachedAgentJoinedGroups(),
             "QQ joined groups loaded from cached OneBot state.");
     }
 
     public async Task<AgentQChatJoinedGroupSnapshot> RefreshJoinedQChatGroupsFromControlCenter(string characterRoot)
     {
-        if (qchatJoinedGroups == null)
+        IAgentQChatJoinedGroupProvider? joinedGroups = ResolveQChatJoinedGroupProvider();
+        if (joinedGroups == null)
             return new AgentQChatJoinedGroupSnapshot(false, null, "QChat joined group provider is unavailable.", []);
 
         try
         {
-            AgentQChatJoinedGroupSourceSnapshot source = await qchatJoinedGroups.RefreshAgentJoinedGroupsAsync();
+            AgentQChatJoinedGroupSourceSnapshot source = await joinedGroups.RefreshAgentJoinedGroupsAsync();
             return BuildJoinedQChatGroupSnapshot(
                 characterRoot,
                 source,
@@ -1304,15 +1306,29 @@ public class AgentControlCenterService(
     {
         await base.AwakeAsync(context);
         proactiveBehavior ??= context.Services.GetService(typeof(AgentProactiveBehaviorService)) as AgentProactiveBehaviorService;
-        qchatJoinedGroups ??= context.Services.GetService(typeof(IAgentQChatJoinedGroupProvider)) as IAgentQChatJoinedGroupProvider;
-        if (qchatJoinedGroups == null
+        QChatJoinedGroupProviderOverride ??= context.Services.GetService(typeof(IAgentQChatJoinedGroupProvider)) as IAgentQChatJoinedGroupProvider;
+        if (QChatJoinedGroupProviderOverride == null
             && context.Services.GetService(typeof(IEnumerable<IAgentQChatJoinedGroupProvider>)) is IEnumerable<IAgentQChatJoinedGroupProvider> providers)
-        {
-            qchatJoinedGroups = providers.FirstOrDefault();
-        }
+            QChatJoinedGroupProviderOverride = providers.FirstOrDefault();
         if (context.Services.GetService(typeof(IEnumerable<IAgentProactiveSuggestionExecutor>)) is IEnumerable<IAgentProactiveSuggestionExecutor> executors)
             proactiveExecutors = executors.ToArray();
         functionCaller?.RegisterHandler(this);
+    }
+
+    IAgentQChatJoinedGroupProvider? ResolveQChatJoinedGroupProvider()
+    {
+        if (QChatJoinedGroupProviderOverride != null)
+            return QChatJoinedGroupProviderOverride;
+
+        try
+        {
+            return ChatActivity.ModuleService.ResolveOptional<IAgentQChatJoinedGroupProvider>()
+                   ?? ChatActivity.ModuleService.Resolve<IEnumerable<IAgentQChatJoinedGroupProvider>>().FirstOrDefault();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     AgentProactiveBehaviorService GetProactiveBehavior()

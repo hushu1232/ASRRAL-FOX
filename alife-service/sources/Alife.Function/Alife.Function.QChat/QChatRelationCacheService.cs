@@ -30,11 +30,17 @@ public class QChatRelationCacheService(
     XmlFunctionCaller? functionCaller = null)
     : InteractiveModule<QChatRelationCacheService>, IContextContributor, IModuleHealthReporter, IAgentQChatJoinedGroupProvider
 {
-    readonly IOneBotRuntime? oneBotRuntime = oneBotRuntime;
+    IOneBotRuntime? oneBotRuntime = oneBotRuntime;
     readonly Dictionary<long, QChatGroupMemberCacheSnapshot> groupMemberCache = new();
     QChatGroupListCacheSnapshot joinedGroupsCache = new(DateTimeOffset.MinValue, []);
     readonly object syncRoot = new();
     public Action<string, string, object?, Exception?>? DiagnosticWriter { get; set; }
+    public Func<string, Task>? ToolResultSink { get; set; }
+
+    public void AttachOneBotRuntime(IOneBotRuntime runtime)
+    {
+        oneBotRuntime ??= runtime;
+    }
 
     [XmlFunction(FunctionMode.OneShot, name: "qchat_joined_groups_refresh")]
     [Description("Refresh and cache the QQ groups this bot has joined. This is read-only and does not send messages.")]
@@ -43,19 +49,19 @@ public class QChatRelationCacheService(
         try
         {
             QChatGroupListCacheSnapshot snapshot = await RefreshJoinedGroupsAsync();
-            Poke(FormatGroupList(snapshot, maxGroups: 30));
+            await PublishToolResultAsync(FormatGroupList(snapshot, maxGroups: 30));
         }
         catch (Exception exception)
         {
-            Poke($"QQ joined group refresh failed: {exception.Message}");
+            await PublishToolResultAsync($"QQ joined group refresh failed: {exception.Message}");
         }
     }
 
     [XmlFunction(FunctionMode.OneShot, name: "qchat_joined_groups_cache")]
     [Description("Show the cached QQ groups this bot has joined without contacting OneBot.")]
-    public void ShowCachedJoinedGroups()
+    public Task ShowCachedJoinedGroups()
     {
-        Poke(FormatGroupList(GetCachedJoinedGroups(), maxGroups: 30));
+        return PublishToolResultAsync(FormatGroupList(GetCachedJoinedGroups(), maxGroups: 30));
     }
 
     [XmlFunction(FunctionMode.OneShot, name: "qchat_group_members_refresh")]
@@ -65,19 +71,26 @@ public class QChatRelationCacheService(
         try
         {
             QChatGroupMemberCacheSnapshot snapshot = await RefreshGroupMembersAsync(groupId);
-            Poke(FormatSnapshot(snapshot, maxMembers: 20));
+            await PublishToolResultAsync(FormatSnapshot(snapshot, maxMembers: 20));
         }
         catch (Exception exception)
         {
-            Poke($"QQ group member refresh failed: {exception.Message}");
+            await PublishToolResultAsync($"QQ group member refresh failed: {exception.Message}");
         }
     }
 
     [XmlFunction(FunctionMode.OneShot, name: "qchat_group_members_cache")]
     [Description("Show the cached QQ group member list for a group without contacting OneBot.")]
-    public void ShowCachedGroupMembers(long groupId)
+    public Task ShowCachedGroupMembers(long groupId)
     {
-        Poke(FormatSnapshot(GetCachedGroupMembers(groupId), maxMembers: 20));
+        return PublishToolResultAsync(FormatSnapshot(GetCachedGroupMembers(groupId), maxMembers: 20));
+    }
+
+    async Task PublishToolResultAsync(string message)
+    {
+        Poke(message);
+        if (ToolResultSink != null)
+            await ToolResultSink(message);
     }
 
     public async Task<QChatGroupListCacheSnapshot> RefreshJoinedGroupsAsync()

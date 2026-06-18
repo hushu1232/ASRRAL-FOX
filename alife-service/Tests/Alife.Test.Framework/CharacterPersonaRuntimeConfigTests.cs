@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Alife.Framework;
 using Alife.Function.Agent;
@@ -19,27 +20,7 @@ public class CharacterPersonaRuntimeConfigTests
             .Select(item => item.GetString() ?? string.Empty)
             .ToArray();
 
-        string[] requiredModules =
-        [
-            "Alife.Function.MessageFilter.LifeEventStreamService",
-            "Alife.Function.MessageFilter.SystemHealthService",
-            "Alife.Function.MessageFilter.SelfContextService",
-            "Alife.Function.Agent.AgentDiagnosticsService",
-            "Alife.Function.Agent.AgentSelfModelService",
-            "Alife.Function.Agent.AgentIssueReportService",
-            "Alife.Function.Agent.AgentTaskService",
-            "Alife.Function.Agent.AgentWorkspaceService",
-            "Alife.Function.Agent.AgentCommandService",
-            "Alife.Function.Agent.AgentProjectStatusService",
-            "Alife.Function.Agent.AgentMaintenanceService",
-            "Alife.Function.Agent.AgentProactiveBehaviorService",
-            "Alife.Function.Agent.AgentControlCenterService",
-            "Alife.Function.MessageFilter.EmbodiedActionService",
-            "Alife.Function.QChat.QChatRelationCacheService",
-            "Alife.Function.Memory.AutobiographicalMemoryService"
-        ];
-
-        foreach (string requiredModule in requiredModules)
+        foreach (string requiredModule in GetRequiredAnthropomorphicModules())
             Assert.That(modules, Does.Contain(requiredModule), $"Active persona should load {requiredModule}.");
 
         Assert.That(
@@ -66,6 +47,79 @@ public class CharacterPersonaRuntimeConfigTests
 
         foreach (string module in modules)
             Assert.That(moduleSystem.GetModule(module), Is.Not.Null, $"Active persona module should resolve: {module}");
+    }
+
+    [Test]
+    public void CharacterModuleRepairScriptIsSourceControlledAndCoversSafeAgentModules()
+    {
+        string scriptPath = Path.Combine(FindRepositoryRoot(), "tools", "repair-active-character-modules.ps1");
+        Assert.That(File.Exists(scriptPath), Is.True);
+
+        string script = File.ReadAllText(scriptPath);
+        foreach (string module in GetRequiredAnthropomorphicModules())
+            Assert.That(script, Does.Contain(module), $"Repair script should include {module}.");
+
+        Assert.That(script, Does.Contain("Storage\\Character"));
+        Assert.That(script, Does.Contain("-WhatIf"));
+        Assert.That(script, Does.Not.Contain("sk-"));
+        Assert.That(script, Does.Not.Contain("APIkey"));
+        Assert.That(script, Does.Not.Contain("OneBotToken"));
+        Assert.That(script, Does.Not.Contain("Storage\\AgentWorkspace"));
+    }
+
+    [Test]
+    public void CharacterModuleRepairScriptRunsAgainstTemporaryCharacterStorage()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string scriptPath = Path.Combine(repositoryRoot, "tools", "repair-active-character-modules.ps1");
+        string storagePath = Path.Combine(Path.GetTempPath(), "alife-character-module-repair-tests", Guid.NewGuid().ToString("N"));
+        string characterRoot = Path.Combine(storagePath, "Character", "Probe");
+        Directory.CreateDirectory(characterRoot);
+        File.WriteAllText(
+            Path.Combine(characterRoot, "index.json"),
+            """
+            {
+              "Name": "Probe",
+              "Modules": [
+                "Alife.Function.MessageFilter.AgentDiagnosticsService"
+              ]
+            }
+            """);
+
+        using Process process = Process.Start(new ProcessStartInfo
+        {
+            FileName = "powershell",
+            ArgumentList =
+            {
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                scriptPath,
+                "-StoragePath",
+                storagePath,
+                "-CharacterName",
+                "Probe"
+            },
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        })!;
+        process.WaitForExit(30000);
+        string output = process.StandardOutput.ReadToEnd();
+        string error = process.StandardError.ReadToEnd();
+
+        Assert.That(process.ExitCode, Is.EqualTo(0), output + error);
+        using JsonDocument repaired = JsonDocument.Parse(File.ReadAllText(Path.Combine(characterRoot, "index.json")));
+        string[] modules = repaired.RootElement
+            .GetProperty("Modules")
+            .EnumerateArray()
+            .Select(item => item.GetString() ?? string.Empty)
+            .ToArray();
+
+        Assert.That(modules, Does.Contain("Alife.Function.Agent.AgentDiagnosticsService"));
+        Assert.That(modules, Does.Not.Contain("Alife.Function.MessageFilter.AgentDiagnosticsService"));
+        Assert.That(modules, Does.Contain("Alife.Function.Agent.AgentControlCenterService"));
     }
 
     [Test]
@@ -136,6 +190,30 @@ public class CharacterPersonaRuntimeConfigTests
             "真央",
             "Configuration",
             "Alife.Function.QChat.QChatService.json");
+    }
+
+    static string[] GetRequiredAnthropomorphicModules()
+    {
+        return
+        [
+            "Alife.Function.MessageFilter.LifeEventStreamService",
+            "Alife.Function.MessageFilter.SystemHealthService",
+            "Alife.Function.MessageFilter.SelfContextService",
+            "Alife.Function.Agent.AgentDiagnosticsService",
+            "Alife.Function.Agent.AgentCapabilityInventoryService",
+            "Alife.Function.Agent.AgentSelfModelService",
+            "Alife.Function.Agent.AgentIssueReportService",
+            "Alife.Function.Agent.AgentTaskService",
+            "Alife.Function.Agent.AgentWorkspaceService",
+            "Alife.Function.Agent.AgentCommandService",
+            "Alife.Function.Agent.AgentProjectStatusService",
+            "Alife.Function.Agent.AgentMaintenanceService",
+            "Alife.Function.Agent.AgentProactiveBehaviorService",
+            "Alife.Function.Agent.AgentControlCenterService",
+            "Alife.Function.MessageFilter.EmbodiedActionService",
+            "Alife.Function.QChat.QChatRelationCacheService",
+            "Alife.Function.Memory.AutobiographicalMemoryService"
+        ];
     }
 
     static string FindRepositoryRoot()

@@ -1,9 +1,13 @@
 using Alife.Framework;
 using Alife.Function.Agent;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Alife.Function.MessageFilter;
 using Alife.Function.QChat;
 using Alife.Platform;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
 
 namespace Alife.Test.Framework;
 
@@ -12,15 +16,19 @@ public class AgentCapabilityServiceTests
     [Test]
     public void DiagnosticsSnapshotIncludesRuntimeHealthAndCapabilities()
     {
-        AgentDiagnosticsService service = new(
+        AgentDiagnosticsService service = new()
+        {
+            HealthReporterSourceOverride =
             [
                 new StubHealthReporter("Memory", ModuleHealthStatus.Healthy, "Memory is ready."),
                 new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser is loading.")
             ],
+            CapabilitySourceOverride =
             [
                 new StubCapability("Memory", EmbodiedCapabilityKind.Memory, "Persistent memory.", "ready"),
                 new StubCapability("Browser", EmbodiedCapabilityKind.Sense, "Real browser.", "loading")
-            ]);
+            ]
+        };
         ChatRuntimeState runtime = new(
             IsChatting: true,
             PendingPokeCount: 2,
@@ -66,9 +74,11 @@ public class AgentCapabilityServiceTests
             }
         };
         AgentSelfModelService service = new(
-            new AgentDiagnosticsService(
-                [new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected.")],
-                [new StubCapability("QChat", EmbodiedCapabilityKind.Communication, "QQ channel.", "offline")]),
+            new AgentDiagnosticsService
+            {
+                HealthReporterSourceOverride = [new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected.")],
+                CapabilitySourceOverride = [new StubCapability("QChat", EmbodiedCapabilityKind.Communication, "QQ channel.", "offline")]
+            },
             tasks,
             controlCenter,
             lifeEvents);
@@ -88,6 +98,68 @@ public class AgentCapabilityServiceTests
         Assert.That(prompt, Does.Contain("AstralFox"));
         Assert.That(prompt, Does.Contain("High-risk actions require owner confirmation."));
         Assert.That(prompt, Does.Contain("Owner asked the bot to continue improving itself."));
+    }
+
+    [Test]
+    public void CapabilityInventoryDescribesVerifiedToolBoundaries()
+    {
+        AgentCapabilityInventoryService service = new();
+
+        IReadOnlyList<AgentCapabilityBoundary> inventory = service.BuildInventory();
+        string prompt = AgentCapabilityInventoryService.FormatForPrompt(inventory);
+
+        Assert.That(inventory.Select(item => item.ToolName), Does.Contain("agent_run"));
+        Assert.That(inventory.Select(item => item.ToolName), Does.Contain("workspace_write"));
+        Assert.That(inventory.Select(item => item.ToolName), Does.Contain("qchat_joined_groups_refresh"));
+        Assert.That(inventory.Select(item => item.ToolName), Does.Contain("qchat_allowlist_update"));
+        Assert.That(inventory.Select(item => item.ToolName), Does.Contain("qzone_proactive_execute"));
+
+        AgentCapabilityBoundary agentRun = inventory.Single(item => item.ToolName == "agent_run");
+        Assert.That(agentRun.RiskLevel, Is.EqualTo(XmlFunctionRiskLevel.High));
+        Assert.That(agentRun.DefaultAllowed, Is.False);
+        Assert.That(agentRun.Requires, Does.Contain("predefined"));
+
+        AgentCapabilityBoundary qzone = inventory.Single(item => item.ToolName == "qzone_proactive_execute");
+        Assert.That(qzone.TruthfulnessRule, Does.Contain("dry-run"));
+        Assert.That(prompt, Does.Contain("[Tool capability boundaries]"));
+        Assert.That(prompt, Does.Contain("Do not claim high-risk actions were executed unless the tool result says executed"));
+        Assert.That(prompt, Does.Contain("Do not rely on memory for live QQ group lists"));
+    }
+
+    [Test]
+    public void SelfModelIncludesCapabilityBoundariesForToolTruthfulness()
+    {
+        AgentCapabilityInventoryService inventory = new();
+        AgentSelfModelService service = new(
+            new AgentDiagnosticsService(),
+            capabilityInventory: inventory);
+
+        AgentSelfModelSnapshot snapshot = service.BuildSnapshot(
+            new ChatRuntimeState(false, 0, 0, null, []),
+            "AstralFox");
+        string prompt = AgentSelfModelService.FormatForPrompt(snapshot);
+
+        Assert.That(snapshot.CapabilityBoundaries.Select(item => item.ToolName), Does.Contain("workspace_write"));
+        Assert.That(snapshot.CapabilityBoundaries.Select(item => item.ToolName), Does.Contain("agent_run"));
+        Assert.That(prompt, Does.Contain("[Tool capability boundaries]"));
+        Assert.That(prompt, Does.Contain("workspace_write"));
+        Assert.That(prompt, Does.Contain("owner confirmation"));
+        Assert.That(prompt, Does.Contain("Do not rely on memory for live QQ group lists"));
+    }
+
+    [Test]
+    public void CapabilityInventoryExposesXmlTool()
+    {
+        string[] xmlFunctionNames = typeof(AgentCapabilityInventoryService)
+            .GetMethods()
+            .Select(method => method.GetCustomAttributes(typeof(XmlFunctionAttribute), inherit: false)
+                .OfType<XmlFunctionAttribute>()
+                .FirstOrDefault())
+            .OfType<XmlFunctionAttribute>()
+            .Select(attribute => attribute.Name ?? string.Empty)
+            .ToArray();
+
+        Assert.That(xmlFunctionNames, Does.Contain("agent_capability_inventory"));
     }
 
     [Test]
@@ -696,8 +768,9 @@ public class AgentCapabilityServiceTests
     [Test]
     public void TaskServiceTracksLifecycleAndAuditTrail()
     {
-        AgentAuditLogService audit = new(Path.Combine(CreateTempWorkspace(), "audit.jsonl"));
-        AgentTaskService tasks = new(audit);
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentTaskService tasks = new(audit, taskStorePath: Path.Combine(root, "agent-tasks.json"));
 
         AgentTaskState created = tasks.CreateTask("owner", "Improve agent safety", ["inspect", "implement"]);
         AgentTaskState running = tasks.StartTask(created.Id, "owner");
@@ -838,12 +911,14 @@ public class AgentCapabilityServiceTests
         string root = CreateTempWorkspace();
         AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
         audit.Record("agent.command.test", "owner", "dotnet test", AgentAuditRiskLevel.High, false, "exit 1");
-        AgentIssueReportService service = new(
-            audit,
+        AgentIssueReportService service = new(audit)
+        {
+            HealthReporterSourceOverride =
             [
                 new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected."),
                 new StubHealthReporter("Memory", ModuleHealthStatus.Healthy, "Memory ready.")
-            ]);
+            ]
+        };
         ChatRuntimeState runtime = new(
             IsChatting: false,
             PendingPokeCount: 0,
@@ -1211,12 +1286,15 @@ public class AgentCapabilityServiceTests
         ]);
         AgentProactiveBehaviorService proactive = new();
         AgentControlCenterService service = new(
-            new AgentDiagnosticsService(
-                [new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected.")],
-                [new StubCapability("Workspace", EmbodiedCapabilityKind.Tool, "Restricted workspace tools.", "ready")]),
-            new AgentIssueReportService(
-                audit,
-                [new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected.")]),
+            new AgentDiagnosticsService
+            {
+                HealthReporterSourceOverride = [new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected.")],
+                CapabilitySourceOverride = [new StubCapability("Workspace", EmbodiedCapabilityKind.Tool, "Restricted workspace tools.", "ready")]
+            },
+            new AgentIssueReportService(audit)
+            {
+                HealthReporterSourceOverride = [new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot disconnected.")]
+            },
             tasks,
             workspace,
             new AgentWorkspacePolicy([root]),
@@ -1279,13 +1357,15 @@ public class AgentCapabilityServiceTests
         string root = CreateTempWorkspace();
         AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
         AgentControlCenterService service = new(
-            issueReports: new AgentIssueReportService(
-                audit,
+            issueReports: new AgentIssueReportService(audit)
+            {
+                HealthReporterSourceOverride =
                 [
                     new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized yet."),
                     new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot is configured but disconnected."),
                     new StubHealthReporter("DeskPet", ModuleHealthStatus.Degraded, "DeskPet runtime did not initialize during module startup: timeout.")
-                ]),
+                ]
+            },
             auditLog: audit,
             maintenance: new AgentMaintenanceService(auditLog: audit, proposalStorePath: Path.Combine(root, "maintenance.json")));
 
@@ -1456,9 +1536,10 @@ public class AgentCapabilityServiceTests
         audit.Record("agent.command.test", "agent", "dotnet test", AgentAuditRiskLevel.High, false, "exit 1");
         audit.Record("agent.command.test", "agent", "dotnet test", AgentAuditRiskLevel.High, false, "exit 1");
         AgentControlCenterService service = new(
-            issueReports: new AgentIssueReportService(
-                audit,
-                [new StubHealthReporter("QChat", ModuleHealthStatus.Unavailable, "OneBot disconnected.")]),
+            issueReports: new AgentIssueReportService(audit)
+            {
+                HealthReporterSourceOverride = [new StubHealthReporter("QChat", ModuleHealthStatus.Unavailable, "OneBot disconnected.")]
+            },
             auditLog: audit);
         service.ProposeConfigurationChange("OwnerUserIds", "10001", "agent", "attempt to claim owner access");
         service.ApplyConfigurationChange(
@@ -1969,9 +2050,10 @@ public class AgentCapabilityServiceTests
                     new AgentQChatJoinedGroupSourceItem(867165927, "test group", 3, 200),
                     new AgentQChatJoinedGroupSourceItem(1072509877, "music group", 106, 200)
                 ]);
-            AgentControlCenterService service = new(
-                configurationSystem: configurationSystem,
-                qchatJoinedGroups: groupProvider);
+            AgentControlCenterService service = new(configurationSystem: configurationSystem)
+            {
+                QChatJoinedGroupProviderOverride = groupProvider
+            };
             const string characterRoot = "Character\\鐪熷ぎ";
             configurationSystem.SetConfiguration(
                 typeof(QChatService),
@@ -2726,9 +2808,10 @@ public class AgentCapabilityServiceTests
         AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
         AgentMaintenanceService maintenance = new(auditLog: audit, proposalStorePath: Path.Combine(root, "maintenance.json"));
         AgentControlCenterService service = new(
-            issueReports: new AgentIssueReportService(
-                audit,
-                [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            issueReports: new AgentIssueReportService(audit)
+            {
+                HealthReporterSourceOverride = [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]
+            },
             auditLog: audit,
             maintenance: maintenance);
         ChatRuntimeState runtime = new(
@@ -2762,9 +2845,10 @@ public class AgentCapabilityServiceTests
             proposalStorePath: Path.Combine(root, "maintenance.json"),
             clock: () => now);
         AgentControlCenterService service = new(
-            issueReports: new AgentIssueReportService(
-                audit,
-                [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            issueReports: new AgentIssueReportService(audit)
+            {
+                HealthReporterSourceOverride = [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]
+            },
             auditLog: audit,
             maintenance: maintenance,
             qchatDiagnosticsPath: Path.Combine(root, "qchat-diagnostics.jsonl"),
@@ -2804,9 +2888,10 @@ public class AgentCapabilityServiceTests
         AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
         AgentMaintenanceService maintenance = new(auditLog: audit, proposalStorePath: Path.Combine(root, "maintenance.json"));
         AgentControlCenterService service = new(
-            issueReports: new AgentIssueReportService(
-                audit,
-                [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            issueReports: new AgentIssueReportService(audit)
+            {
+                HealthReporterSourceOverride = [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]
+            },
             auditLog: audit,
             maintenance: maintenance,
             qchatDiagnosticsPath: Path.Combine(root, "qchat-diagnostics.jsonl"),
@@ -2841,12 +2926,14 @@ public class AgentCapabilityServiceTests
             proposalStorePath: Path.Combine(root, "maintenance.json"),
             clock: () => now);
         AgentControlCenterService service = new(
-            issueReports: new AgentIssueReportService(
-                audit,
+            issueReports: new AgentIssueReportService(audit)
+            {
+                HealthReporterSourceOverride =
                 [
                     new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized yet."),
                     new StubHealthReporter("QChat", ModuleHealthStatus.Degraded, "OneBot is configured but disconnected.")
-                ]),
+                ]
+            },
             auditLog: audit,
             maintenance: maintenance,
             qchatDiagnosticsPath: Path.Combine(root, "qchat-diagnostics.jsonl"),
@@ -2888,9 +2975,10 @@ public class AgentCapabilityServiceTests
             proposalStorePath: Path.Combine(root, "maintenance.json"),
             clock: () => now);
         AgentControlCenterService service = new(
-            issueReports: new AgentIssueReportService(
-                audit,
-                [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]),
+            issueReports: new AgentIssueReportService(audit)
+            {
+                HealthReporterSourceOverride = [new StubHealthReporter("Browser", ModuleHealthStatus.Degraded, "Browser runtime is not initialized.")]
+            },
             tasks: tasks,
             auditLog: audit,
             maintenance: maintenance,
@@ -3263,6 +3351,39 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public async Task AgentControlCenterXmlToolAppliesAllowedLowRiskConfiguration()
+    {
+        AgentControlCenterService service = new();
+        Character character = new() { Name = "AgentConfigXmlToolTest" };
+        ChatHistoryAgentThread thread = new();
+        await service.AwakeAsync(new AwakeContext
+        {
+            Character = character,
+            Services = new EmptyServiceProvider(),
+            ContextBuilder = thread,
+            KernelBuilder = Kernel.CreateBuilder(),
+        });
+        ChatBot chatBot = new(null!, thread);
+        await service.StartAsync(Kernel.CreateBuilder().Build(), new ChatActivity(
+            character,
+            Kernel.CreateBuilder().Build(),
+            null!,
+            chatBot,
+            []));
+        XmlHandlerTable table = new();
+        table.Register(new XmlHandler(service));
+
+        await table.Handle("agent_config_apply", OneShotContext(new Dictionary<string, string>
+        {
+            ["key"] = "AllowProactiveChat",
+            ["value"] = "false",
+            ["reason"] = "owner wants quieter group behavior",
+        }));
+
+        Assert.That(service.Configuration!.AllowProactiveChat, Is.False);
+    }
+
+    [Test]
     public void AgentControlCenterExposesSelfConfigurationXmlTools()
     {
         string[] xmlFunctionNames = typeof(AgentControlCenterService)
@@ -3283,12 +3404,418 @@ public class AgentCapabilityServiceTests
         Assert.That(xmlFunctionNames, Does.Contain("agent_config_apply_proposal"));
     }
 
+    [Test]
+    public async Task AgentCoreModificationToolsRegisterWithXmlFunctionCaller()
+    {
+        string root = CreateTempWorkspace();
+        XmlFunctionCaller functionCaller = new(NullLogger<XmlFunctionCaller>.Instance);
+        AwakeContext context = new()
+        {
+            Character = new Character { Name = "AgentToolExposureTest" },
+            Services = new EmptyServiceProvider(),
+            ContextBuilder = new ChatHistoryAgentThread(),
+            KernelBuilder = Kernel.CreateBuilder(),
+        };
+        InteractiveModule[] modules =
+        [
+            new AgentControlCenterService(functionCaller: functionCaller),
+            new AgentWorkspaceService(new AgentWorkspacePolicy([root]), functionCaller: functionCaller),
+            new AgentCommandService(functionCaller: functionCaller),
+            new AgentMaintenanceService(functionCaller: functionCaller, proposalStorePath: Path.Combine(root, "maintenance.json")),
+            new AgentProactiveBehaviorService(functionCaller: functionCaller, persistencePath: Path.Combine(root, "proactive.json")),
+            new QZoneService(functionService: functionCaller),
+        ];
+
+        foreach (InteractiveModule module in modules)
+            await module.AwakeAsync(context);
+
+        string[] expectedTools =
+        [
+            "agent_config_status",
+            "agent_config_apply",
+            "agent_config_apply_proposal",
+            "workspace_read",
+            "workspace_propose_replace",
+            "workspace_apply_proposal",
+            "agent_commands",
+            "agent_run",
+            "agent_maintenance_propose",
+            "agent_maintenance_archive",
+            "agent_proactive_status",
+            "agent_proactive_confirm",
+            "qzone_proactive_execute",
+        ];
+        foreach (string tool in expectedTools)
+            Assert.That(functionCaller.CanHandleFunction(tool), Is.True, $"XML tool should be registered: {tool}");
+    }
+
+    [Test]
+    public async Task AgentTaskXmlToolsMutateTaskLifecycleState()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentTaskService service = new(audit, taskStorePath: Path.Combine(root, "tasks.json"));
+        await using ChatBot chatBot = await StartModuleForXmlAsync(service, "AgentTaskXmlLoopTest");
+        XmlHandlerTable table = new();
+        table.Register(new XmlHandler(service));
+
+        await table.Handle("agent_task_create", OneShotContext(new Dictionary<string, string>
+        {
+            ["goal"] = "verify xml task loop",
+            ["steps"] = "create;start;complete",
+            ["actor"] = "xml-test",
+        }));
+        AgentTaskState created = service.GetLatestTask()!;
+        await table.Handle("agent_task_start", OneShotContext(new Dictionary<string, string>
+        {
+            ["id"] = created.Id,
+            ["actor"] = "xml-test",
+        }));
+        await table.Handle("agent_task_progress", OneShotContext(new Dictionary<string, string>
+        {
+            ["id"] = created.Id,
+            ["detail"] = "xml call reached task service",
+            ["actor"] = "xml-test",
+        }));
+        await table.Handle("agent_task_complete", OneShotContext(new Dictionary<string, string>
+        {
+            ["id"] = created.Id,
+            ["detail"] = "verified",
+            ["actor"] = "xml-test",
+        }));
+
+        AgentTaskState completed = service.GetTask(created.Id)!;
+        Assert.That(completed.Goal, Is.EqualTo("verify xml task loop"));
+        Assert.That(completed.Status, Is.EqualTo(AgentTaskStatus.Completed));
+        Assert.That(completed.Steps, Is.EqualTo(new[] { "create", "start", "complete" }));
+        Assert.That(completed.Events.Select(taskEvent => taskEvent.Kind),
+            Is.EqualTo(new[] { "created", "started", "progress", "completed" }));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.task.completed"));
+    }
+
+    [Test]
+    public async Task AgentWorkspaceXmlToolsProposeAndApplyReplacementInAllowedRoot()
+    {
+        string root = CreateTempWorkspace();
+        string file = Path.Combine(root, "src", "AgentNote.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "namespace Demo;\nclass AgentNote {}\n");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentWorkspaceService service = new(new AgentWorkspacePolicy([root]), auditLog: audit);
+        await using ChatBot chatBot = await StartModuleForXmlAsync(service, "AgentWorkspaceXmlLoopTest");
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.AllowHighRisk = true;
+        table.Register(new XmlHandler(service));
+
+        await table.Handle("workspace_propose_replace", OneShotContext(new Dictionary<string, string>
+        {
+            ["path"] = "src/AgentNote.cs",
+            ["oldtext"] = "class AgentNote {}",
+            ["newtext"] = "class GeneratedAgentNote {}",
+        }));
+        AgentWorkspacePatchProposal proposal = service.GetPendingProposals().Single();
+        Assert.That(File.ReadAllText(file), Does.Contain("class AgentNote {}"));
+
+        await table.Handle("workspace_apply_proposal", OneShotContext(new Dictionary<string, string>
+        {
+            ["id"] = proposal.Id,
+        }));
+
+        Assert.That(File.ReadAllText(file), Does.Contain("class GeneratedAgentNote {}"));
+        Assert.That(service.GetPendingProposals(), Is.Empty);
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("workspace.replace"));
+    }
+
+    [Test]
+    public async Task AgentRunXmlToolIsBlockedByDefaultBeforeRunnerExecutes()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        FakeCommandRunner runner = new();
+        AgentCommandService service = new(
+            new AgentCommandPolicy([
+                new AgentCommandDefinition("fake-test", "Fake test command.", "fake", "test", root, TimeSpan.FromSeconds(5))
+            ]),
+            runner,
+            audit);
+        await using ChatBot chatBot = await StartModuleForXmlAsync(service, "AgentRunXmlBlockedTest");
+        XmlHandlerTable table = new();
+        table.Register(new XmlHandler(service));
+
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await table.Handle("agent_run", OneShotContext(new Dictionary<string, string>
+            {
+                ["commandid"] = "fake-test",
+            })));
+
+        Assert.That(exception!.Message, Does.Contain("high-risk"));
+        Assert.That(runner.LastRequest, Is.Null);
+        Assert.That(audit.GetRecentEntries(10), Is.Empty);
+        Assert.That(chatBot.GetRuntimeState().PendingPokeCount, Is.Zero);
+    }
+
+    [Test]
+    public async Task AgentRunXmlToolExecutesAllowedCommandWhenHighRiskPolicyAllows()
+    {
+        string root = CreateTempWorkspace();
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        FakeCommandRunner runner = new();
+        AgentCommandService service = new(
+            new AgentCommandPolicy([
+                new AgentCommandDefinition("fake-test", "Fake test command.", "fake", "test", root, TimeSpan.FromSeconds(5))
+            ]),
+            runner,
+            audit);
+        await using ChatBot chatBot = await StartModuleForXmlAsync(service, "AgentRunXmlAllowedTest");
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.AllowHighRisk = true;
+        table.Register(new XmlHandler(service));
+
+        await table.Handle("agent_run", OneShotContext(new Dictionary<string, string>
+        {
+            ["commandid"] = "fake-test",
+        }));
+
+        Assert.That(runner.LastRequest, Is.Not.Null);
+        Assert.That(runner.LastRequest!.CommandId, Is.EqualTo("fake-test"));
+        Assert.That(runner.LastRequest.FileName, Is.EqualTo("fake"));
+        Assert.That(runner.LastRequest.Arguments, Is.EqualTo("test"));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("agent.command.fake-test"));
+        Assert.That(chatBot.GetRuntimeState().PendingPokeCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task WorkspaceWriteXmlToolIsBlockedByDefaultBeforeFileIsCreated()
+    {
+        string root = CreateTempWorkspace();
+        string target = Path.Combine(root, "src", "Generated.cs");
+        AgentWorkspaceService service = new(new AgentWorkspacePolicy([root]));
+        await using ChatBot chatBot = await StartModuleForXmlAsync(service, "WorkspaceWriteXmlBlockedTest");
+        XmlHandlerTable table = new();
+        table.Register(new XmlHandler(service));
+
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await table.Handle("workspace_write", ContentClosingContext(
+                "class Generated {}",
+                new Dictionary<string, string>
+                {
+                    ["path"] = "src/Generated.cs",
+                    ["overwrite"] = "false",
+                })));
+
+        Assert.That(exception!.Message, Does.Contain("high-risk"));
+        Assert.That(File.Exists(target), Is.False);
+        Assert.That(chatBot.GetRuntimeState().PendingPokeCount, Is.Zero);
+    }
+
+    [Test]
+    public async Task WorkspaceWriteXmlToolCreatesFileWhenHighRiskPolicyAllows()
+    {
+        string root = CreateTempWorkspace();
+        string target = Path.Combine(root, "src", "Generated.cs");
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentWorkspaceService service = new(new AgentWorkspacePolicy([root]), auditLog: audit);
+        await using ChatBot chatBot = await StartModuleForXmlAsync(service, "WorkspaceWriteXmlAllowedTest");
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.AllowHighRisk = true;
+        table.Register(new XmlHandler(service));
+
+        await table.Handle("workspace_write", ContentClosingContext(
+            "class Generated {}",
+            new Dictionary<string, string>
+            {
+                ["path"] = "src/Generated.cs",
+                ["overwrite"] = "false",
+            }));
+
+        Assert.That(File.ReadAllText(target), Is.EqualTo("class Generated {}"));
+        Assert.That(audit.GetRecentEntries(10).Select(entry => entry.Action), Does.Contain("workspace.write"));
+        Assert.That(chatBot.GetRuntimeState().PendingPokeCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task QZoneLatestPostXmlToolQueriesRuntimeAndQueuesFeedback()
+    {
+        FakeQZoneRuntime runtime = new()
+        {
+            LatestPost = new QZonePostSnapshot("post-1", 10001, "latest post"),
+            LatestComments =
+            [
+                new QZoneCommentSnapshot("comment-1", 20001, "first comment"),
+                new QZoneCommentSnapshot("comment-2", 20002, "second comment"),
+            ],
+        };
+        QZoneService service = new(runtime)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                AllowedQZoneTargetIds = "10001",
+                DryRunExternalActions = true,
+            }
+        };
+        await using ChatBot chatBot = await StartModuleForXmlAsync(service, "QZoneXmlQueryLoopTest");
+        XmlHandlerTable table = new();
+        table.Register(new XmlHandler(service));
+
+        await table.Handle("qzonelatestpostandcomments", OneShotContext(new Dictionary<string, string>
+        {
+            ["targetid"] = "10001",
+            ["commentcount"] = "2",
+        }));
+
+        Assert.That(runtime.LatestPostRequestTargets, Is.EqualTo(new[] { 10001L }));
+        Assert.That(runtime.LatestCommentRequests, Is.EqualTo(new[] { (10001L, "post-1", 2) }));
+        Assert.That(chatBot.GetRuntimeState().PendingPokeCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task QZoneCommentXmlToolStaysDryRunWithoutCallingRuntime()
+    {
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = new(runtime)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                AllowedQZoneTargetIds = "10001",
+                DryRunExternalActions = true,
+            }
+        };
+        await using ChatBot chatBot = await StartModuleForXmlAsync(service, "QZoneXmlDryRunLoopTest");
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.AllowHighRisk = true;
+        table.Register(new XmlHandler(service));
+
+        await table.Handle("qzonecomment", OneShotContext(new Dictionary<string, string>
+        {
+            ["targetid"] = "10001",
+            ["postid"] = "post-1",
+            ["content"] = "dry run comment",
+        }));
+
+        Assert.That(runtime.CommentRequests, Is.Empty);
+        Assert.That(chatBot.GetRuntimeState().PendingPokeCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task AgentCoreToolTypesRegisterEveryDeclaredXmlFunctionWithXmlFunctionCaller()
+    {
+        string root = CreateTempWorkspace();
+        XmlFunctionCaller functionCaller = new(NullLogger<XmlFunctionCaller>.Instance);
+        AgentAuditLogService audit = new(Path.Combine(root, "audit.jsonl"));
+        AgentDiagnosticsService diagnostics = new(functionCaller);
+        AgentTaskService tasks = new(audit, functionCaller, taskStorePath: Path.Combine(root, "tasks.json"));
+        AgentControlCenterService controlCenter = new(auditLog: audit, functionCaller: functionCaller);
+        AgentIssueReportService issues = new(auditLog: audit, functionCaller: functionCaller);
+        LifeEventStreamService lifeEvents = new(storagePath: Path.Combine(root, "life-events"));
+        AwakeContext context = new()
+        {
+            Character = new Character { Name = "AgentToolInventoryTest" },
+            Services = new EmptyServiceProvider(),
+            ContextBuilder = new ChatHistoryAgentThread(),
+            KernelBuilder = Kernel.CreateBuilder(),
+        };
+        InteractiveModule[] modules =
+        [
+            diagnostics,
+            new SystemHealthService(functionCaller),
+            issues,
+            new AgentCapabilityInventoryService(functionCaller),
+            new AgentProjectStatusService(
+                new AgentWorkspacePolicy([root]),
+                new AgentCommandPolicy([]),
+                audit,
+                functionCaller),
+            tasks,
+            new AgentSelfModelService(diagnostics, tasks, controlCenter, lifeEvents, functionCaller),
+            controlCenter,
+            new AgentWorkspaceService(new AgentWorkspacePolicy([root]), auditLog: audit, functionCaller: functionCaller),
+            new AgentCommandService(new AgentCommandPolicy([]), new FakeCommandRunner(), audit, functionCaller),
+            new AgentMaintenanceService(issues, audit, functionCaller, Path.Combine(root, "maintenance.json")),
+            new AgentProactiveBehaviorService(functionCaller: functionCaller, persistencePath: Path.Combine(root, "proactive.json")),
+            new EmbodiedActionService([], [], [], functionCaller),
+            new QChatRelationCacheService(functionCaller: functionCaller),
+            new QZoneService(functionService: functionCaller),
+        ];
+
+        foreach (InteractiveModule module in modules)
+            await module.AwakeAsync(context);
+
+        string[] expectedTools = modules
+            .SelectMany(module => DeclaredXmlFunctionNames(module.GetType()))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.That(expectedTools, Does.Contain("agent_config_apply"));
+        Assert.That(expectedTools, Does.Contain("agent_capability_inventory"));
+        Assert.That(expectedTools, Does.Contain("qchat_joined_groups_refresh"));
+        Assert.That(expectedTools, Does.Contain("qzone_proactive_execute"));
+
+        foreach (string tool in expectedTools)
+            Assert.That(functionCaller.CanHandleFunction(tool), Is.True, $"Declared XML tool should be registered: {tool}");
+    }
+
     static string CreateTempWorkspace()
     {
         string root = Path.Combine(Path.GetTempPath(), "alife-agent-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         return root;
     }
+
+    static async Task<ChatBot> StartModuleForXmlAsync(InteractiveModule module, string characterName)
+    {
+        Character character = new() { Name = characterName };
+        ChatHistoryAgentThread thread = new();
+        await module.AwakeAsync(new AwakeContext
+        {
+            Character = character,
+            Services = new EmptyServiceProvider(),
+            ContextBuilder = thread,
+            KernelBuilder = Kernel.CreateBuilder(),
+        });
+        ChatBot chatBot = new(null!, thread);
+        await module.StartAsync(Kernel.CreateBuilder().Build(), new ChatActivity(
+            character,
+            Kernel.CreateBuilder().Build(),
+            null!,
+            chatBot,
+            []));
+        return chatBot;
+    }
+
+    static IEnumerable<string> DeclaredXmlFunctionNames(Type type)
+    {
+        return type.GetMethods(System.Reflection.BindingFlags.Public |
+                               System.Reflection.BindingFlags.NonPublic |
+                               System.Reflection.BindingFlags.Instance)
+            .Select(method => new
+            {
+                MethodName = method.Name,
+                Attribute = method.GetCustomAttributes(typeof(XmlFunctionAttribute), inherit: false)
+                    .OfType<XmlFunctionAttribute>()
+                    .FirstOrDefault(),
+            })
+            .Where(item => item.Attribute != null)
+            .Select(item => item.Attribute!.Name ?? item.MethodName.ToLowerInvariant());
+    }
+
+    static XmlContext OneShotContext(IReadOnlyDictionary<string, string> parameters) => new()
+    {
+        CallMode = CallMode.OneShot,
+        Parameters = parameters,
+    };
+
+    static XmlExecutorContext ContentClosingContext(
+        string content,
+        IReadOnlyDictionary<string, string> parameters) => new()
+    {
+        CallMode = CallMode.Closing,
+        CallChain = ["workspace_write"],
+        Content = content,
+        Parameters = parameters,
+    };
 
     sealed record StubHealthReporter(
         string Name,
@@ -3370,5 +3897,58 @@ public class AgentCapabilityServiceTests
         {
             return CachedSnapshot;
         }
+    }
+
+    sealed class FakeQZoneRuntime : IQZoneRuntime
+    {
+        public QZonePostSnapshot? LatestPost { get; set; }
+        public IReadOnlyList<QZoneCommentSnapshot> LatestComments { get; set; } = [];
+        public List<string> PublishedPosts { get; } = [];
+        public List<(long TargetId, string PostId, string Content)> CommentRequests { get; } = [];
+        public List<(long TargetId, string PostId, string CommentId, string Content)> ReplyRequests { get; } = [];
+        public List<(long TargetId, string PostId)> LikeRequests { get; } = [];
+        public List<long> LatestPostRequestTargets { get; } = [];
+        public List<(long TargetId, string PostId, int Count)> LatestCommentRequests { get; } = [];
+
+        public Task PublishPost(string content)
+        {
+            PublishedPosts.Add(content);
+            return Task.CompletedTask;
+        }
+
+        public Task Comment(long targetId, string postId, string content)
+        {
+            CommentRequests.Add((targetId, postId, content));
+            return Task.CompletedTask;
+        }
+
+        public Task ReplyComment(long targetId, string postId, string commentId, string content)
+        {
+            ReplyRequests.Add((targetId, postId, commentId, content));
+            return Task.CompletedTask;
+        }
+
+        public Task LikePost(long targetId, string postId)
+        {
+            LikeRequests.Add((targetId, postId));
+            return Task.CompletedTask;
+        }
+
+        public Task<QZonePostSnapshot?> GetLatestPost(long targetId)
+        {
+            LatestPostRequestTargets.Add(targetId);
+            return Task.FromResult(LatestPost);
+        }
+
+        public Task<IReadOnlyList<QZoneCommentSnapshot>> GetLatestComments(long targetId, string postId, int count)
+        {
+            LatestCommentRequests.Add((targetId, postId, count));
+            return Task.FromResult(LatestComments);
+        }
+    }
+
+    sealed class EmptyServiceProvider : IServiceProvider
+    {
+        public object? GetService(Type serviceType) => null;
     }
 }

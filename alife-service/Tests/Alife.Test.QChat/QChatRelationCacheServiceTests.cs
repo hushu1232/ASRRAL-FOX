@@ -107,6 +107,27 @@ public class QChatRelationCacheServiceTests
         Assert.That(health.Summary, Does.Contain("runtime is unavailable"));
     }
 
+    [Test]
+    public async Task RelationCacheCanAttachRuntimeAfterConstruction()
+    {
+        QChatRelationCacheService service = new();
+        FakeOneBotRuntime runtime = new()
+        {
+            IsConnected = true,
+            GroupLists =
+            [
+                new OneBotGroupInfo { GroupId = 867165927, GroupName = "test group", MemberCount = 3, MaxMemberCount = 200 }
+            ]
+        };
+
+        service.AttachOneBotRuntime(runtime);
+        QChatGroupListCacheSnapshot snapshot = await service.RefreshJoinedGroupsAsync();
+
+        Assert.That(snapshot.Groups, Has.Count.EqualTo(1));
+        Assert.That(snapshot.Groups[0].GroupId, Is.EqualTo(867165927));
+        Assert.That(((IModuleHealthReporter)service).GetHealth().Status, Is.EqualTo(ModuleHealthStatus.Healthy));
+    }
+
     sealed class FakeOneBotRuntime : IOneBotRuntime
     {
         public event Action<OneBotBaseEvent>? EventReceived;

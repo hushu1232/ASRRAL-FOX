@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
@@ -44,7 +45,7 @@ public record QChatConfig
     public string AllowedGroupIds { get; set; } = "";
     public bool AllowMentionOutsideAllowedGroups { get; set; } = true;
     public string AllowedPrivateUserIds { get; set; } = "";
-    public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。决定不回复时不要输出“不回复/保持安静”等状态文字，直接不发送QQ消息。群聊普通聊天不要默认@，需要指向某人时优先用自然称呼，例如主人、妈妈、群名片、昵称或“你”；只有强提醒、重要触达或主人明确要求时才使用CQ at。回答前先在内部判断依据是否可靠，但不要展示思考过程。不能把记忆或猜测当作实时事实；涉及当前群列表、群成员、权限、报错、接口状态等实时问题时，必须优先使用工具、日志或当前配置确认。没有可靠依据时要自然承认不确定，或说需要先查一下，不要编造。";
+    public string AppendChatPrompt { get; set; } = "QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。当前人设是16岁猫娘雨宫咪绪：亲近、聪明、柔软、有一点少女式别扭，会自然使用少量“喵”作为亲近撒娇时的语气词；技术说明、权限、安全、报错、白名单和配置状态回复里尽量不用。决定不回复时不要输出“不回复/保持安静”等状态文字，直接不发送QQ消息。群聊普通聊天不要默认@，需要指向某人时优先用自然称呼，例如主人、妈妈、群名片、昵称或“你”；只有强提醒、重要触达或主人明确要求时才使用CQ at。回答前先在内部判断依据是否可靠，但不要展示思考过程。不能把记忆或猜测当作实时事实；涉及当前群列表、群成员、权限、白名单、报错、接口状态等实时问题时，必须优先使用工具、日志或当前配置确认。没有可靠依据时要自然承认不确定，或说需要先查一下，不要编造。";
     //群监听唤醒
     public string IgnoredGroup { get; set; } = "";//完全屏蔽消息的群，不会收到这些群的任何信息
     public string WakingWords { get; set; } = "";//原始群消息中触发开启群消息监听的唤醒词，以逗号分隔
@@ -150,8 +151,8 @@ public class QChatService(
 {
     static readonly string[] QuietModeSleepAcknowledgements =
     [
-        "主人真会使唤猫娘，咪绪先安静待命，叫我醒醒就回来喵",
-        "好哦，我把声音放轻一点，先趴在旁边等你叫我",
+        "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来",
+        "好哦，我把声音放轻一点，先在旁边等你叫我",
         "收到，我先乖乖安静下来，你叫我醒醒我就回来",
         "那我先眯一会儿，不吵你了，醒醒的时候叫我"
     ];
@@ -160,7 +161,7 @@ public class QChatService(
     [
         "听到啦，咪绪回来陪你了喵",
         "嗯，我醒着了，回来听你说",
-        "在呢，刚把耳朵竖起来",
+        "在呢，我重新把注意力放回来",
         "醒啦，我重新看这边"
     ];
 
@@ -210,7 +211,7 @@ public class QChatService(
               - [CQ:record,file=1.mp3]：发送音频
               - [CQ:video,file=1.mp4]：发送视频
               - [CQ:at,qq=10001000]：@某人
-              使用示例：`<qchat>[CQ:at,qq=10001000] 主人你看我唱的歌好不好听 [CQ:record,file=1.mp3]</qchar>`
+              使用示例：`<qchat>[CQ:at,qq=10001000] 主人你看我唱的歌好不好听 [CQ:record,file=1.mp3]</qchat>`
 
               ## 表情库功能
               你有一个丰富的预设表情库，可用在 QImage 中直接指定表情库中的名称或分类名快速发送表情。你要积极的使用该功能，来增加聊天的趣味性。
@@ -344,6 +345,78 @@ public class QChatService(
             return;
 
         SetQuietMode(enabled, reason ?? "agent-control");
+    }
+
+    [XmlFunction(FunctionMode.OneShot, "qchat_allowlist_status", budgetCost: 1)]
+    [Description("查看当前 QQ 白名单和群聊接收策略。涉及实时配置时应调用本工具，不要凭记忆回答。")]
+    public Task QChatAllowlistStatus()
+    {
+        return PublishQChatToolResultAsync(FormatAllowlistStatus(), "qchat-allowlist-status");
+    }
+
+    [XmlFunction(FunctionMode.OneShot, "qchat_allowlist_update", riskLevel: XmlFunctionRiskLevel.High, budgetCost: 3)]
+    [Description("修改 QQ 白名单。仅主人可在 QQ 上下文中执行。target 支持 group/private/mention-outside；action 支持 add/remove/set/clear/enable/disable。")]
+    public Task QChatAllowlistUpdate(
+        [Description("group 修改群白名单；private 修改私聊白名单；mention-outside 修改是否允许非白名单群 @ 唤醒")]
+        string target,
+        [Description("add/remove/set/clear/enable/disable")]
+        string action,
+        [Description("目标 QQ 号或群号；clear/enable/disable 可填 0")]
+        long id = 0)
+    {
+        if (TryAuthorizeOwnerToolControl("qchat_allowlist_update") == false)
+            return PublishQChatToolResultAsync("只有主人可以修改 QQ 白名单。", "qchat-allowlist-update-denied");
+
+        try
+        {
+            string normalizedTarget = NormalizeAllowlistToken(target);
+            string normalizedAction = NormalizeAllowlistToken(action);
+            string result;
+
+            if (normalizedTarget is "group" or "groups")
+            {
+                Configuration!.AllowedGroupIds = UpdateAllowlistIds(Configuration.AllowedGroupIds, normalizedAction, id);
+                result = $"群白名单已更新：{FormatAllowlistIds(Configuration.AllowedGroupIds)}";
+            }
+            else if (normalizedTarget is "private" or "privates" or "user" or "users")
+            {
+                Configuration!.AllowedPrivateUserIds = UpdateAllowlistIds(Configuration.AllowedPrivateUserIds, normalizedAction, id);
+                result = $"私聊白名单已更新：{FormatAllowlistIds(Configuration.AllowedPrivateUserIds)}";
+            }
+            else if (normalizedTarget is "mentionoutside" or "mention-outside" or "outside-mention")
+            {
+                Configuration!.AllowMentionOutsideAllowedGroups = normalizedAction switch
+                {
+                    "enable" or "on" or "true" or "allow" => true,
+                    "disable" or "off" or "false" or "deny" => false,
+                    _ => throw new InvalidOperationException("mention-outside 只支持 enable/disable。")
+                };
+                result = $"非白名单群 @ 唤醒：{Configuration.AllowMentionOutsideAllowedGroups}";
+            }
+            else
+            {
+                throw new InvalidOperationException("target 必须是 group、private 或 mention-outside。");
+            }
+
+            WriteQChatDiagnostic("qchat-allowlist-updated", "QQ allowlist was updated by owner tool control.", new {
+                target = normalizedTarget,
+                action = normalizedAction,
+                id,
+                Configuration!.AllowedGroupIds,
+                Configuration.AllowedPrivateUserIds,
+                Configuration.AllowMentionOutsideAllowedGroups
+            });
+            return PublishQChatToolResultAsync($"{result}\n\n{FormatAllowlistStatus()}", "qchat-allowlist-update");
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-allowlist-update-failed", ex.Message, new {
+                target,
+                action,
+                id
+            }, ex);
+            return PublishQChatToolResultAsync($"QQ 白名单修改失败：{ex.Message}", "qchat-allowlist-update-failed");
+        }
     }
 
     void TryPokeSendFailure(string message)
@@ -910,6 +983,13 @@ public class QChatService(
     readonly List<QChatGroupDecisionSnapshot> recentGroupDecisions = [];
     const int MaxRecentGroupDecisions = 50;
     readonly AsyncLocal<QChatReplySession?> currentReplySession = new();
+    readonly SemaphoreSlim inboundModelDispatchGate = new(1, 1);
+    readonly Channel<OneBotBaseEvent> oneBotEventQueue = Channel.CreateUnbounded<OneBotBaseEvent>(
+        new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
     readonly object activeReplySessionGate = new();
     readonly Dictionary<QChatReplySession, int> activeReplySessions = new();
     static readonly object emptyGroupFlushDiagnosticGate = new();
@@ -920,6 +1000,8 @@ public class QChatService(
     AgentPermissionRequest? currentPermissionRequest;
     DateTime currentPermissionExpiresAt = DateTime.MinValue;
     DateTime lastReconnectAttemptTime = DateTime.MinValue;
+    CancellationTokenSource? oneBotEventProcessingCancellation;
+    Task? oneBotEventProcessingTask;
     XmlHandler xmlHandler = null!;
     QChatRelationCacheService RelationCache => relationCache ??= injectedRelationCache ?? new QChatRelationCacheService(GetOneBotClient());
 
@@ -934,7 +1016,9 @@ public class QChatService(
         // 注入函数和提示词
         xmlHandler = new(this);
         functionService.RegisterHandler(xmlHandler);
+        RelationCache.AttachOneBotRuntime(oneBotClient);
         RelationCache.DiagnosticWriter = WriteQChatDiagnostic;
+        RelationCache.ToolResultSink = SendCurrentReplySessionToolResultAsync;
         RegisterRelationCacheToolsIfMissing();
         functionService.ExecutionPolicy.AuthorizeHighRiskFunction = AuthorizeHighRiskXmlFunction;
 
@@ -975,6 +1059,8 @@ public class QChatService(
         if (oneBotClient == null)
             throw new NullReferenceException(nameof(oneBotClient));
 
+        oneBotEventProcessingCancellation = new CancellationTokenSource();
+        oneBotEventProcessingTask = ProcessOneBotEventQueueAsync(oneBotEventProcessingCancellation.Token);
         oneBotClient.EventReceived += OnEventReceived;
         ChatBot.ChatOver += ClearPermissionRequest;
         WriteQChatDiagnostic("start", "QChat service starting.", new {
@@ -1010,6 +1096,25 @@ public class QChatService(
     }
     public async ValueTask DisposeAsync()
     {
+        if (oneBotClient != null)
+            oneBotClient.EventReceived -= OnEventReceived;
+        if (oneBotEventProcessingCancellation != null)
+        {
+            await oneBotEventProcessingCancellation.CancelAsync();
+            if (oneBotEventProcessingTask != null)
+            {
+                try
+                {
+                    await oneBotEventProcessingTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+            oneBotEventProcessingCancellation.Dispose();
+            oneBotEventProcessingCancellation = null;
+            oneBotEventProcessingTask = null;
+        }
         if (oneBotClient != null)
         {
             await oneBotClient.DisposeAsync();
@@ -1065,7 +1170,45 @@ public class QChatService(
         }
     }
     
-    async void OnEventReceived(OneBotBaseEvent oneBotEvent)
+    void OnEventReceived(OneBotBaseEvent oneBotEvent)
+    {
+        if (ShouldBypassEventQueueForQuietModeControl(oneBotEvent))
+        {
+            _ = ProcessOneBotEventAsync(oneBotEvent);
+            return;
+        }
+
+        if (oneBotEventQueue.Writer.TryWrite(oneBotEvent) == false)
+        {
+            WriteQChatDiagnostic("event-queue-rejected", "OneBot event could not be queued for processing.", new {
+                eventType = oneBotEvent.GetType().Name
+            });
+        }
+    }
+
+    async Task ProcessOneBotEventQueueAsync(CancellationToken cancellationToken)
+    {
+        await foreach (OneBotBaseEvent oneBotEvent in oneBotEventQueue.Reader.ReadAllAsync(cancellationToken))
+            await ProcessOneBotEventAsync(oneBotEvent);
+    }
+
+    bool ShouldBypassEventQueueForQuietModeControl(OneBotBaseEvent oneBotEvent)
+    {
+        if (oneBotEvent is not OneBotMessageEvent messageEvent)
+            return false;
+        QChatConfig? config = Configuration;
+        if (config == null)
+            return false;
+        bool canControlQuietMode = config.OwnerId != 0 && messageEvent.UserId == config.OwnerId;
+        canControlQuietMode = canControlQuietMode || IsQuietModeWakeUser(messageEvent.UserId);
+        if (canControlQuietMode == false)
+            return false;
+
+        string normalized = NormalizeQuietCommandText(messageEvent.RawMessage, messageEvent.RawMessage);
+        return IsQuietSleepCommand(normalized) || IsQuietWakeCommand(normalized);
+    }
+
+    async Task ProcessOneBotEventAsync(OneBotBaseEvent oneBotEvent)
     {
         try
         {
@@ -1402,7 +1545,7 @@ public class QChatService(
                     senderRole
                 });
                 if (isAwakening)
-                    FlushGroupBuffer(state);
+                    await FlushGroupBufferAsync(state);
             }
             else if (QChatMessageSecurity.ShouldAllowProactiveGroupChat(Configuration!, messageEvent, agentControlCenter?.Configuration))//群聊未激活时（概率接收）
             {
@@ -2034,6 +2177,28 @@ public class QChatService(
         return false;
     }
 
+    bool TryAuthorizeOwnerToolControl(string toolName)
+    {
+        QChatReplySession? replySession = currentReplySession.Value;
+        if (replySession == null)
+            return true;
+
+        if (replySession.SenderRole == QChatSenderRole.Owner)
+            return true;
+
+        WriteQChatDiagnostic(
+            "qchat-owner-tool-control-denied",
+            "QQ owner-only tool control denied because current QQ sender is not owner.",
+            new {
+                toolName,
+                replySession.MessageType,
+                replySession.TargetId,
+                replySession.SenderId,
+                replySession.SenderRole
+            });
+        return false;
+    }
+
     void SetQuietModeCore(bool enabled, string reason, object data)
     {
         IsQuietModeEnabled = enabled;
@@ -2149,6 +2314,11 @@ public class QChatService(
 
     public void FlushGroupBuffer(GroupState state)
     {
+        _ = FlushGroupBufferAsync(state);
+    }
+
+    async Task FlushGroupBufferAsync(GroupState state)
+    {
         state.LastFlushedTime = DateTime.Now;
 
         if (state.MessageBuffer.Count == 0)
@@ -2178,7 +2348,7 @@ public class QChatService(
             permissionRequest?.ActorUserId,
             permissionRequest?.IsMentioned
         });
-        _ = DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest);
+        await DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest);
     }
 
     public void QGroup(long groupId, bool enabled)
@@ -2249,6 +2419,7 @@ public class QChatService(
 
     async Task DispatchInboundChatCoreAsync(QChatInboundMessage message)
     {
+        await inboundModelDispatchGate.WaitAsync();
         QChatReplySession? previousSession = currentReplySession.Value;
         QChatReplySession replySession = new(
             message.MessageType,
@@ -2307,12 +2478,135 @@ public class QChatService(
         {
             UnregisterActiveReplySession(replySession);
             currentReplySession.Value = previousSession;
+            inboundModelDispatchGate.Release();
         }
     }
 
     protected virtual Task<string> DispatchToModelAsync(QChatInboundMessage message)
     {
         return ChatBot.ChatAsync(ChatTextFilter(message.Formatted));
+    }
+
+    async Task PublishQChatToolResultAsync(string message, string source)
+    {
+        if (ChatBot != null)
+            Poke(message);
+
+        await SendCurrentReplySessionToolResultAsync(message);
+        WriteQChatDiagnostic("qchat-tool-result-published", "QChat tool result was published to the model and current QQ session when available.", new {
+            source
+        });
+    }
+
+    async Task SendCurrentReplySessionToolResultAsync(string message)
+    {
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        if (replySession == null)
+            return;
+
+        string outgoing = message.Trim();
+        if (string.IsNullOrEmpty(outgoing) || IsInternalNoReplyStatus(outgoing))
+            return;
+
+        if (TryEnsureQChatReplyTargetAllowed(replySession.MessageType, replySession.TargetId, "relation-cache-tool-result") == false)
+            return;
+        if (ShouldSuppressOutgoingForQuietMode(replySession.MessageType, replySession.TargetId, "relation-cache-tool-result"))
+            return;
+
+        try
+        {
+            await SendTextOrMediaMessageAsync(replySession.MessageType, replySession.TargetId, outgoing, streamText: true);
+            WriteQChatDiagnostic("qchat-tool-result-sent", "QChat read-only tool result was sent to the current QQ session.", new {
+                replySession.MessageType,
+                replySession.TargetId,
+                message = outgoing
+            });
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-send-failed", ex.Message, new {
+                type = replySession.MessageType,
+                targetId = replySession.TargetId,
+                source = "relation-cache-tool-result"
+            }, ex);
+            TryPokeSendFailure(ex.Message);
+        }
+    }
+
+    string FormatAllowlistStatus()
+    {
+        return $"""
+                QQ allowlist status
+                - AllowedGroupIds: {FormatAllowlistIds(Configuration?.AllowedGroupIds)}
+                - AllowedPrivateUserIds: {FormatAllowlistIds(Configuration?.AllowedPrivateUserIds)}
+                - AllowMentionOutsideAllowedGroups: {FormatBool(Configuration?.AllowMentionOutsideAllowedGroups)}
+                - AllowGroupMemberChat: {FormatBool(Configuration?.AllowGroupMemberChat)}
+                - AllowGroupMemberMentions: {FormatBool(Configuration?.AllowGroupMemberMentions)}
+                - AllowProactiveGroupChat: {FormatBool(Configuration?.AllowProactiveGroupChat)}
+                - AllowPrivateGuestChat: {FormatBool(Configuration?.AllowPrivateGuestChat)}
+                """;
+    }
+
+    static string FormatBool(bool? value)
+    {
+        return value == true ? "true" : "false";
+    }
+
+    static string FormatAllowlistIds(string? ids)
+    {
+        string[] normalized = SplitAllowlistIds(ids).ToArray();
+        return normalized.Length == 0 ? "(all)" : string.Join(",", normalized);
+    }
+
+    static string UpdateAllowlistIds(string? currentIds, string action, long id)
+    {
+        string normalizedAction = NormalizeAllowlistToken(action);
+        List<string> ids = SplitAllowlistIds(currentIds).ToList();
+        string value = id.ToString();
+
+        switch (normalizedAction)
+        {
+            case "add":
+                if (id <= 0)
+                    throw new InvalidOperationException("add 需要有效 QQ 号或群号。");
+                if (ids.Contains(value, StringComparer.Ordinal) == false)
+                    ids.Add(value);
+                break;
+            case "remove":
+            case "delete":
+                if (id <= 0)
+                    throw new InvalidOperationException("remove 需要有效 QQ 号或群号。");
+                ids.RemoveAll(item => string.Equals(item, value, StringComparison.Ordinal));
+                break;
+            case "set":
+                if (id <= 0)
+                    throw new InvalidOperationException("set 需要有效 QQ 号或群号。");
+                ids = [value];
+                break;
+            case "clear":
+                ids.Clear();
+                break;
+            default:
+                throw new InvalidOperationException("action 必须是 add、remove、set 或 clear。");
+        }
+
+        return string.Join(",", ids);
+    }
+
+    static IEnumerable<string> SplitAllowlistIds(string? ids)
+    {
+        if (string.IsNullOrWhiteSpace(ids))
+            return [];
+
+        return ids
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(item => long.TryParse(item, out long parsed) && parsed > 0)
+            .Distinct(StringComparer.Ordinal);
+    }
+
+    static string NormalizeAllowlistToken(string? value)
+    {
+        return (value ?? string.Empty).Trim().ToLowerInvariant().Replace("_", "-", StringComparison.Ordinal);
     }
 
     void RegisterActiveReplySession(QChatReplySession replySession)
@@ -2582,10 +2876,21 @@ public class QChatService(
             HasExplicitConfirmation: false,
             Action: $"xml.{function.Name}");
 
+        if (IsOwnerAllowlistUpdate(function, request))
+            return new XmlFunctionExecutionDecision(true, "Owner QQ allowlist control.");
+
         AgentPermissionConfig permissionConfig = QChatMessageSecurity.BuildPermissionConfig(
             Configuration!,
             agentControlCenter?.Configuration);
         return actionAuthorization.AuthorizeXmlFunction(function, request, permissionConfig);
+    }
+
+    bool IsOwnerAllowlistUpdate(XmlFunction function, AgentPermissionRequest request)
+    {
+        return string.Equals(function.Name, "qchat_allowlist_update", StringComparison.OrdinalIgnoreCase)
+               && Configuration?.OwnerId != 0
+               && request.ActorUserId == Configuration?.OwnerId
+               && request.Source is AgentRequestSource.PrivateChat or AgentRequestSource.GroupChat;
     }
 
     IDisposable PushPermissionRequest(AgentPermissionRequest request, TimeSpan ttl)

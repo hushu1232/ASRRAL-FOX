@@ -32,14 +32,14 @@ public sealed record StreamingOutputPolicy(
 
     public static StreamingOutputPolicy QqPrivateText { get; } = new(
         StreamingOutputMode.Sentence,
-        MinBufferedCharacters: 32,
-        MaxBufferedCharacters: 80,
+        MinBufferedCharacters: 120,
+        MaxBufferedCharacters: 260,
         SentenceBoundaries: "。！？.!?\n");
 
     public static StreamingOutputPolicy QqGroupText { get; } = new(
         StreamingOutputMode.Sentence,
-        MinBufferedCharacters: 32,
-        MaxBufferedCharacters: 80,
+        MinBufferedCharacters: 120,
+        MaxBufferedCharacters: 260,
         SentenceBoundaries: "。！？.!?\n");
 }
 

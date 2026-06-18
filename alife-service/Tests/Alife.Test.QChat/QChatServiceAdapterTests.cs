@@ -9,6 +9,7 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using NUnit.Framework;
 using System.IO;
+using System.Reflection;
 using System.Threading;
 
 namespace Alife.Test.QChat;
@@ -74,6 +75,21 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task SendChatAsync_DoesNotSplitMediumCompleteReplyJustForStreaming()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        {
+            Configuration = new QChatConfig { BotId = 999 }
+        };
+        string message = "这是第一段完整但不需要单独发送的说明文字，它只是整条回复的一部分。第二句继续补充，不应该为了制造流式效果拆成两条。";
+
+        await service.SendChatAsync("group", 123, message);
+
+        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (123L, message) }));
+    }
+
+    [Test]
     public void DefaultAppendChatPromptPrefersNaturalAddressingOverGroupAt()
     {
         QChatConfig config = new();
@@ -91,6 +107,18 @@ public class QChatServiceAdapterTests
         Assert.That(config.AppendChatPrompt, Does.Contain("不要展示思考过程"));
         Assert.That(config.AppendChatPrompt, Does.Contain("不能把记忆或猜测当作实时事实"));
         Assert.That(config.AppendChatPrompt, Does.Contain("没有可靠依据时要自然承认不确定"));
+    }
+
+    [Test]
+    public void DefaultAppendChatPromptUsesCurrentCatgirlPersona()
+    {
+        QChatConfig config = new();
+
+        Assert.That(config.AppendChatPrompt, Does.Contain("猫娘"));
+        Assert.That(config.AppendChatPrompt, Does.Contain("雨宫咪绪"));
+        Assert.That(config.AppendChatPrompt, Does.Contain("喵"));
+        Assert.That(config.AppendChatPrompt, Does.Not.Contain("人类少女"));
+        Assert.That(config.AppendChatPrompt, Does.Not.Contain("不代表动物化身份"));
     }
 
     [Test]
@@ -469,6 +497,213 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task RelationCacheJoinedGroupRefreshDuringQqContextRepliesToCurrentGroup()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            GroupLists =
+            [
+                new OneBotGroupInfo { GroupId = 867165927, GroupName = "AstralFoxTest", MemberCount = 3, MaxMemberCount = 200 },
+                new OneBotGroupInfo { GroupId = 768420784, GroupName = "ACG动漫交流会", MemberCount = 184, MaxMemberCount = 200 }
+            ]
+        };
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        QChatRelationCacheService relationCache = new(runtime);
+        QChatService service = new(
+            functionCaller,
+            new NullLogger<QChatService>(),
+            oneBotRuntime: runtime,
+            relationCacheService: relationCache)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowGroupMemberMentions = true,
+                FlushInterval = 0,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        Character character = new() { Name = "QChatRelationReplyTest" };
+        ChatHistoryAgentThread thread = new();
+        AwakeContext awakeContext = new()
+        {
+            Character = character,
+            ContextBuilder = thread,
+            KernelBuilder = Kernel.CreateBuilder()
+        };
+        await functionCaller.AwakeAsync(awakeContext);
+        await relationCache.AwakeAsync(awakeContext);
+        await service.AwakeAsync(awakeContext);
+
+        Kernel kernel = Kernel.CreateBuilder().Build();
+        ChatBot chatBot = new(null!, thread);
+        ChatActivity activity = new(character, kernel, null!, chatBot, []);
+        await functionCaller.StartAsync(kernel, activity);
+        await relationCache.StartAsync(kernel, activity);
+        await service.StartAsync(kernel, activity);
+        service.InboundChatDispatcher = _ => relationCache.RefreshJoinedGroups();
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 867165927,
+            GroupName = "AstralFoxTest",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "[CQ:at,qq=999] 刷新一下你现在加入的群列表，不要靠记忆"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count > 0);
+        Assert.That(runtime.GroupMessages.Single().Target, Is.EqualTo(867165927));
+        Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("AstralFoxTest"));
+        Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("ACG动漫交流会"));
+    }
+
+    [Test]
+    public async Task QChatAllowlistStatusDuringQqContextRepliesToCurrentGroup()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowedGroupIds = "867165927",
+            AllowedPrivateUserIds = "1001",
+            AllowMentionOutsideAllowedGroups = false,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            FlushInterval = 0,
+            EnableBalancedTextStreaming = false
+        };
+        QChatService service = CreateStartedService(runtime, config);
+        service.InboundChatDispatcher = _ => service.QChatAllowlistStatus();
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 867165927,
+            GroupName = "AstralFoxTest",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "[CQ:at,qq=999] 查看白名单状态"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count > 0);
+        Assert.That(runtime.GroupMessages.Single().Target, Is.EqualTo(867165927));
+        Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("867165927"));
+        Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("1001"));
+        Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("AllowMentionOutsideAllowedGroups: false"));
+    }
+
+    [Test]
+    public async Task QChatAllowlistUpdateOwnerCanAddGroupDuringQqContext()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowedGroupIds = "867165927",
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        };
+        QChatService service = CreateStartedService(runtime, config);
+        service.InboundChatDispatcher = _ => service.QChatAllowlistUpdate("group", "add", 768420784);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "把 768420784 加入群白名单"
+        });
+
+        await WaitUntilAsync(() => config.AllowedGroupIds.Contains("768420784", StringComparison.Ordinal));
+        Assert.That(config.AllowedGroupIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            Is.EquivalentTo(new[] { "867165927", "768420784" }));
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("768420784"));
+    }
+
+    [Test]
+    public async Task QChatAllowlistUpdateXmlToolOwnerCanAddGroupDuringQqContext()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowedGroupIds = "867165927",
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        };
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        QChatService service = new(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        {
+            Configuration = config
+        };
+        Character character = new() { Name = "QChatAllowlistXmlToolTest" };
+        ChatHistoryAgentThread thread = new();
+        AwakeContext awakeContext = new()
+        {
+            Character = character,
+            ContextBuilder = thread,
+            KernelBuilder = Kernel.CreateBuilder()
+        };
+        await functionCaller.AwakeAsync(awakeContext);
+        await service.AwakeAsync(awakeContext);
+        Kernel kernel = Kernel.CreateBuilder().Build();
+        ChatBot chatBot = new(null!, thread);
+        ChatActivity activity = new(character, kernel, null!, chatBot, []);
+        await functionCaller.StartAsync(kernel, activity);
+        await service.StartAsync(kernel, activity);
+        service.InboundChatDispatcher = async _ =>
+        {
+            RaiseEvent(chatBot, "ChatReceived", "<qchat_allowlist_update target=\"group\" action=\"add\" id=\"768420784\" />");
+            await WaitUntilAsync(() => config.AllowedGroupIds.Contains("768420784", StringComparison.Ordinal));
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "把 768420784 加入群白名单"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
+        Assert.That(config.AllowedGroupIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            Is.EquivalentTo(new[] { "867165927", "768420784" }));
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("768420784"));
+    }
+
+    [Test]
+    public async Task QChatAllowlistUpdateRejectsNonOwnerDuringQqContext()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowedGroupIds = "867165927",
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        };
+        QChatService service = CreateStartedService(runtime, config);
+        service.InboundChatDispatcher = _ => service.QChatAllowlistUpdate("group", "add", 768420784);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2002,
+            RawMessage = "把 768420784 加入群白名单"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
+        Assert.That(config.AllowedGroupIds, Is.EqualTo("867165927"));
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("只有主人"));
+    }
+
+    [Test]
     public void RelationCacheExposesXmlTools()
     {
         string[] xmlFunctionNames = typeof(QChatRelationCacheService)
@@ -505,9 +740,28 @@ public class QChatServiceAdapterTests
 
         Assert.That(guide, Does.Contain("qchat"));
         Assert.That(guide, Does.Contain("targetid"));
+        Assert.That(guide, Does.Contain("</qchat>"));
         Assert.That(guide, Does.Contain("qchat_quiet_mode"));
+        Assert.That(guide, Does.Contain("qchat_allowlist_status"));
+        Assert.That(guide, Does.Contain("qchat_allowlist_update"));
         Assert.That(guide, Does.Contain("qchat_joined_groups_refresh"));
         Assert.That(guide, Does.Contain("qchat_joined_groups_cache"));
+    }
+
+    [Test]
+    public void GetQChatGuideUsesCorrectQChatClosingTagInUsageExample()
+    {
+        QChatService service = CreateStartedService(new FakeOneBotRuntime(), new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001
+        });
+
+        service.GetQChatGuide();
+
+        string guide = GetPendingPokeText(service);
+        Assert.That(guide, Does.Contain("</qchat>"));
+        Assert.That(guide, Does.Not.Contain("</qchar>"));
     }
 
     [Test]
@@ -744,6 +998,8 @@ public class QChatServiceAdapterTests
         Assert.That(inbound.Formatted, Does.Contain("intent=question"));
         Assert.That(inbound.Formatted, Does.Contain("reply_need=high"));
         Assert.That(inbound.Formatted, Does.Contain("reply_length=medium"));
+        Assert.That(inbound.Formatted, Does.Contain("：how should we improve memory?"));
+        Assert.That(inbound.Formatted, Does.Not.Contain("锛"));
         Assert.That(inbound.Formatted.IndexOf("[QQ cognition]", StringComparison.Ordinal),
             Is.LessThan(inbound.Formatted.IndexOf("[QQ owner message]", StringComparison.Ordinal)));
     }
@@ -2000,7 +2256,7 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => service.IsQuietModeEnabled);
         Assert.That(dispatchCount, Is.Zero);
-        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] { (1001L, "主人真会使唤猫娘，咪绪先安静待命，叫我醒醒就回来喵") }));
+        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] { (1001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来") }));
         Assert.That(runtime.GroupMessages, Is.Empty);
     }
 
@@ -2135,7 +2391,7 @@ public class QChatServiceAdapterTests
 
         await Task.Delay(300);
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] {
-            (3001L, "主人真会使唤猫娘，咪绪先安静待命，叫我醒醒就回来喵")
+            (3001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来")
         }));
     }
 
@@ -2193,8 +2449,123 @@ public class QChatServiceAdapterTests
 
         await Task.Delay(300);
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] {
-            (3001L, "主人真会使唤猫娘，咪绪先安静待命，叫我醒醒就回来喵")
+            (3001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来")
         }));
+    }
+
+    [Test]
+    public async Task ConcurrentGroupModelDispatchesAreSerialized()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        BlockingDispatchQChatService service = new(functionCaller, runtime)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                FlushInterval = 0,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3001,
+            GroupName = "first-group",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "[CQ:at,qq=999] first"
+        });
+        await WaitUntilAsync(() => service.StartedTargets.Count == 1);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 4001,
+            GroupName = "second-group",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "[CQ:at,qq=999] second"
+        });
+        await Task.Delay(200);
+
+        Assert.That(service.StartedTargets, Is.EqualTo(new[] { 3001L }));
+
+        service.ReleaseNextReply("first reply");
+        await WaitUntilAsync(() => service.StartedTargets.Count == 2);
+        service.ReleaseNextReply("second reply");
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 2);
+        Assert.That(service.StartedTargets, Is.EqualTo(new[] { 3001L, 4001L }));
+        Assert.That(runtime.GroupMessages.Select(message => message.Target), Is.EqualTo(new[] { 3001L, 4001L }));
+    }
+
+    [Test]
+    public async Task OneBotEventsAreProcessedSequentiallyBeforeModelDispatch()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-event-queue-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storageRoot);
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+            BlockingDispatchQChatService service = new(functionCaller, runtime)
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 999,
+                    OwnerId = 1001,
+                    AllowGroupMemberChat = true,
+                    FlushInterval = 0,
+                    EnableBalancedTextStreaming = false
+                }
+            };
+            StartService(service);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 999,
+                UserId = 1001,
+                GroupId = 3001,
+                GroupName = "first-group",
+                Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+                RawMessage = "[CQ:at,qq=999] first queued"
+            });
+            await WaitUntilAsync(() => service.StartedTargets.Count == 1);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 999,
+                UserId = 1001,
+                GroupId = 4001,
+                GroupName = "second-group",
+                Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+                RawMessage = "[CQ:at,qq=999] second queued"
+            });
+            await Task.Delay(200);
+
+            string diagnosticsPath = Path.Combine(storageRoot, "AgentWorkspace", "qchat-diagnostics.jsonl");
+            string diagnostics = File.Exists(diagnosticsPath)
+                ? File.ReadAllText(diagnosticsPath)
+                : "";
+            Assert.That(diagnostics, Does.Contain("first queued"));
+            Assert.That(diagnostics, Does.Not.Contain("second queued"));
+
+            service.ReleaseNextReply("first reply");
+            await WaitUntilAsync(() => service.StartedTargets.Count == 2);
+            service.ReleaseNextReply("second reply");
+            await WaitUntilAsync(() => runtime.GroupMessages.Count == 2);
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
     }
 
     [Test]
@@ -2327,7 +2698,7 @@ public class QChatServiceAdapterTests
         await Task.Delay(300);
         Assert.That(service.IsQuietModeEnabled, Is.True);
         Assert.That(dispatchCount, Is.Zero);
-        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "主人真会使唤猫娘，咪绪先安静待命，叫我醒醒就回来喵") }));
+        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来") }));
 
         runtime.Raise(new OneBotMessageEvent
         {
@@ -2352,7 +2723,7 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => runtime.GroupMessages.Count == 2);
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] {
-            (3001L, "主人真会使唤猫娘，咪绪先安静待命，叫我醒醒就回来喵"),
+            (3001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来"),
             (3001L, "reply-1")
         }));
     }
@@ -2394,7 +2765,7 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
         Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] {
-            (1001L, "主人真会使唤猫娘，咪绪先安静待命，叫我醒醒就回来喵"),
+            (1001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来"),
             (1001L, "awake-reply")
         }));
     }
@@ -2445,7 +2816,7 @@ public class QChatServiceAdapterTests
         await WaitUntilAsync(() => runtime.PrivateMessages.Count == 3);
         Assert.That(dispatchCount, Is.EqualTo(1));
         Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] {
-            (1001L, "主人真会使唤猫娘，咪绪先安静待命，叫我醒醒就回来喵"),
+            (1001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来"),
             (2002L, "听到啦，咪绪回来陪你了喵"),
             (2002L, "role-PrivateGuest")
         }));
@@ -2496,7 +2867,7 @@ public class QChatServiceAdapterTests
         Assert.That(dispatchCount, Is.Zero);
         Assert.That(runtime.PrivateMessages, Is.Empty);
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] {
-            (3001L, "主人真会使唤猫娘，咪绪先安静待命，叫我醒醒就回来喵"),
+            (3001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来"),
             (3001L, "妈妈，听到啦，咪绪回来陪你了喵")
         }));
     }
@@ -2597,6 +2968,17 @@ public class QChatServiceAdapterTests
             [])).GetAwaiter().GetResult();
     }
 
+    static string GetPendingPokeText(QChatService service)
+    {
+        PropertyInfo chatBotProperty = typeof(InteractiveModule)
+            .GetProperty("ChatBot", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        ChatBot chatBot = (ChatBot)chatBotProperty.GetValue(service)!;
+        FieldInfo messageCacheField = typeof(ChatBot)
+            .GetField("messageCache", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        IEnumerable<string> messages = (IEnumerable<string>)messageCacheField.GetValue(chatBot)!;
+        return string.Join("", messages);
+    }
+
     static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null)
     {
         DateTime deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(2));
@@ -2609,6 +2991,16 @@ public class QChatServiceAdapterTests
         }
 
         Assert.Fail("Condition was not met before timeout.");
+    }
+
+    static void RaiseEvent(object target, string eventName, params object?[] arguments)
+    {
+        FieldInfo? field = target.GetType().GetField(
+            eventName,
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(field, Is.Not.Null, $"Event backing field '{eventName}' should exist.");
+        MulticastDelegate? eventDelegate = field!.GetValue(target) as MulticastDelegate;
+        eventDelegate?.DynamicInvoke(arguments);
     }
 
     sealed class FakeOneBotRuntime : IOneBotRuntime
@@ -2682,6 +3074,41 @@ public class QChatServiceAdapterTests
         {
             dispatchCompletion.TrySetResult();
             return Task.FromResult(reply);
+        }
+    }
+
+    sealed class BlockingDispatchQChatService(
+        XmlFunctionCaller functionCaller,
+        IOneBotRuntime runtime) : QChatService(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+    {
+        readonly Queue<TaskCompletionSource<string>> pendingReplies = new();
+        readonly object gate = new();
+
+        public List<long> StartedTargets { get; } = new();
+
+        public void ReleaseNextReply(string reply)
+        {
+            TaskCompletionSource<string>? pending = null;
+            lock (gate)
+            {
+                if (pendingReplies.Count > 0)
+                    pending = pendingReplies.Dequeue();
+            }
+
+            Assert.That(pending, Is.Not.Null, "Expected a pending model dispatch.");
+            pending!.SetResult(reply);
+        }
+
+        protected override Task<string> DispatchToModelAsync(QChatInboundMessage message)
+        {
+            TaskCompletionSource<string> reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (gate)
+            {
+                StartedTargets.Add(message.TargetId);
+                pendingReplies.Enqueue(reply);
+            }
+
+            return reply.Task;
         }
     }
 

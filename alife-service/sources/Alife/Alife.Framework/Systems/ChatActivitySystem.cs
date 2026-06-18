@@ -59,6 +59,15 @@ public class ChatActivitySystem
 
             characterSystem.LoadCharacter(character);
 
+            string[] missingModules = GetMissingCharacterModules(character).ToArray();
+            if (missingModules.Length > 0)
+            {
+                WriteActivationDiagnostic(
+                    character,
+                    "activation-missing-modules",
+                    $"Character references {missingModules.Length} module(s) that are not available: {string.Join(", ", missingModules)}");
+            }
+
             WriteActivationDiagnostic(character, "activation-start", "Character activation started.");
             Activating?.Invoke(character);
             ChatActivity chatActivity = await ChatActivity.Create(
@@ -115,6 +124,14 @@ public class ChatActivitySystem
     readonly StorageSystem storageSystem;
     readonly List<object> appendObjects = new();
     readonly Dictionary<string, ChatActivity> activities = new();
+
+    IEnumerable<string> GetMissingCharacterModules(Character character)
+    {
+        return character.Modules
+            .Where(moduleId => string.IsNullOrWhiteSpace(moduleId) == false)
+            .Where(moduleId => moduleSystem.GetModule(moduleId) == null)
+            .Distinct(StringComparer.Ordinal);
+    }
 
     void WriteActivationDiagnostic(
         Character character,

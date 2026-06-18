@@ -9,6 +9,7 @@ using Alife.Framework;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Alife.Platform;
+using Autofac;
 
 namespace Alife.Function.Agent;
 
@@ -26,13 +27,12 @@ public sealed record AgentIssueReportSnapshot(
     LaunchOrder = -60)]
 public class AgentIssueReportService(
     AgentAuditLogService? auditLog = null,
-    IEnumerable<IModuleHealthReporter>? healthReporters = null,
     XmlFunctionCaller? functionCaller = null)
     : InteractiveModule<AgentIssueReportService>
 {
     readonly AgentAuditLogService auditLog = auditLog ?? new AgentAuditLogService(
         Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "agent-audit.jsonl"));
-    readonly IEnumerable<IModuleHealthReporter> healthReporters = healthReporters ?? [];
+    public IEnumerable<IModuleHealthReporter>? HealthReporterSourceOverride { get; set; }
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_issue_report")]
     [Description("Show recent runtime errors, failed agent audit entries, and unhealthy modules before debugging or self-repair.")]
@@ -53,7 +53,7 @@ public class AgentIssueReportService(
             .TakeLast(Math.Max(1, maxAuditEntries))
             .ToArray();
 
-        ModuleHealth[] unhealthyModules = healthReporters
+        ModuleHealth[] unhealthyModules = ResolveHealthReporters()
             .Where(reporter => ReferenceEquals(reporter, this) == false)
             .Select(GetHealthSafely)
             .Where(health => health.Status != ModuleHealthStatus.Healthy)
@@ -113,6 +113,21 @@ public class AgentIssueReportService(
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    IEnumerable<IModuleHealthReporter> ResolveHealthReporters()
+    {
+        if (HealthReporterSourceOverride != null)
+            return HealthReporterSourceOverride;
+
+        try
+        {
+            return ChatActivity.ModuleService.Resolve<IEnumerable<IModuleHealthReporter>>();
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     static ModuleHealth GetHealthSafely(IModuleHealthReporter reporter)

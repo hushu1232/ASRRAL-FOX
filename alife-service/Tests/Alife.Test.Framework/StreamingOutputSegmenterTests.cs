@@ -39,6 +39,16 @@ public class StreamingOutputSegmenterTests
     }
 
     [Test]
+    public void Push_QqGroupText_KeepsMediumMultiSentenceReplyTogether()
+    {
+        StreamingOutputSegmenter segmenter = new(StreamingOutputPolicy.QqGroupText);
+        string reply = "这是第一段完整但不需要单独发送的说明文字，它只是整条回复的一部分。第二句继续补充，不应该为了制造流式效果拆成两条。";
+
+        Assert.That(segmenter.Push(reply), Is.Empty);
+        Assert.That(segmenter.Flush(), Is.EqualTo(new[] { reply }));
+    }
+
+    [Test]
     public void Push_ShortSentenceMode_FlushesWhenBufferReachesMaxCharacters()
     {
         StreamingOutputPolicy policy = StreamingOutputPolicy.QqGroupText with

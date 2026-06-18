@@ -22,10 +22,14 @@ public class ModuleHealthTests
     [Test]
     public void GetHealthSnapshot_ReturnsUnavailableEntryWhenReporterThrows()
     {
-        SystemHealthService service = new([
-            new StubHealthReporter("Memory", ModuleHealthStatus.Healthy, "Memory is ready."),
-            new ThrowingHealthReporter()
-        ]);
+        SystemHealthService service = new()
+        {
+            HealthReporterSourceOverride =
+            [
+                new StubHealthReporter("Memory", ModuleHealthStatus.Healthy, "Memory is ready."),
+                new ThrowingHealthReporter()
+            ]
+        };
 
         IReadOnlyList<ModuleHealth> snapshot = service.GetHealthSnapshot();
 

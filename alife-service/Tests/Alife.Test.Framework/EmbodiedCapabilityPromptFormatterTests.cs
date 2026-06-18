@@ -71,9 +71,13 @@ public class EmbodiedCapabilityPromptFormatterTests
     [Test]
     public void SelfContextService_ProvidesFormattedContextContribution()
     {
-        SelfContextService service = new([
-            new StubCapability("Desk pet", EmbodiedCapabilityKind.Body, "A visible body.", "Ready")
-        ]);
+        SelfContextService service = new()
+        {
+            CapabilitySourceOverride =
+            [
+                new StubCapability("Desk pet", EmbodiedCapabilityKind.Body, "A visible body.", "Ready")
+            ]
+        };
 
         ContextContribution contribution = service.GetContextContributions().Single();
 

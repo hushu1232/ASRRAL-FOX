@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
+using Autofac;
 
 namespace Alife.Function.MessageFilter;
 
@@ -15,10 +16,10 @@ namespace Alife.Function.MessageFilter;
     "Aggregates selected module health reports so the activity can diagnose unavailable or degraded abilities.",
     defaultCategory: "Alife Official/Living Environment",
     LaunchOrder = -75)]
-public class SystemHealthService(
-    IEnumerable<IModuleHealthReporter> healthReporters,
-    XmlFunctionCaller? functionCaller = null) : InteractiveModule<SystemHealthService>
+public class SystemHealthService(XmlFunctionCaller? functionCaller = null) : InteractiveModule<SystemHealthService>
 {
+    public IEnumerable<IModuleHealthReporter>? HealthReporterSourceOverride { get; set; }
+
     [XmlFunction(FunctionMode.OneShot, name: "system_health")]
     [Description("Show the current health of selected Alife modules and embodied capabilities.")]
     public void SystemHealth()
@@ -28,7 +29,7 @@ public class SystemHealthService(
 
     public IReadOnlyList<ModuleHealth> GetHealthSnapshot()
     {
-        return healthReporters
+        return ResolveHealthReporters()
             .Where(reporter => ReferenceEquals(reporter, this) == false)
             .Select(GetHealthSafely)
             .OrderBy(health => health.Status)
@@ -53,6 +54,21 @@ public class SystemHealthService(
     {
         await base.AwakeAsync(context);
         functionCaller?.RegisterHandler(this);
+    }
+
+    IEnumerable<IModuleHealthReporter> ResolveHealthReporters()
+    {
+        if (HealthReporterSourceOverride != null)
+            return HealthReporterSourceOverride;
+
+        try
+        {
+            return ChatActivity.ModuleService.Resolve<IEnumerable<IModuleHealthReporter>>();
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     static ModuleHealth GetHealthSafely(IModuleHealthReporter reporter)

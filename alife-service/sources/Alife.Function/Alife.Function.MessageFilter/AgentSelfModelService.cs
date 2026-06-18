@@ -18,7 +18,8 @@ public sealed record AgentSelfModelSnapshot(
     IReadOnlyList<ModuleHealth> ModuleHealth,
     AgentTaskState? LatestTask,
     IReadOnlyList<string> SafetyBoundaries,
-    IReadOnlyList<LifeEvent> RecentExperiences);
+    IReadOnlyList<LifeEvent> RecentExperiences,
+    IReadOnlyList<AgentCapabilityBoundary> CapabilityBoundaries = null!);
 
 [Module(
     "Agent Self Model",
@@ -30,13 +31,15 @@ public class AgentSelfModelService(
     AgentTaskService? tasks = null,
     AgentControlCenterService? controlCenter = null,
     ILifeEventStream? lifeEvents = null,
-    XmlFunctionCaller? functionCaller = null)
+    XmlFunctionCaller? functionCaller = null,
+    AgentCapabilityInventoryService? capabilityInventory = null)
     : InteractiveModule<AgentSelfModelService>, IContextContributor
 {
     readonly AgentDiagnosticsService diagnostics = diagnostics ?? new AgentDiagnosticsService();
     readonly AgentTaskService? tasks = tasks;
     readonly AgentControlCenterService? controlCenter = controlCenter;
     readonly ILifeEventStream? lifeEvents = lifeEvents;
+    readonly AgentCapabilityInventoryService capabilityInventory = capabilityInventory ?? new AgentCapabilityInventoryService();
 
     [XmlFunction(FunctionMode.OneShot, name: "agent_self_model")]
     [Description("Show the agent's unified self-model: identity, abilities, limits, current task, health, and recent experiences.")]
@@ -56,7 +59,8 @@ public class AgentSelfModelService(
             state.ModuleHealth,
             tasks?.GetLatestTask(),
             BuildSafetyBoundaries(controlCenter?.Configuration),
-            lifeEvents?.GetRecentEvents(8) ?? []);
+            lifeEvents?.GetRecentEvents(8) ?? [],
+            capabilityInventory.BuildInventory());
     }
 
     public IEnumerable<ContextContribution> GetContextContributions()
@@ -106,6 +110,8 @@ public class AgentSelfModelService(
             builder.AppendLine("- none");
         foreach (string boundary in snapshot.SafetyBoundaries)
             builder.AppendLine($"- {boundary}");
+
+        builder.AppendLine(AgentCapabilityInventoryService.FormatForPrompt(snapshot.CapabilityBoundaries ?? []));
 
         builder.AppendLine("Current task focus:");
         if (snapshot.LatestTask == null)
