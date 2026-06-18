@@ -9,9 +9,10 @@ import RegisterForm from '@/components/auth/RegisterForm';
 
 let mockRegisterAction = jest.fn();
 let mockPush = jest.fn();
+let mockReplace = jest.fn();
 
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn(), back: jest.fn(), prefetch: jest.fn() }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace, back: jest.fn(), prefetch: jest.fn() }),
   useSearchParams: () => new URLSearchParams(''),
   usePathname: () => '/register',
 }));
@@ -67,6 +68,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockRegisterAction = jest.fn().mockResolvedValue(undefined);
   mockPush = jest.fn();
+  mockReplace = jest.fn();
 });
 
 describe('RegisterForm', () => {
@@ -159,12 +161,12 @@ describe('RegisterForm', () => {
 
   // ─── Successful submit ─────────────────────────────────
 
-  it('redirects to /login after successful registration', async () => {
+  it('redirects to /dashboard after successful registration', async () => {
     mockRegisterAction.mockResolvedValue(undefined);
     render(<RegisterForm />, { wrapper: Wrapper });
     fillAndSubmit('newuser@example.com', 'newuser', 'password123', 'password123');
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/login');
+      expect(mockReplace).toHaveBeenCalledWith('/dashboard');
     });
   });
 
@@ -183,7 +185,7 @@ describe('RegisterForm', () => {
 
   it('has a link to login page', () => {
     render(<RegisterForm />, { wrapper: Wrapper });
-    const link = screen.getByText('hasAccount').closest('a');
+    const link = screen.getByText('login').closest('a');
     expect(link?.getAttribute('href')).toBe('/login');
   });
 });

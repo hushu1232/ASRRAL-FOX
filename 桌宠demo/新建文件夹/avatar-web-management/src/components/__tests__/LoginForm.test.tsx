@@ -73,12 +73,12 @@ describe('LoginForm', () => {
 
   it('renders SSO login button', () => {
     render(<LoginForm />, { wrapper: Wrapper });
-    expect(screen.getByText('ssoLogin')).toBeDefined();
+    expect(screen.getByText('sso')).toBeDefined();
   });
 
   it('renders login button', () => {
     render(<LoginForm />, { wrapper: Wrapper });
-    expect(screen.getByText('loginButton')).toBeDefined();
+    expect(screen.getByText('submit')).toBeDefined();
   });
 
   it('renders register link', () => {
@@ -102,7 +102,7 @@ describe('LoginForm', () => {
   function fillAndSubmit(email: string, password: string) {
     if (email) fireEvent.change(screen.getByPlaceholderText('emailPlaceholder'), { target: { value: email } });
     if (password) fireEvent.change(screen.getByPlaceholderText('passwordPlaceholder'), { target: { value: password } });
-    fireEvent.click(screen.getByText('loginButton'));
+    fireEvent.click(screen.getByText('submit'));
   }
 
   it('blocks submit on empty fields (validation prevents onFinish)', async () => {
@@ -158,7 +158,7 @@ describe('LoginForm', () => {
 
   it('has a link to register page', () => {
     render(<LoginForm />, { wrapper: Wrapper });
-    const link = screen.getByText('noAccount').closest('a');
+    const link = screen.getByText('register').closest('a');
     expect(link?.getAttribute('href')).toBe('/register');
   });
 
@@ -172,7 +172,7 @@ describe('LoginForm', () => {
 
   it('has SSO login button', () => {
     render(<LoginForm />, { wrapper: Wrapper });
-    const ssoBtn = screen.getByText('ssoLogin');
+    const ssoBtn = screen.getByText('sso');
     expect(ssoBtn).toBeDefined();
   });
 });

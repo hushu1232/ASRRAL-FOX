@@ -31,6 +31,7 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^uuid$': '<rootDir>/tests/__mocks__/uuid.js',
     '^next-intl$': '<rootDir>/tests/__mocks__/next-intl.js',
+    '\\.(css|less|sass|scss)$': 'identity-obj-proxy',
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   setupFilesAfterEnv: ['<rootDir>/tests/jest.setup.ts'],

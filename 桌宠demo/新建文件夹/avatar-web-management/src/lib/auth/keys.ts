@@ -10,15 +10,33 @@ let cachedPublicKey: string | null = null;
 let cachedKid: string | null = null;
 
 function getKeysDir(): string {
-  return process.env.JWT_KEYS_DIR || path.join(process.cwd(), 'keys');
+  const keysDir = process.env.JWT_KEYS_DIR;
+  return keysDir ? path.resolve(/*turbopackIgnore: true*/ keysDir) : path.join(process.cwd(), 'keys');
+}
+
+function getKeyFilePath(envPath: string | undefined, fileName: string): string {
+  if (envPath) {
+    return path.resolve(/*turbopackIgnore: true*/ envPath);
+  }
+
+  const keysDir = process.env.JWT_KEYS_DIR;
+  if (keysDir) {
+    return path.join(/*turbopackIgnore: true*/ path.resolve(keysDir), fileName);
+  }
+
+  return path.join(process.cwd(), 'keys', fileName);
 }
 
 function getPrivateKeyPath(): string {
-  return process.env.JWT_PRIVATE_KEY_PATH || path.join(getKeysDir(), 'private.pem');
+  return getKeyFilePath(process.env.JWT_PRIVATE_KEY_PATH, 'private.pem');
 }
 
 function getPublicKeyPath(): string {
-  return process.env.JWT_PUBLIC_KEY_PATH || path.join(getKeysDir(), 'public.pem');
+  return getKeyFilePath(process.env.JWT_PUBLIC_KEY_PATH, 'public.pem');
+}
+
+function getKidPath(): string {
+  return getKeyFilePath(undefined, 'kid');
 }
 
 export function generateRsaKeyPair(): { publicKey: string; privateKey: string } {
@@ -41,7 +59,7 @@ export function generateAndSaveKeys(): { publicKey: string; privateKey: string; 
   fs.writeFileSync(getPublicKeyPath(), publicKey, { mode: 0o644 });
 
   const kid = crypto.randomUUID();
-  fs.writeFileSync(path.join(keysDir, 'kid'), kid);
+  fs.writeFileSync(getKidPath(), kid);
 
   cachedPrivateKey = privateKey;
   cachedPublicKey = publicKey;
@@ -54,7 +72,7 @@ export function generateAndSaveKeys(): { publicKey: string; privateKey: string; 
 function loadKeys(): { privateKey: string; publicKey: string; kid: string } | null {
   const privPath = getPrivateKeyPath();
   const pubPath = getPublicKeyPath();
-  const kidPath = path.join(getKeysDir(), 'kid');
+  const kidPath = getKidPath();
 
   if (!fs.existsSync(privPath) || !fs.existsSync(pubPath)) {
     return null;

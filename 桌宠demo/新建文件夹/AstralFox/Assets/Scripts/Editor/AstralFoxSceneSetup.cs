@@ -391,17 +391,38 @@ namespace AstralFox.Editor
             var live2DAnim = live2DGo.GetComponent<Live2DAnimator>();
             if (live2DAnim == null) live2DAnim = live2DGo.AddComponent<Live2DAnimator>();
 
+#if CUBISM_SDK_PRESENT
+            var model = live2DGo.GetComponentInChildren<CubismModel>();
+            var expressionHost = model != null ? model.gameObject : live2DGo;
+
+            if (expressionHost != live2DGo)
+            {
+                var staleHotkeys = live2DGo.GetComponent<ExpressionHotkeys>();
+                if (staleHotkeys != null) Object.DestroyImmediate(staleHotkeys);
+
+                var staleExpression = live2DGo.GetComponent<CubismExpressionController>();
+                if (staleExpression != null) Object.DestroyImmediate(staleExpression);
+            }
+
+            // CubismUpdateController must live on the CubismModel object. Refreshing here
+            // prevents expression/physics controllers from being omitted from the late-update delegate.
+            var updateController = expressionHost.GetComponent<CubismUpdateController>();
+            if (updateController == null) updateController = expressionHost.AddComponent<CubismUpdateController>();
+
             // CubismExpressionController — play native .exp3.json expressions
-            var expCtrl = live2DGo.GetComponent<CubismExpressionController>();
-            if (expCtrl == null) expCtrl = live2DGo.AddComponent<CubismExpressionController>();
+            var expCtrl = expressionHost.GetComponent<CubismExpressionController>();
+            if (expCtrl == null) expCtrl = expressionHost.AddComponent<CubismExpressionController>();
             expCtrl.ExpressionsList = AssetDatabase.LoadAssetAtPath<CubismExpressionList>(
                 "Assets/Live2D/Models/YouXiaoMiao/YouXiaoMiao.expressionList.asset");
             if (expCtrl.ExpressionsList != null)
                 Debug.Log($"[AstralFox] ExpressionController set up with {expCtrl.ExpressionsList.CubismExpressionObjects?.Length ?? 0} expressions.");
 
             // ExpressionHotkeys — keyboard shortcuts for testing
-            if (live2DGo.GetComponent<ExpressionHotkeys>() == null)
-                live2DGo.AddComponent<ExpressionHotkeys>();
+            if (expressionHost.GetComponent<ExpressionHotkeys>() == null)
+                expressionHost.AddComponent<ExpressionHotkeys>();
+
+            updateController.Refresh();
+#endif
         }
 
         /// <summary>

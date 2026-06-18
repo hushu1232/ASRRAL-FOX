@@ -3,8 +3,8 @@ import { createLogger } from '@/lib/logger';
 import { AppError } from '@/lib/errors';
 import { riggingBreaker, RIGGING_TIMEOUT_MS, RIGGING_BASE_URL } from './circuit';
 import type {
-  SeparateResponse, RigResponse, ExportResponse,
-  DeployResponse, PipelineResponse, PipelineOptions,
+  LayerLabel, LayerResult, SeparateResponse, RigResponse, ExportResponse,
+  DeployResponse, PipelineResponse, PipelineOptions, MeshData, WeightData,
 } from './types';
 
 const log = createLogger('rigging-client');
@@ -48,6 +48,118 @@ async function riggingFetch<T>(
   }
 }
 
+type RawLayerResult = {
+  label: string;
+  texture_url?: string;
+  textureUrl?: string;
+  mask_url?: string;
+  maskUrl?: string;
+  bbox: [number, number, number, number];
+};
+
+type RawMeshData = {
+  label: string;
+  vertex_count?: number;
+  vertexCount?: number;
+  triangle_count?: number;
+  triangleCount?: number;
+  vertices: [number, number][];
+  uvs: [number, number][];
+  indices: number[];
+};
+
+type RawWeightData = {
+  label: string;
+  bone_names?: string[];
+  boneNames?: string[];
+  vertex_count?: number;
+  vertexCount?: number;
+  bone_count?: number;
+  boneCount?: number;
+  weights: WeightData['weights'];
+};
+
+function normalizeLayer(layer: RawLayerResult): LayerResult {
+  return {
+    label: layer.label as LayerLabel,
+    textureUrl: layer.textureUrl ?? layer.texture_url ?? '',
+    maskUrl: layer.maskUrl ?? layer.mask_url ?? '',
+    bbox: layer.bbox,
+  };
+}
+
+function normalizeMesh(mesh: RawMeshData): MeshData {
+  return {
+    label: mesh.label,
+    vertexCount: mesh.vertexCount ?? mesh.vertex_count ?? 0,
+    triangleCount: mesh.triangleCount ?? mesh.triangle_count ?? 0,
+    vertices: mesh.vertices,
+    uvs: mesh.uvs,
+    indices: mesh.indices,
+  };
+}
+
+function normalizeWeight(weight: RawWeightData): WeightData {
+  return {
+    label: weight.label,
+    boneNames: weight.boneNames ?? weight.bone_names ?? [],
+    vertexCount: weight.vertexCount ?? weight.vertex_count ?? 0,
+    boneCount: weight.boneCount ?? weight.bone_count ?? 0,
+    weights: weight.weights,
+  };
+}
+
+type RiggingResponseRecord = Record<string, unknown>;
+
+function normalizeSeparateResponse(raw: RiggingResponseRecord): SeparateResponse {
+  return {
+    imageId: String(raw.imageId ?? raw.image_id ?? ''),
+    layers: ((raw.layers as RawLayerResult[] | undefined) ?? []).map(normalizeLayer),
+    processingTimeMs: Number(raw.processingTimeMs ?? raw.processing_time_ms ?? 0),
+  };
+}
+
+function normalizeRigResponse(raw: RiggingResponseRecord): RigResponse {
+  return {
+    imageId: String(raw.imageId ?? raw.image_id ?? ''),
+    skeleton: raw.skeleton as RigResponse['skeleton'],
+    meshCount: Number(raw.meshCount ?? raw.mesh_count ?? 0),
+    meshes: ((raw.meshes as RawMeshData[] | undefined) ?? []).map(normalizeMesh),
+    weights: ((raw.weights as RawWeightData[] | undefined) ?? []).map(normalizeWeight),
+    processingTimeMs: Number(raw.processingTimeMs ?? raw.processing_time_ms ?? 0),
+  };
+}
+
+function normalizeExportResponse(raw: RiggingResponseRecord): ExportResponse {
+  return {
+    cmo3Url: String(raw.cmo3Url ?? raw.cmo3_url ?? ''),
+    moc3Url: raw.moc3Url || raw.moc3_url ? String(raw.moc3Url ?? raw.moc3_url) : null,
+    model3JsonUrl: String(raw.model3JsonUrl ?? raw.model3_json_url ?? ''),
+    texturesUrls: (raw.texturesUrls ?? raw.textures_urls ?? []) as string[],
+    processingTimeMs: Number(raw.processingTimeMs ?? raw.processing_time_ms ?? 0),
+  };
+}
+
+function normalizeDeployResponse(raw: RiggingResponseRecord): DeployResponse {
+  return {
+    modelId: String(raw.modelId ?? raw.model_id ?? ''),
+    deployedPath: String(raw.deployedPath ?? raw.deployed_path ?? ''),
+    reloadTriggered: Boolean(raw.reloadTriggered ?? raw.reload_triggered ?? false),
+    configsWritten: (raw.configsWritten ?? raw.configs_written ?? []) as string[],
+    processingTimeMs: Number(raw.processingTimeMs ?? raw.processing_time_ms ?? 0),
+  };
+}
+
+function normalizePipelineResponse(raw: RiggingResponseRecord): PipelineResponse {
+  return {
+    separate: normalizeSeparateResponse((raw.separate as RiggingResponseRecord | undefined) ?? {}),
+    rig: normalizeRigResponse((raw.rig as RiggingResponseRecord | undefined) ?? {}),
+    export: normalizeExportResponse((raw.export as RiggingResponseRecord | undefined) ?? {}),
+    deploy: raw.deploy ? normalizeDeployResponse(raw.deploy as RiggingResponseRecord) : null,
+    totalTimeMs: Number(raw.totalTimeMs ?? raw.total_time_ms ?? 0),
+  };
+}
+
 export async function checkHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${RIGGING_BASE_URL}/api/health`, { signal: AbortSignal.timeout(5000) });
@@ -78,7 +190,7 @@ export async function separateLayers(
   targetLayers?: string[],
   edgeRefine = true,
 ): Promise<SeparateResponse> {
-  return riggingBreaker.execute(() =>
+  const response = await riggingBreaker.execute(() =>
     riggingFetch('/api/separate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -93,6 +205,7 @@ export async function separateLayers(
       }),
     }),
   );
+  return normalizeSeparateResponse(response as RiggingResponseRecord);
 }
 
 export async function rigModel(
@@ -101,7 +214,7 @@ export async function rigModel(
   template: string,
   meshDensity = 'medium',
 ): Promise<RigResponse> {
-  return riggingBreaker.execute(() =>
+  const response = await riggingBreaker.execute(() =>
     riggingFetch('/api/rig', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -113,6 +226,7 @@ export async function rigModel(
       }),
     }),
   );
+  return normalizeRigResponse(response as RiggingResponseRecord);
 }
 
 export async function exportModel(
@@ -122,7 +236,7 @@ export async function exportModel(
   meshes: unknown[],
   weights: unknown[],
 ): Promise<ExportResponse> {
-  return riggingBreaker.execute(() =>
+  const response = await riggingBreaker.execute(() =>
     riggingFetch('/api/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -139,6 +253,7 @@ export async function exportModel(
       }),
     }),
   );
+  return normalizeExportResponse(response as RiggingResponseRecord);
 }
 
 export async function deployModel(
@@ -146,7 +261,7 @@ export async function deployModel(
   animParams?: Record<string, Record<string, unknown>>,
   targetName?: string,
 ): Promise<DeployResponse> {
-  return riggingBreaker.execute(() =>
+  const response = await riggingBreaker.execute(() =>
     riggingFetch('/api/deploy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -157,6 +272,7 @@ export async function deployModel(
       }),
     }),
   );
+  return normalizeDeployResponse(response as RiggingResponseRecord);
 }
 
 export async function runPipeline(
@@ -164,7 +280,7 @@ export async function runPipeline(
   options: PipelineOptions,
 ): Promise<PipelineResponse> {
   log.info({ imageId, template: options.template }, 'Starting rigging pipeline');
-  return riggingBreaker.execute(() =>
+  const response = await riggingBreaker.execute(() =>
     riggingFetch<PipelineResponse>('/api/pipeline', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -177,6 +293,7 @@ export async function runPipeline(
       }),
     }),
   );
+  return normalizePipelineResponse(response as unknown as RiggingResponseRecord);
 }
 
 export async function downloadModelZip(imageId: string): Promise<ArrayBuffer> {

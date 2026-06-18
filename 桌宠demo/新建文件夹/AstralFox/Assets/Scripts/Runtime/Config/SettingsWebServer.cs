@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -23,6 +24,10 @@ namespace AstralFox.Config
         private volatile bool _running;
         private volatile bool _exitRequested;
         private readonly int _port = 18920;
+        private readonly object _modelsLock = new object();
+        private readonly HashSet<string> _availableModelPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private string _availableModelsJson = "[]";
+        private string _streamingAssetsPath = "";
 
         public bool ExitRequested => _exitRequested;
 
@@ -30,6 +35,7 @@ namespace AstralFox.Config
         {
             if (_running) return;
 
+            RefreshAvailableModels();
             LoadHtmlPage();
 
             _running = true;
@@ -61,14 +67,10 @@ namespace AstralFox.Config
 
                 while (_running)
                 {
-                    if (_listener.Pending())
+                    if (_listener.Server.Poll(50000, SelectMode.SelectRead))
                     {
                         var client = _listener.AcceptTcpClient();
                         ThreadPool.QueueUserWorkItem(HandleClient, client);
-                    }
-                    else
-                    {
-                        Thread.Sleep(50);
                     }
                 }
             }
@@ -194,6 +196,22 @@ namespace AstralFox.Config
                                     var cfg = JsonUtility.FromJson<AppConfig>(body);
                                     if (cfg != null)
                                     {
+                                        var requestedModelPath = cfg.model_path;
+                                        if (TryGetCachedExistingModelPath(cfg.model_path, out var normalizedModelPath))
+                                        {
+                                            cfg.model_path = normalizedModelPath;
+                                        }
+                                        else
+                                        {
+                                            var previousPath = ConfigManager.Instance.CurrentConfig?.model_path;
+                                            if (TryGetCachedExistingModelPath(previousPath, out var previousNormalizedPath))
+                                                cfg.model_path = previousNormalizedPath;
+                                            else
+                                                cfg.model_path = new AppConfig().model_path;
+
+                                            Debug.LogWarning($"[SettingsWeb] Ignored unavailable model path from web UI: {requestedModelPath}");
+                                        }
+
                                         ConfigManager.Instance.SaveConfig(cfg);
                                         Data.DataStore.Instance.SetCharacterPersonality(cfg.character_personality);
                                         responseBody = "{\"ok\":true}";
@@ -288,9 +306,6 @@ namespace AstralFox.Config
                 Debug.LogError($"[SettingsWeb] Client error: {ex.Message}");
             }
         }
-
-        private static string EscapeJson(string s) =>
-            (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
 
         #region HTML Page
 
@@ -570,7 +585,7 @@ h2{font-size:14px;font-weight:700;color:var(--text);letter-spacing:-0.2px}
 <label></label>
 <div class=""model-info"" id=""model_info""></div>
 </div>
-<p class=""model-hint"" id=""model_hint"">模型文件请放入 StreamingAssets/models/ 对应目录。来源标注为""CDN""的模型需从 live2d-widget 的 CDN 仓库自行下载。</p>
+<p class=""model-hint"" id=""model_hint"">模型文件请放入 StreamingAssets/Models/ 对应目录。来源标注为""CDN""的模型需从 live2d-widget 的 CDN 仓库自行下载。</p>
 </div>
 
 <div class=""section"">
@@ -599,16 +614,12 @@ function buildModelSelect(models, currentPath){
 
   const groups={};
   models.forEach(m=>{
-    const cat=m.id.startsWith('gf_')?'少女前线':
-      m.id.startsWith('al_')?'碧蓝航线':
-      m.source==='内置'?'内置模型':
-      m.source==='用户自定义'?'自定义':
-      '其他模型';
+    const cat=m.source||'其他模型';
     if(!groups[cat])groups[cat]=[];
     groups[cat].push(m);
   });
 
-  const order=['内置模型','少女前线','碧蓝航线','其他模型','自定义'];
+  const order=['AI管线','内置','少女前线','碧蓝航线','用户自定义','其他模型'];
   order.forEach(cat=>{
     if(!groups[cat])return;
     const og=document.createElement('optgroup');
@@ -640,9 +651,10 @@ function onModelSelect(){
 
   const type=opt.dataset.type||'live2d';
   const source=opt.dataset.source||'';
+  const isLocalModel=source==='内置'||source==='AI管线';
   const desc=opt.dataset.description||'';
   const tagType=type==='live2d'?'<span class=""mi-tag live2d"">Live2D</span>':'';
-  const tagSrc=source==='内置'
+  const tagSrc=isLocalModel
     ?'<span class=""mi-tag local"">内置</span>'
     :source==='CDN / 自行下载'
       ?'<span class=""mi-tag cdn"">需下载</span>'
@@ -660,11 +672,11 @@ function onModelSelect(){
     +(desc?'<br>'+desc:'');
   row.style.display='flex';
 
-  hint.textContent=source==='内置'
+  hint.textContent=isLocalModel
     ?(comp==='high'
       ?'此模型复杂度较高，建议在性能较好的设备上使用。'
       :'此模型已内置，无需额外下载。')
-    :'模型文件请放入 StreamingAssets'+opt.value+'。下载后可能需要转换为 Cubism 3+ 格式。';
+    :'模型文件请放入 StreamingAssets/'+opt.value+'。下载后可能需要转换为 Cubism 3+ 格式。';
 }
 
 /* ── Config ── */
@@ -676,7 +688,7 @@ async function loadConfig(){
 
     if(c.available_models&&c.available_models.length){
       availableModels=c.available_models;
-      buildModelSelect(c.available_models, c.model?.path||'');
+      buildModelSelect(c.available_models, c.model_path||'');
       onModelSelect();
     }
 
@@ -707,7 +719,7 @@ function collect(){
     character_extra:document.getElementById('char_extra').value,
     ffmpeg_path:document.getElementById('ffmpeg_path').value,
     animation_model:'live2d',
-    model_path:document.getElementById('model_select').value||'/models/cattail/cattail.model3.json',
+    model_path:document.getElementById('model_select').value||(availableModels[0]?.path||'Models/generated/model.model3.json'),
     config_version:1
   };
 }
@@ -756,21 +768,127 @@ loadConfig();
 
         #region Available Models
 
-        private static string GetAvailableModelsJson()
+        private void RefreshAvailableModels()
         {
-            return @"[
-    { ""id"": ""cattail"",        ""name"": ""CatTail (默认)"",    ""type"": ""live2d"", ""path"": ""/models/cattail/cattail.model3.json"",             ""description"": ""猫耳少女，项目内置默认模型"",              ""source"": ""内置"", ""complexity"": ""light"",    ""drawables"": 18 },
-    { ""id"": ""gf_ak12"",       ""name"": ""AK-12 (少女前线)"",  ""type"": ""live2d"", ""path"": ""/models/girlsfrontline/ak12/normal.model3.json"",     ""description"": ""少女前线 · AK-12 雪狼小队"",               ""source"": ""内置"", ""complexity"": ""standard"", ""drawables"": 72 },
-    { ""id"": ""gf_m4a1"",       ""name"": ""M4A1 (少女前线)"",   ""type"": ""live2d"", ""path"": ""/models/girlsfrontline/m4a1/normal.model3.json"",     ""description"": ""少女前线 · M4A1 AR小队队长"",              ""source"": ""内置"", ""complexity"": ""standard"", ""drawables"": 65 },
-    { ""id"": ""gf_hk416"",      ""name"": ""HK416 (少女前线)"",  ""type"": ""live2d"", ""path"": ""/models/girlsfrontline/hk416/normal.model3.json"",    ""description"": ""少女前线 · HK416 人形"",                   ""source"": ""内置"", ""complexity"": ""standard"", ""drawables"": 96 },
-    { ""id"": ""gf_ar15"",       ""name"": ""AR-15 (少女前线)"",  ""type"": ""live2d"", ""path"": ""/models/girlsfrontline/ar15/normal.model3.json"",     ""description"": ""少女前线 · AR-15 AR小队"",                 ""source"": ""内置"", ""complexity"": ""standard"", ""drawables"": 54 },
-    { ""id"": ""gf_an94"",       ""name"": ""AN-94 (少女前线)"",  ""type"": ""live2d"", ""path"": ""/models/girlsfrontline/an94/normal.model3.json"",     ""description"": ""少女前线 · AN-94 忤逆小队"",               ""source"": ""内置"", ""complexity"": ""light"",    ""drawables"": 35 },
-    { ""id"": ""al_enterprise"", ""name"": ""企业 Enterprise (碧蓝航线)"", ""type"": ""live2d"", ""path"": ""/models/azurlane/enterprise/qiye_7.model3.json"",            ""description"": ""碧蓝航线 · 企业 白鹰航母"",               ""source"": ""内置"", ""complexity"": ""high"",     ""drawables"": 521 },
-    { ""id"": ""al_belfast"",    ""name"": ""贝尔法斯特 Belfast (碧蓝航线)"", ""type"": ""live2d"", ""path"": ""/models/azurlane/belfast/beierfasite_2.model3.json"", ""description"": ""碧蓝航线 · 贝尔法斯特 皇家女仆"",         ""source"": ""内置"", ""complexity"": ""high"",     ""drawables"": 413 },
-    { ""id"": ""al_atago"",      ""name"": ""爱宕 Atago (碧蓝航线)"", ""type"": ""live2d"", ""path"": ""/models/azurlane/atago/aidang_2.model3.json"",                  ""description"": ""碧蓝航线 · 爱宕 重樱重巡"",               ""source"": ""内置"", ""complexity"": ""high"",     ""drawables"": 280 },
-    { ""id"": ""al_akagi"",      ""name"": ""赤城 Akagi (碧蓝航线)"", ""type"": ""live2d"", ""path"": ""/models/azurlane/akagi/chicheng_5.model3.json"",                ""description"": ""碧蓝航线 · 赤城 重樱航母"",               ""source"": ""内置"", ""complexity"": ""high"",     ""drawables"": 1118 },
-    { ""id"": ""custom"",        ""name"": ""自定义模型"",         ""type"": ""live2d"", ""path"": ""/models/custom/"",                  ""description"": ""自行放置模型文件到该目录"",                 ""source"": ""用户自定义"", ""complexity"": ""standard"" }
-  ]";
+            _streamingAssetsPath = Application.streamingAssetsPath;
+            var models = PetModelRegistry.Instance.GetAvailableModels();
+            var json = BuildAvailableModelsJson(models);
+
+            lock (_modelsLock)
+            {
+                _availableModelPaths.Clear();
+                foreach (var model in models)
+                    _availableModelPaths.Add(model.modelPath);
+
+                _availableModelsJson = json;
+            }
+        }
+
+        private string GetAvailableModelsJson()
+        {
+            lock (_modelsLock)
+                return _availableModelsJson;
+        }
+
+        private bool TryGetCachedExistingModelPath(string modelPath, out string normalizedPath)
+        {
+            normalizedPath = PetModelRegistry.NormalizeModelPath(modelPath);
+            if (string.IsNullOrEmpty(normalizedPath))
+                return false;
+
+            lock (_modelsLock)
+            {
+                if (_availableModelPaths.Contains(normalizedPath))
+                    return true;
+            }
+
+            if (string.IsNullOrEmpty(_streamingAssetsPath))
+                return false;
+
+            var fullPath = Path.Combine(
+                _streamingAssetsPath,
+                normalizedPath.Replace('/', Path.DirectorySeparatorChar));
+
+            return File.Exists(fullPath);
+        }
+
+        private static string BuildAvailableModelsJson(IReadOnlyList<PetModelRegistry.ModelEntry> models)
+        {
+            var sb = new StringBuilder();
+            sb.Append('[');
+
+            for (int i = 0; i < models.Count; i++)
+            {
+                var model = models[i];
+                if (i > 0)
+                    sb.Append(',');
+
+                sb.Append("\n    { ");
+                AppendJsonProperty(sb, "id", model.id);
+                sb.Append(", ");
+                AppendJsonProperty(sb, "name", model.displayName);
+                sb.Append(", ");
+                AppendJsonProperty(sb, "type", "live2d");
+                sb.Append(", ");
+                AppendJsonProperty(sb, "path", model.modelPath);
+                sb.Append(", ");
+                AppendJsonProperty(sb, "description", model.description ?? "");
+                sb.Append(", ");
+                AppendJsonProperty(sb, "source", model.source);
+                sb.Append(", ");
+                AppendJsonProperty(sb, "complexity", model.complexity.ToString().ToLowerInvariant());
+                sb.Append(", \"drawables\": ");
+                sb.Append(model.drawables);
+                sb.Append(" }");
+            }
+
+            if (models.Count > 0)
+                sb.Append('\n');
+
+            sb.Append("  ]");
+            return sb.ToString();
+        }
+
+        private static void AppendJsonProperty(StringBuilder sb, string name, string value)
+        {
+            sb.Append('"');
+            sb.Append(EscapeJson(name));
+            sb.Append("\": \"");
+            sb.Append(EscapeJson(value ?? ""));
+            sb.Append('"');
+        }
+
+        private static string EscapeJson(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return string.Empty;
+
+            var sb = new StringBuilder(value.Length + 8);
+            foreach (var c in value)
+            {
+                switch (c)
+                {
+                    case '\\':
+                        sb.Append("\\\\");
+                        break;
+                    case '"':
+                        sb.Append("\\\"");
+                        break;
+                    case '\n':
+                        sb.Append("\\n");
+                        break;
+                    case '\r':
+                        sb.Append("\\r");
+                        break;
+                    case '\t':
+                        sb.Append("\\t");
+                        break;
+                    default:
+                        sb.Append(c);
+                        break;
+                }
+            }
+            return sb.ToString();
         }
 
         #endregion

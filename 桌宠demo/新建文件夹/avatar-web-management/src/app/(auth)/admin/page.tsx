@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import PageHeader from '@/components/layout/PageHeader';
 import UsersTab from './UsersTab';
 import ReviewsTab from './ReviewsTab';
@@ -48,7 +49,6 @@ export default function AdminPage() {
 
 /** Renders the active tab based on URL search param 'tab' */
 function TabContentRenderer({ panes }: { panes: Record<string, React.ReactNode> }) {
-  const { useSearchParams } = require('next/navigation');
   const searchParams = useSearchParams();
   const activeTab = searchParams.get('tab') || 'users';
   return <>{panes[activeTab] ?? panes.users}</>;

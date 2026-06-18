@@ -23,7 +23,7 @@ describe('Token refresh flow', () => {
     expect(res.body.success).toBe(true);
     const data = res.body.data as Record<string, unknown>;
     expect(typeof data.accessToken).toBe('string');
-    expect(data.accessToken.split('.')).toHaveLength(3);
+    expect((data.accessToken as string).split('.')).toHaveLength(3);
     expect(data.user).toBeDefined();
   });
 

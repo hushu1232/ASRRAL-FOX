@@ -197,20 +197,19 @@ function VRMViewer({
 
     async function initVRM() {
       try {
-        // @ts-expect-error three.js is not installed; optional runtime import
         const threeP = import('three').catch(() => null);
-        // @ts-expect-error GLTFLoader is not installed; optional runtime import
         const gltfP = import('three/examples/jsm/loaders/GLTFLoader.js').catch(() => null);
         const [THREE, gltfModule] = await Promise.all([threeP, gltfP]);
         const GLTFLoader: any = (gltfModule as Record<string, unknown> | null)?.GLTFLoader;
 
         if (!THREE || disposed) return;
 
-        let VRMLoader: any;
+        let VRMLoaderPlugin: any;
+        let VRMUtils: any;
         try {
-          // @ts-expect-error — @pixiv/three-vrm is optional
           const vrm = await import('@pixiv/three-vrm');
-          VRMLoader = vrm.VRMLoader || vrm.VRMUtils;
+          VRMLoaderPlugin = vrm.VRMLoaderPlugin;
+          VRMUtils = vrm.VRMUtils;
         } catch {
           if (!disposed) {
             onError(labels.vrmMissing);
@@ -237,9 +236,14 @@ function VRMViewer({
         scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 
         const loader = new GLTFLoader();
+        loader.register((parser: any) => new VRMLoaderPlugin(parser));
         const gltf = await loader.loadAsync(modelPath);
-        const vrmLoader = new VRMLoader();
-        vrmInstance = await vrmLoader.load(gltf);
+        vrmInstance = gltf.userData.vrm;
+
+        if (!vrmInstance) {
+          throw new Error('VRM data not found in loaded model');
+        }
+        VRMUtils?.rotateVRM0?.(vrmInstance);
 
         if (disposed) return;
 

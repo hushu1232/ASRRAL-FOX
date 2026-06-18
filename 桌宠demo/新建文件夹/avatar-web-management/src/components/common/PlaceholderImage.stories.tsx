@@ -34,7 +34,7 @@ export const WithFallback: Story = {
   args: {
     src: 'https://invalid.example/nonexistent.jpg',
     alt: 'Broken image',
-    type: 'model',
+    type: 'thumbnail',
     width: 200,
     height: 200,
   },
@@ -53,8 +53,8 @@ export const Asset: Story = {
 export const Template: Story = {
   args: {
     src: null,
-    alt: 'Template placeholder',
-    type: 'template',
+    alt: 'Thumbnail placeholder',
+    type: 'thumbnail',
     width: 200,
     height: 200,
   },

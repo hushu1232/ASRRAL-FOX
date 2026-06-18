@@ -1,4 +1,4 @@
-import { get, post, put, loginAs } from './helpers';
+import { fetchRaw, get, post, put, loginAs } from './helpers';
 
 let userToken: string;
 let adminToken: string;
@@ -136,7 +136,7 @@ describe('Security Tests', () => {
         const formData = new FormData();
         formData.append('file', new Blob(['malicious'], { type: 'text/plain' }), `test${ext}`);
         // Use raw fetch because apiPost won't send FormData
-        const res = await fetch('http://localhost:3000/api/assets/upload', {
+        const res = await fetchRaw('/api/assets/upload', {
           method: 'POST',
           headers: { Authorization: `Bearer ${userToken}` },
           body: formData,
@@ -147,7 +147,7 @@ describe('Security Tests', () => {
     });
 
     it('upload without auth is rejected', async () => {
-      const res = await fetch('http://localhost:3000/api/assets/upload', {
+      const res = await fetchRaw('/api/assets/upload', {
         method: 'POST',
         body: new FormData(),
       });
@@ -160,7 +160,7 @@ describe('Security Tests', () => {
       const formData = new FormData();
       const blob = new Blob([new Uint8Array(100)], { type: 'model/gltf-binary' });
       formData.append('file', blob, 'test.glb');
-      const res = await fetch('http://localhost:3000/api/assets/upload', {
+      const res = await fetchRaw('/api/assets/upload', {
         method: 'POST',
         headers: { Authorization: `Bearer ${userToken}` },
         body: formData,

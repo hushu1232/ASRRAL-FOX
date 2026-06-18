@@ -6,7 +6,7 @@ import { render, screen } from '@testing-library/react';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 
 jest.mock('@ant-design/icons', () => ({
-  ReloadOutlined: () => <span data-testid="icon-reload" />,
+  CloseCircleOutlined: () => <span data-testid="icon-error" />,
 }));
 
 function ThrowError(): never {
@@ -32,7 +32,8 @@ describe('ErrorBoundary', () => {
         <ThrowError />
       </ErrorBoundary>
     );
-    expect(screen.getByText('pageLoadError')).toBeDefined();
+    expect(screen.getByText('Something went wrong')).toBeDefined();
+    expect(screen.getByText('Test explosion')).toBeDefined();
     spy.mockRestore();
   });
 

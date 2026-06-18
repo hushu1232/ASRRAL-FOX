@@ -266,10 +266,9 @@ namespace AstralFox.Animation
         /// <summary>Switch to a different Live2D model at runtime (config update + restart).</summary>
         public void ReloadModel(string modelPath)
         {
-            Debug.Log($"[Live2DAnimator] Model path updated to: {modelPath}. Full reload on next restart.");
-            // Model reload requires Cubism SDK lifecycle — safe approach is config update + restart
-            SetVisible(false);
-            // Config is saved by QuickModelSwitch; user restarts or scene reloads for full model swap
+            Debug.Log($"[Live2DAnimator] Model path updated to: {modelPath}. Restart or reload the scene to apply it.");
+            // Runtime model replacement requires rebuilding the Cubism prefab lifecycle. Keep the
+            // current model visible so selecting a new config path does not make the pet disappear.
         }
     }
 }

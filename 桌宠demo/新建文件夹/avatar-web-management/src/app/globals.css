@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 :root {
+  --font-geist: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-geist-mono: 'Fira Code', Consolas, 'Liberation Mono', monospace;
   /* ── Warm Light Palette ────────────────────────────── */
   --ds-colors-bg-deep: #faf7f2;
   --ds-colors-bg-card: #ffffff;

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import Script from 'next/script';
@@ -9,17 +8,6 @@ import NetworkStatusIndicator from '@/components/monitoring/NetworkStatusIndicat
 import CookieConsent from '@/components/common/CookieConsent';
 import './globals.css';        // Tailwind + design tokens + Ant Design overrides (source of truth)
 import '@/styles/global.scss';  // BEM reset + supplementary styles
-
-const geist = Geist({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-geist',
-});
-const geistMono = Geist_Mono({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-geist-mono',
-});
 
 export const metadata: Metadata = {
   title: 'AstralFox Market - AI桌面宠伴侣 + 创作者市场',
@@ -31,7 +19,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const messages = await getMessages();
 
   return (
-    <html lang={locale} className={`${geist.variable} ${geistMono.variable}`}>
+    <html lang={locale}>
       <body className="font-sans">
         <Script
           src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"

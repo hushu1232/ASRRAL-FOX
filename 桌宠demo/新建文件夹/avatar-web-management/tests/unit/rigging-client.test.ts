@@ -55,7 +55,7 @@ describe('separateLayers', () => {
       json: async () => mockSeparateResponse,
     });
     const result = await separateLayers('abc123', ['face', 'body']);
-    expect(result.image_id).toBe('abc123');
+    expect(result.imageId).toBe('abc123');
     expect(result.layers).toHaveLength(2);
   });
 
@@ -88,7 +88,7 @@ describe('rigModel', () => {
     });
     const result = await rigModel('abc123', [], 'catgirl');
     expect(result.skeleton.name).toBe('root');
-    expect(result.mesh_count).toBe(2);
+    expect(result.meshCount).toBe(2);
   });
 });
 
@@ -109,8 +109,8 @@ describe('exportModel', () => {
       json: async () => mockExportResponse,
     });
     const result = await exportModel('abc123', {}, [], [], []);
-    expect(result.moc3_url).toContain('.moc3');
-    expect(result.model3_json_url).toContain('.json');
+    expect(result.moc3Url).toContain('.moc3');
+    expect(result.model3JsonUrl).toContain('.json');
   });
 });
 
@@ -126,8 +126,8 @@ describe('deployModel', () => {
       }),
     });
     const result = await deployModel('abc123');
-    expect(result.deployed_path).toContain('pet_v1');
-    expect(result.reload_triggered).toBe(false);
+    expect(result.deployedPath).toContain('pet_v1');
+    expect(result.reloadTriggered).toBe(false);
   });
 
   it('throws on 404', async () => {
@@ -153,11 +153,11 @@ describe('runPipeline', () => {
         total_time_ms: 600,
       }),
     });
-    const result = await runPipeline('abc123', { template: 'catgirl' });
+    const result = await runPipeline('abc123', { template: 'catgirl', meshDensity: 'medium' });
     expect(result.separate).toBeDefined();
     expect(result.rig).toBeDefined();
     expect(result.export).toBeDefined();
-    expect(result.total_time_ms).toBe(600);
+    expect(result.totalTimeMs).toBe(600);
   });
 });
 

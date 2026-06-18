@@ -4,6 +4,8 @@
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import AvatarCard from '@/components/common/AvatarCard';
+import { AVATAR_STATUS_MAP, AVATAR_STYLES } from '@/lib/constants';
+import type { Avatar } from '@/types/avatar';
 
 jest.mock('next/image', () => ({
   __esModule: true,
@@ -15,17 +17,19 @@ jest.mock('next/image', () => ({
   },
 }));
 
-const mockAvatar = {
+const mockAvatar: Avatar = {
   id: 'av1',
   name: 'TestAvatar',
   style: 'anime',
-  status: 'draft' as const,
+  status: 'draft',
   thumbnail_url: '/thumbs/av1.png',
-  base_model: 'female' as const,
+  base_model: 'female',
   created_at: '2026-05-01',
   updated_at: '2026-05-29',
-  owner_id: 'user1',
+  creator_id: 'user1',
   workspace_id: 'ws1',
+  current_version_id: null,
+  is_template: false,
 };
 
 describe('AvatarCard', () => {
@@ -34,29 +38,24 @@ describe('AvatarCard', () => {
     expect(screen.getByText('TestAvatar')).toBeDefined();
   });
 
-  it('renders status tag', () => {
+  it('renders draft status tag', () => {
     render(<AvatarCard avatar={mockAvatar} />);
-    expect(screen.getByText('草稿')).toBeDefined();
+    expect(screen.getByText(AVATAR_STATUS_MAP.draft.label)).toBeDefined();
   });
 
   it('renders published status tag', () => {
     render(<AvatarCard avatar={{ ...mockAvatar, status: 'published' }} />);
-    expect(screen.getByText('已发布')).toBeDefined();
+    expect(screen.getByText(AVATAR_STATUS_MAP.published.label)).toBeDefined();
   });
 
-  it('renders pending_review status tag', () => {
-    render(<AvatarCard avatar={{ ...mockAvatar, status: 'pending_review' }} />);
-    expect(screen.getByText('审核中')).toBeDefined();
+  it('renders archived status tag', () => {
+    render(<AvatarCard avatar={{ ...mockAvatar, status: 'archived' }} />);
+    expect(screen.getByText(AVATAR_STATUS_MAP.archived.label)).toBeDefined();
   });
 
-  it('renders gender label', () => {
+  it('renders style label', () => {
     render(<AvatarCard avatar={mockAvatar} />);
-    expect(screen.getByText('gender.female')).toBeDefined();
-  });
-
-  it('renders male gender label', () => {
-    render(<AvatarCard avatar={{ ...mockAvatar, base_model: 'male' as const }} />);
-    expect(screen.getByText('gender.male')).toBeDefined();
+    expect(screen.getByText(AVATAR_STYLES.find((item) => item.value === 'anime')!.label)).toBeDefined();
   });
 
   it('calls onClick with avatar id when clicked', () => {
@@ -66,7 +65,7 @@ describe('AvatarCard', () => {
     expect(onClick).toHaveBeenCalledWith('av1');
   });
 
-  it('renders with no thumbnail (fallback)', () => {
+  it('renders with no thumbnail', () => {
     render(<AvatarCard avatar={{ ...mockAvatar, thumbnail_url: null }} />);
     expect(screen.getByText('TestAvatar')).toBeDefined();
   });

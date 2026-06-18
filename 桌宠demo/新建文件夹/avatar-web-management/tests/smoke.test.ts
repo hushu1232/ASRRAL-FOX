@@ -1,4 +1,4 @@
-import { get, post, put, loginAs } from './helpers';
+import { fetchRaw, get, post, put } from './helpers';
 
 let adminToken: string;
 let userToken: string;
@@ -150,7 +150,7 @@ describe('Full Project Smoke Test', () => {
     });
 
     it('PUT /api/notifications/read-all', async () => {
-      const tokenRes = await fetch('http://localhost:3000/api/notifications/read-all', {
+      const tokenRes = await fetchRaw('/api/notifications/read-all', {
         method: 'PUT',
         headers: { Authorization: `Bearer ${userToken}` },
       });
@@ -247,7 +247,7 @@ describe('Full Project Smoke Test', () => {
     });
 
     it('DELETE /api/settings/2fa — invalid token rejected', async () => {
-      const tokenRes = await fetch('http://localhost:3000/api/settings/2fa', {
+      const tokenRes = await fetchRaw('/api/settings/2fa', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userToken}` },
         body: JSON.stringify({ token: '000000' }),

@@ -410,11 +410,11 @@ export default function VoiceCloningWizard() {
               <List.Item
                 actions={[
                   playing && selectedVoiceId === voice.voice_id ? (
-                    <Tooltip title={t('step3.stop')}>
+                    <Tooltip key="stop" title={t('step3.stop')}>
                       <Button icon={<PauseCircleOutlined />} onClick={stopPreview} danger />
                     </Tooltip>
                   ) : (
-                    <Tooltip title={t('step3.preview')}>
+                    <Tooltip key="preview" title={t('step3.preview')}>
                       <Button
                         icon={<PlayCircleOutlined />}
                         onClick={() => { setSelectedVoiceId(voice.voice_id); handlePreview(voice.voice_id); }}
@@ -422,7 +422,7 @@ export default function VoiceCloningWizard() {
                       />
                     </Tooltip>
                   ),
-                  <Tooltip title={t('step3.delete')}>
+                  <Tooltip key="delete" title={t('step3.delete')}>
                     <Button
                       icon={<DeleteOutlined />}
                       onClick={() => handleDeleteVoice(voice.voice_id)}

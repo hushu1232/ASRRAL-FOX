@@ -1,6 +1,6 @@
 // ── Mocks (jest.mock hoisted — inline factories) ─────
-const mockIncr = jest.fn(() => Promise.resolve(1));
-const mockExpire = jest.fn(() => Promise.resolve(1));
+const mockIncr = jest.fn<Promise<number>, [string]>(() => Promise.resolve(1));
+const mockExpire = jest.fn<Promise<number>, [string, number]>(() => Promise.resolve(1));
 const mockFindUniqueOrThrow = jest.fn();
 const mockUpdate = jest.fn();
 
@@ -17,8 +17,8 @@ jest.mock('@/lib/prisma', () => ({
 jest.mock('@/lib/redis/client', () => ({
   isRedisAvailable: jest.fn(() => true),
   getRedis: jest.fn(() => ({
-    incr: (...args: unknown[]) => mockIncr(...args),
-    expire: (...args: unknown[]) => mockExpire(...args),
+    incr: (key: string) => mockIncr(key),
+    expire: (key: string, seconds: number) => mockExpire(key, seconds),
   })),
 }));
 

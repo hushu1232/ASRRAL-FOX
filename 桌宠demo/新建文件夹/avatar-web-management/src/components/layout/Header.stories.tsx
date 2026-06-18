@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs';
-import { expect, within } from '@storybook/test';
+import { expect, within } from 'storybook/test';
 import { App } from 'antd';
 import { useEffect } from 'react';
 import Header from './Header';

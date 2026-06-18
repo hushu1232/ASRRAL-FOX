@@ -2,6 +2,11 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+#if CUBISM_SDK_PRESENT
+using Live2D.Cubism.Framework;
+using Live2D.Cubism.Framework.Expression;
+#endif
+
 namespace AstralFox.Animation
 {
     /// <summary>
@@ -50,6 +55,22 @@ namespace AstralFox.Animation
         [SerializeField, Range(0.01f, 0.5f)]
         private float _eyeTrackSmoothTime = 0.1f;
 
+        [Header("Native Live2D Expressions")]
+        [SerializeField]
+        private bool _driveNativeExpressions = true;
+
+        [SerializeField, Tooltip("Expression index for Happy. Default maps to YouXiaoMiao star-eye.")]
+        private int _happyExpressionIndex = 4;
+
+        [SerializeField, Tooltip("Expression index for Sad. Default maps to YouXiaoMiao crying.")]
+        private int _sadExpressionIndex = 1;
+
+        [SerializeField, Tooltip("Expression index for Shy. Default maps to YouXiaoMiao blush.")]
+        private int _shyExpressionIndex = 9;
+
+        [SerializeField, Tooltip("Expression index for Angry. Default maps to YouXiaoMiao dark-face.")]
+        private int _angryExpressionIndex = 16;
+
         #endregion
 
         #region Private Fields
@@ -79,6 +100,12 @@ namespace AstralFox.Animation
         private Vector2 _lookTarget;      // -1..1 normalized
         private Vector2 _currentLook;
         private Vector2 _lookVelocity;
+
+#if CUBISM_SDK_PRESENT
+        private CubismExpressionController _nativeExpressionController;
+        private CubismUpdateController _nativeUpdateController;
+        private bool _warnedMissingNativeExpression;
+#endif
 
         #endregion
 
@@ -120,6 +147,9 @@ namespace AstralFox.Animation
         private void Awake()
         {
             _driver = GetComponent<CubismParameterDriver>();
+#if CUBISM_SDK_PRESENT
+            CacheNativeExpressionController();
+#endif
             BuildEmotionMap();
         }
 
@@ -146,6 +176,8 @@ namespace AstralFox.Animation
             if (emotion == _currentEmotion && !_inTransition) return;
             if (!_emotionMap.ContainsKey(emotion)) return;
 
+            ApplyNativeExpression(emotion);
+
             float dur = customDuration ?? _transitionDuration;
             if (dur <= 0f)
             {
@@ -159,6 +191,18 @@ namespace AstralFox.Animation
             _toEmotion = emotion;
             _transitionTimer = 0f;
             _inTransition = true;
+        }
+
+        public void ClearNativeExpression()
+        {
+#if CUBISM_SDK_PRESENT
+            if (!_driveNativeExpressions) return;
+            CacheNativeExpressionController();
+            if (_nativeExpressionController == null) return;
+            _nativeExpressionController.CurrentExpressionIndex = -1;
+            _nativeUpdateController?.Refresh();
+            _nativeExpressionController.OnLateUpdate();
+#endif
         }
 
         /// <summary>Set look-at target in normalized coordinates (-1..1).</summary>
@@ -179,6 +223,72 @@ namespace AstralFox.Animation
                 (viewport.y - 0.5f) * 2f);
             _lookTarget = Vector2.ClampMagnitude(_lookTarget, 1f);
         }
+
+        #endregion
+
+        #region Native Live2D Expressions
+
+        private void ApplyNativeExpression(FoxEmotion emotion)
+        {
+#if CUBISM_SDK_PRESENT
+            if (!_driveNativeExpressions) return;
+
+            CacheNativeExpressionController();
+            if (_nativeExpressionController == null)
+            {
+                WarnMissingNativeExpressionOnce();
+                return;
+            }
+
+            int index = GetNativeExpressionIndex(emotion);
+            var expressions = _nativeExpressionController.ExpressionsList?.CubismExpressionObjects;
+            if (index >= 0 && (expressions == null || index >= expressions.Length))
+            {
+                if (expressions == null || expressions.Length == 0)
+                {
+                    Debug.LogWarning("[FoxEmotionController] Native expression list is empty.");
+                    return;
+                }
+
+                Debug.LogWarning($"[FoxEmotionController] Native expression index {index} for {emotion} is out of range. Using last expression.");
+                index = expressions.Length - 1;
+            }
+
+            _nativeExpressionController.CurrentExpressionIndex = index;
+            _nativeUpdateController?.Refresh();
+            _nativeExpressionController.OnLateUpdate();
+#endif
+        }
+
+#if CUBISM_SDK_PRESENT
+        private void CacheNativeExpressionController()
+        {
+            if (_nativeExpressionController == null)
+                _nativeExpressionController = GetComponentInChildren<CubismExpressionController>();
+
+            if (_nativeExpressionController != null && _nativeUpdateController == null)
+                _nativeUpdateController = _nativeExpressionController.GetComponent<CubismUpdateController>();
+        }
+
+        private int GetNativeExpressionIndex(FoxEmotion emotion)
+        {
+            return emotion switch
+            {
+                FoxEmotion.Happy => _happyExpressionIndex,
+                FoxEmotion.Sad => _sadExpressionIndex,
+                FoxEmotion.Shy => _shyExpressionIndex,
+                FoxEmotion.Angry => _angryExpressionIndex,
+                _ => -1,
+            };
+        }
+
+        private void WarnMissingNativeExpressionOnce()
+        {
+            if (_warnedMissingNativeExpression) return;
+            _warnedMissingNativeExpression = true;
+            Debug.LogWarning("[FoxEmotionController] No CubismExpressionController found in children. Native expression mapping is disabled.");
+        }
+#endif
 
         #endregion
 

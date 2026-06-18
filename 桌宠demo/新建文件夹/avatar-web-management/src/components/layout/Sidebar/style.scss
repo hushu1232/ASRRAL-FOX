@@ -99,12 +99,10 @@
   }
 
   // Ant Design menu override (wrapped in BEM context).
-  // NOTE: we intentionally use :global() selectors here instead of Ant Design's
-  // ConfigProvider theme-token API. Trade-off: ConfigProvider would be more robust
-  // across Ant Design version upgrades, but :global() keeps overrides co-located
-  // with the component's BEM styles, avoiding a separate theme-config file.
+  // ConfigProvider tokens would be more robust across Ant Design version upgrades,
+  // but scoped global selectors keep overrides co-located with this component.
   // If upgrading Ant Design, check for class-name changes in this block.
-  &__menu :global(.ant-menu-item) {
+  &__menu .ant-menu-item {
     border-radius: var.$radius-md;
     margin: 2px 0;
     color: var(--text-secondary);
@@ -116,12 +114,12 @@
     }
   }
 
-  &__menu :global(.ant-menu-item-selected) {
+  &__menu .ant-menu-item-selected {
     color: var(--text-primary);
     background: var(--accent-light);
   }
 
-  &__menu :global(.ant-menu-item-divider) {
+  &__menu .ant-menu-item-divider {
     margin: var.$spacing-2 0;
     border-color: var(--border-subtle);
   }
@@ -156,12 +154,12 @@
 
   // ── Mobile Drawer ──
   &--mobile {
-    :global(.ant-drawer-body) {
+    .ant-drawer-body {
       padding: 0;
       background: var(--bg-card);
     }
 
-    :global(.ant-drawer-header) {
+    .ant-drawer-header {
       display: none;
     }
   }

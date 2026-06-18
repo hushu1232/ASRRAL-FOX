@@ -21,25 +21,20 @@ namespace AstralFox
         private int _hoveredIndex = -1;
         private FoxInteraction _interaction;
         private Camera _cachedCamera;
-
-        private static readonly List<(string name, string path, string source)> Models = new()
-        {
-            ("CatTail 猫尾", "/models/CatTail/cattail.model3.json", "内置"),
-            ("AK-12 少女前线", "/models/GirlsFrontline/AK12/normal.model3.json", "少女前线"),
-            ("M4A1 少女前线", "/models/GirlsFrontline/M4A1/normal.model3.json", "少女前线"),
-            ("HK416 少女前线", "/models/GirlsFrontline/HK416/normal.model3.json", "少女前线"),
-            ("AR-15 少女前线", "/models/GirlsFrontline/AR15/normal.model3.json", "少女前线"),
-            ("AN-94 少女前线", "/models/GirlsFrontline/AN94/normal.model3.json", "少女前线"),
-            ("Enterprise 企业", "/models/AzurLane/Enterprise/qiye_7.model3.json", "碧蓝航线"),
-            ("Belfast 贝尔法斯特", "/models/AzurLane/Belfast/beierfasite_2.model3.json", "碧蓝航线"),
-            ("Atago 爱宕", "/models/AzurLane/Atago/aidang_2.model3.json", "碧蓝航线"),
-            ("Akagi 赤城", "/models/AzurLane/Akagi/chicheng_5.model3.json", "碧蓝航线"),
-        };
+        private GUIStyle _menuBackgroundStyle;
+        private GUIStyle _hoverBackgroundStyle;
+        private GUIStyle _sectionLabelStyle;
+        private GUIStyle _itemLabelStyle;
+        private GUIStyle _itemHoverLabelStyle;
+        private Texture2D _menuBackgroundTexture;
+        private Texture2D _hoverBackgroundTexture;
+        private readonly List<Config.PetModelRegistry.ModelEntry> _availableModels = new();
 
         private void Awake()
         {
             _interaction = GetComponent<FoxInteraction>();
             _cachedCamera = Camera.main;
+            RefreshModelList();
         }
 
         private void Update()
@@ -54,7 +49,13 @@ namespace AstralFox
                     _showMenu = !_showMenu;
                     if (_showMenu)
                     {
-                        _menuRect = new Rect(mousePos.x, Screen.height - mousePos.y, _menuWidth, Models.Count * _itemHeight + 8);
+                        RefreshModelList();
+                        var menuHeight = CalculateMenuHeight();
+                        _menuRect = new Rect(
+                            Mathf.Clamp(mousePos.x, 4f, Mathf.Max(4f, Screen.width - _menuWidth - 4f)),
+                            Mathf.Clamp(Screen.height - mousePos.y, 4f, Mathf.Max(4f, Screen.height - menuHeight - 4f)),
+                            _menuWidth,
+                            menuHeight);
                     }
                 }
                 else if (_showMenu)
@@ -84,73 +85,136 @@ namespace AstralFox
         private void OnGUI()
         {
             if (!_showMenu) return;
+            if (_menuBackgroundStyle == null) BuildStyles();
 
             // Semi-transparent background
-            GUI.Box(_menuRect, "", MakeStyle(new Color(0.12f, 0.1f, 0.18f, 0.92f)));
+            GUI.Box(_menuRect, "", _menuBackgroundStyle);
 
             float y = _menuRect.y + 4;
-            string currentSource = "";
-            for (int i = 0; i < Models.Count; i++)
+            _hoveredIndex = -1;
+
+            if (_availableModels.Count == 0)
             {
-                var (name, path, source) = Models[i];
+                GUI.Label(new Rect(_menuRect.x + 8, y + 4, _menuWidth - 16, _itemHeight),
+                    "No local Live2D models found", _itemLabelStyle);
+                return;
+            }
+
+            string currentSource = "";
+            for (int i = 0; i < _availableModels.Count; i++)
+            {
+                var model = _availableModels[i];
 
                 // Section header
-                if (source != currentSource)
+                if (model.source != currentSource)
                 {
-                    currentSource = source;
+                    currentSource = model.source;
                     GUI.Label(new Rect(_menuRect.x + 8, y, _menuWidth - 16, 18),
-                        $"── {source} ──", MakeLabelStyle(new Color(0.5f, 0.4f, 0.7f), 10));
+                        $"-- {model.source} --", _sectionLabelStyle);
                     y += 18;
                 }
 
                 Rect itemRect = new Rect(_menuRect.x + 4, y, _menuWidth - 8, _itemHeight);
                 bool hover = itemRect.Contains(Event.current.mousePosition);
 
-                Color bgColor = hover ? new Color(0.25f, 0.2f, 0.35f, 0.9f) : Color.clear;
                 if (hover)
                 {
-                    GUI.Box(itemRect, "", MakeStyle(bgColor));
+                    GUI.Box(itemRect, "", _hoverBackgroundStyle);
                     _hoveredIndex = i;
                 }
 
                 GUI.Label(new Rect(itemRect.x + 4, itemRect.y, itemRect.width - 8, itemRect.height),
-                    name, MakeLabelStyle(hover ? Color.white : new Color(0.75f, 0.7f, 0.85f), 12));
+                    model.displayName, hover ? _itemHoverLabelStyle : _itemLabelStyle);
 
-                if (hover && Event.current.type == EventType.MouseDown)
+                if (hover && Event.current.type == EventType.MouseDown && Event.current.button == 0)
                 {
-                    SwitchModel(path);
+                    SwitchModel(model.modelPath);
                     _showMenu = false;
+                    Event.current.Use();
                 }
 
                 y += _itemHeight;
             }
         }
 
+        private void OnDestroy()
+        {
+            if (_menuBackgroundTexture != null) Destroy(_menuBackgroundTexture);
+            if (_hoverBackgroundTexture != null) Destroy(_hoverBackgroundTexture);
+        }
+
         private void SwitchModel(string modelPath)
         {
+            if (!Config.PetModelRegistry.TryGetExistingModelPath(modelPath, out var normalizedPath))
+            {
+                Debug.LogWarning($"[QuickModelSwitch] Ignored unavailable model path: {modelPath}");
+                return;
+            }
+
             var config = Config.ConfigManager.Instance?.CurrentConfig;
             if (config != null)
             {
-                config.model_path = modelPath;
+                config.model_path = normalizedPath;
                 Config.ConfigManager.Instance?.SaveConfig(config);
-                Debug.Log($"[QuickModelSwitch] Switched to: {modelPath}");
+                Debug.Log($"[QuickModelSwitch] Selected model for next restart: {normalizedPath}");
             }
 
-            // Reload the Live2D model
             var animManager = Animation.PetAnimationManager.Instance;
             if (animManager != null && animManager.Live2D != null)
             {
-                animManager.Live2D.ReloadModel(modelPath);
+                animManager.Live2D.ReloadModel(normalizedPath);
             }
         }
 
-        private static GUIStyle MakeStyle(Color bg)
+        private void RefreshModelList()
         {
-            var s = new GUIStyle(GUI.skin.box);
+            _availableModels.Clear();
+            var models = Config.PetModelRegistry.Instance.GetAvailableModels();
+            foreach (var model in models)
+                _availableModels.Add(model);
+        }
+
+        private float CalculateMenuHeight()
+        {
+            if (_availableModels.Count == 0)
+                return _itemHeight + 12f;
+
+            float height = 8f;
+            string currentSource = "";
+            foreach (var model in _availableModels)
+            {
+                if (model.source != currentSource)
+                {
+                    currentSource = model.source;
+                    height += 18f;
+                }
+                height += _itemHeight;
+            }
+            return height;
+        }
+
+        private void BuildStyles()
+        {
+            _menuBackgroundTexture = MakeTexture(new Color(0.12f, 0.1f, 0.18f, 0.92f));
+            _hoverBackgroundTexture = MakeTexture(new Color(0.25f, 0.2f, 0.35f, 0.9f));
+
+            _menuBackgroundStyle = new GUIStyle(GUI.skin.box);
+            _menuBackgroundStyle.normal.background = _menuBackgroundTexture;
+
+            _hoverBackgroundStyle = new GUIStyle(GUI.skin.box);
+            _hoverBackgroundStyle.normal.background = _hoverBackgroundTexture;
+
+            _sectionLabelStyle = MakeLabelStyle(new Color(0.5f, 0.4f, 0.7f), 10);
+            _itemLabelStyle = MakeLabelStyle(new Color(0.75f, 0.7f, 0.85f), 12);
+            _itemHoverLabelStyle = MakeLabelStyle(Color.white, 12);
+        }
+
+        private static Texture2D MakeTexture(Color bg)
+        {
             var tex = new Texture2D(1, 1);
-            tex.SetPixel(0, 0, bg); tex.Apply();
-            s.normal.background = tex;
-            return s;
+            tex.SetPixel(0, 0, bg);
+            tex.Apply();
+            return tex;
         }
 
         private static GUIStyle MakeLabelStyle(Color color, int size)

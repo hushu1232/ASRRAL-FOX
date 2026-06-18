@@ -18,12 +18,14 @@ jest.mock('@/lib/api-client', () => ({
 // Mock antd Dropdown to render inline — avoids Portal + AggregateError in jsdom
 jest.mock('antd', () => {
   const actual = jest.requireActual('antd');
-  function MockDropdown({ children, open, onOpenChange, dropdownRender }: {
+  function MockDropdown({ children, open, onOpenChange, dropdownRender, popupRender }: {
     children: React.ReactNode;
     open?: boolean;
     onOpenChange?: (v: boolean) => void;
     dropdownRender?: () => React.ReactNode;
+    popupRender?: () => React.ReactNode;
   }) {
+    const renderPopup = popupRender || dropdownRender;
     return (
       <div>
         <span
@@ -32,7 +34,7 @@ jest.mock('antd', () => {
         >
           {children}
         </span>
-        {open && <div data-testid="dropdown-content">{dropdownRender?.()}</div>}
+        {open && <div data-testid="dropdown-content">{renderPopup?.()}</div>}
       </div>
     );
   }
@@ -51,28 +53,52 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   return <App>{children}</App>;
 }
 
-// Use native DOM event to avoid @testing-library's act() wrapper which throws
-// AggregateError when antd state updates happen asynchronously
-function clickElement(el: Element) {
+async function clickElement(el: Element) {
   const event = new MouseEvent('click', { bubbles: true, cancelable: true });
-  el.dispatchEvent(event);
+  await act(async () => {
+    el.dispatchEvent(event);
+  });
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockApiPut.mockResolvedValue({ success: true });
+  mockApiGet.mockImplementation((url: string) => {
+    if (url === '/api/notifications/unread-count') {
+      return Promise.resolve({ success: true, data: { count: 0 } });
+    }
+    if (url === '/api/notifications') {
+      return Promise.resolve({ success: true, data: { items: [] } });
+    }
+    return Promise.resolve({ success: false, error: 'Unhandled test URL' });
+  });
 });
 
 describe('NotificationDropdown', () => {
+  function mockNotificationApi(count: number, items: unknown[], listSuccess = true) {
+    mockApiGet.mockImplementation((url: string) => {
+      if (url === '/api/notifications/unread-count') {
+        return Promise.resolve({ success: true, data: { count } });
+      }
+      if (url === '/api/notifications') {
+        return Promise.resolve(
+          listSuccess
+            ? { success: true, data: { items } }
+            : { success: false, error: 'Network error' },
+        );
+      }
+      return Promise.resolve({ success: false, error: 'Unhandled test URL' });
+    });
+  }
+
   describe('rendering', () => {
     it('renders bell icon', () => {
-      mockApiGet.mockResolvedValueOnce({ success: true, data: { count: 0 } });
       render(<NotificationDropdown />, { wrapper: Wrapper });
       expect(screen.getByTestId('icon-bell')).toBeDefined();
     });
 
     it('fetches unread count on mount', async () => {
-      mockApiGet.mockResolvedValueOnce({ success: true, data: { count: 3 } });
+      mockNotificationApi(3, []);
       render(<NotificationDropdown />, { wrapper: Wrapper });
       await waitFor(() => {
         expect(mockApiGet).toHaveBeenCalledWith('/api/notifications/unread-count');
@@ -82,22 +108,16 @@ describe('NotificationDropdown', () => {
 
   describe('dropdown', () => {
     it('opens dropdown and fetches notifications on click', async () => {
-      mockApiGet
-        .mockResolvedValueOnce({ success: true, data: { count: 0 } })
-        .mockResolvedValueOnce({ success: true, data: { items: [] } });
       render(<NotificationDropdown />, { wrapper: Wrapper });
-      clickElement(screen.getByTestId('dropdown-trigger'));
+      await clickElement(screen.getByTestId('dropdown-trigger'));
       await waitFor(() => {
         expect(mockApiGet).toHaveBeenCalledWith('/api/notifications', { pageSize: '10' });
       });
     });
 
     it('shows empty state when no notifications', async () => {
-      mockApiGet
-        .mockResolvedValueOnce({ success: true, data: { count: 0 } })
-        .mockResolvedValueOnce({ success: true, data: { items: [] } });
       render(<NotificationDropdown />, { wrapper: Wrapper });
-      clickElement(screen.getByTestId('dropdown-trigger'));
+      await clickElement(screen.getByTestId('dropdown-trigger'));
       // Flush all pending async work
       await act(async () => {
         await new Promise((r) => setTimeout(r, 0));
@@ -108,19 +128,12 @@ describe('NotificationDropdown', () => {
     });
 
     it('renders notification items', async () => {
-      mockApiGet
-        .mockResolvedValueOnce({ success: true, data: { count: 2 } })
-        .mockResolvedValueOnce({
-          success: true,
-          data: {
-            items: [
-              { id: '1', type: 'system', title: 'System update', body: null, resource_type: null, resource_id: null, is_read: 0, created_at: '2026-01-01' },
-              { id: '2', type: 'comment', title: 'New comment', body: null, resource_type: null, resource_id: null, is_read: 1, created_at: '2026-01-02' },
-            ],
-          },
-        });
+      mockNotificationApi(2, [
+        { id: '1', type: 'system', title: 'System update', body: null, resource_type: null, resource_id: null, is_read: 0, created_at: '2026-01-01' },
+        { id: '2', type: 'comment', title: 'New comment', body: null, resource_type: null, resource_id: null, is_read: 1, created_at: '2026-01-02' },
+      ]);
       render(<NotificationDropdown />, { wrapper: Wrapper });
-      clickElement(screen.getByTestId('dropdown-trigger'));
+      await clickElement(screen.getByTestId('dropdown-trigger'));
       await act(async () => {
         await new Promise((r) => setTimeout(r, 0));
       });
@@ -133,58 +146,43 @@ describe('NotificationDropdown', () => {
 
   describe('mark as read', () => {
     it('marks notification as read on click', async () => {
-      mockApiGet
-        .mockResolvedValueOnce({ success: true, data: { count: 1 } })
-        .mockResolvedValueOnce({
-          success: true,
-          data: {
-            items: [
-              { id: 'n1', type: 'system', title: 'Test notification', body: null, resource_type: null, resource_id: null, is_read: 0, created_at: '2026-01-01' },
-            ],
-          },
-        })
-        .mockResolvedValueOnce({ success: true, data: { count: 0 } });
+      mockNotificationApi(1, [
+        { id: 'n1', type: 'system', title: 'Test notification', body: null, resource_type: null, resource_id: null, is_read: 0, created_at: '2026-01-01' },
+      ]);
       mockApiPut.mockResolvedValue({ success: true });
       render(<NotificationDropdown />, { wrapper: Wrapper });
-      clickElement(screen.getByTestId('dropdown-trigger'));
+      await clickElement(screen.getByTestId('dropdown-trigger'));
       await act(async () => {
         await new Promise((r) => setTimeout(r, 0));
       });
       await waitFor(() => {
         expect(screen.getByText('Test notification')).toBeDefined();
       });
-      clickElement(screen.getByText('Test notification'));
+      await clickElement(screen.getByText('Test notification'));
       expect(mockApiPut).toHaveBeenCalledWith('/api/notifications/n1/read');
     });
 
     it('marks all as read', async () => {
-      mockApiGet
-        .mockResolvedValueOnce({ success: true, data: { count: 1 } })
-        .mockResolvedValueOnce({
-          success: true,
-          data: {
-            items: [
-              { id: 'n1', type: 'system', title: 'Alert', body: null, resource_type: null, resource_id: null, is_read: 0, created_at: '2026-01-01' },
-            ],
-          },
-        });
+      mockNotificationApi(1, [
+        { id: 'n1', type: 'system', title: 'Alert', body: null, resource_type: null, resource_id: null, is_read: 0, created_at: '2026-01-01' },
+      ]);
       mockApiPut.mockResolvedValue({ success: true });
       render(<NotificationDropdown />, { wrapper: Wrapper });
-      clickElement(screen.getByTestId('dropdown-trigger'));
+      await clickElement(screen.getByTestId('dropdown-trigger'));
       await act(async () => {
         await new Promise((r) => setTimeout(r, 0));
       });
       await waitFor(() => {
         expect(screen.getByText('markAllRead')).toBeDefined();
       });
-      clickElement(screen.getByText('markAllRead'));
+      await clickElement(screen.getByText('markAllRead'));
       expect(mockApiPut).toHaveBeenCalledWith('/api/notifications/read-all');
     });
   });
 
   describe('badge count', () => {
     it('fetches unread count and renders Badge wrapper', async () => {
-      mockApiGet.mockResolvedValueOnce({ success: true, data: { count: 5 } });
+      mockNotificationApi(5, []);
       render(<NotificationDropdown />, { wrapper: Wrapper });
       await waitFor(() => {
         expect(mockApiGet).toHaveBeenCalledWith('/api/notifications/unread-count');
@@ -196,11 +194,9 @@ describe('NotificationDropdown', () => {
 
   describe('error handling', () => {
     it('shows empty state when fetch fails', async () => {
-      mockApiGet
-        .mockResolvedValueOnce({ success: true, data: { count: 0 } })
-        .mockResolvedValueOnce({ success: false, error: 'Network error' });
+      mockNotificationApi(0, [], false);
       render(<NotificationDropdown />, { wrapper: Wrapper });
-      clickElement(screen.getByTestId('dropdown-trigger'));
+      await clickElement(screen.getByTestId('dropdown-trigger'));
       await act(async () => {
         await new Promise((r) => setTimeout(r, 0));
       });

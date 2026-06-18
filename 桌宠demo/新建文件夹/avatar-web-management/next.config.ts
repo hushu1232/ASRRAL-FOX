@@ -1,11 +1,12 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import createBundleAnalyzer from '@next/bundle-analyzer';
 import createNextIntlPlugin from 'next-intl/plugin';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
 const withBundleAnalyzer = process.env.ANALYZE === 'true'
-  ? require('@next/bundle-analyzer')()
+  ? createBundleAnalyzer()
   : (config: NextConfig) => config;
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -91,12 +92,6 @@ const nextConfig: NextConfig = {
 
     return [
       // Static assets — long-lived cache with immutable directive
-      {
-        source: '/_next/static/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        ],
-      },
       // Public assets — 1 year cache
       {
         source: '/assets/:path*',
