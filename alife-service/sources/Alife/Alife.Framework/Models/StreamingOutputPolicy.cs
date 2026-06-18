@@ -16,30 +16,35 @@ public sealed record StreamingOutputPolicy(
     StreamingOutputMode Mode,
     int MinBufferedCharacters,
     int MaxBufferedCharacters,
+    int PreferSingleMessageUntilCharacters,
     string SentenceBoundaries)
 {
     public static StreamingOutputPolicy Disabled { get; } = new(
         StreamingOutputMode.Disabled,
         MinBufferedCharacters: 0,
         MaxBufferedCharacters: int.MaxValue,
+        PreferSingleMessageUntilCharacters: int.MaxValue,
         SentenceBoundaries: "。！？.!?\n");
 
     public static StreamingOutputPolicy Token { get; } = new(
         StreamingOutputMode.Token,
         MinBufferedCharacters: 0,
         MaxBufferedCharacters: 1,
+        PreferSingleMessageUntilCharacters: 0,
         SentenceBoundaries: "。！？.!?\n");
 
     public static StreamingOutputPolicy QqPrivateText { get; } = new(
         StreamingOutputMode.Sentence,
         MinBufferedCharacters: 120,
         MaxBufferedCharacters: 260,
+        PreferSingleMessageUntilCharacters: 420,
         SentenceBoundaries: "。！？.!?\n");
 
     public static StreamingOutputPolicy QqGroupText { get; } = new(
         StreamingOutputMode.Sentence,
         MinBufferedCharacters: 120,
         MaxBufferedCharacters: 260,
+        PreferSingleMessageUntilCharacters: 360,
         SentenceBoundaries: "。！？.!?\n");
 }
 
@@ -115,6 +120,9 @@ public sealed class StreamingOutputSegmenter(StreamingOutputPolicy policy)
     int FindSentenceCut(string current)
     {
         int min = Math.Max(0, policy.MinBufferedCharacters);
+        if (min > 1 && current.Length < policy.PreferSingleMessageUntilCharacters)
+            return 0;
+
         for (int i = 0; i < current.Length; i++)
         {
             if (policy.SentenceBoundaries.Contains(current[i], StringComparison.Ordinal) == false)

@@ -49,6 +49,16 @@ public class StreamingOutputSegmenterTests
     }
 
     [Test]
+    public void Push_QqGroupText_KeepsReadableMediumReplyTogetherAfterLongFirstSentence()
+    {
+        StreamingOutputSegmenter segmenter = new(StreamingOutputPolicy.QqGroupText);
+        string reply = "这是一个比较长的第一句，它包含足够多的解释、上下文和限定条件，长度已经超过普通流式阈值，但它仍然只是中等长度回复的一部分，不应该因为这里刚好出现句号就立刻拆成第一条消息，尤其是在群聊里连续发送会显得像刷屏，也会打断别人阅读整段意思，所以发送层应该优先判断整条回复是否还能作为一条自然消息保留。第二句只是补充一句收束说明，合在一起读更自然。";
+
+        Assert.That(segmenter.Push(reply), Is.Empty);
+        Assert.That(segmenter.Flush(), Is.EqualTo(new[] { reply }));
+    }
+
+    [Test]
     public void Push_ShortSentenceMode_FlushesWhenBufferReachesMaxCharacters()
     {
         StreamingOutputPolicy policy = StreamingOutputPolicy.QqGroupText with

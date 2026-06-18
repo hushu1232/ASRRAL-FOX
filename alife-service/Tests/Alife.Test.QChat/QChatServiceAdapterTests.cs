@@ -1376,6 +1376,38 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task PlainGroupFallbackSuppressesInternalListeningStatus()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        PlainReplyQChatService service = new(functionCaller, runtime, "\u672f\u672f\u5728\u7fa4\u91cc\u89e3\u91ca\u6211\u7684\u56de\u590d\u65b9\u5f0f\uff0c\u662f\u5bf9\u522b\u4eba\u8bf4\u7684\uff0c\u4e0d\u662f\u5bf9\u6211\u53d1\u6307\u4ee4\u3002\u4e0d\u9700\u8981\u63d2\u8bdd\u5237\u5c4f\uff0c\u5b89\u9759\u542c\u7740\u5c31\u597d\u3002")
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowGroupMemberMentions = true,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "\u5c0f\u660e" },
+            RawMessage = "[CQ:at,qq=999] \u4f60\u5728\u5417"
+        });
+
+        await service.WaitForDispatchAsync();
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
+    [Test]
     public async Task IncomingPrivateQChatToolReplyCanSendOnlyToCurrentSession()
     {
         FakeOneBotRuntime runtime = new();
@@ -2256,12 +2288,14 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => service.IsQuietModeEnabled);
         Assert.That(dispatchCount, Is.Zero);
-        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] { (1001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来") }));
+        Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(1));
+        Assert.That(runtime.PrivateMessages[0].Target, Is.EqualTo(1001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.PrivateMessages[0].Message);
         Assert.That(runtime.GroupMessages, Is.Empty);
     }
 
     [Test]
-    public async Task OwnerSleepCommandUsesVariedPersonaAcknowledgements()
+    public async Task OwnerPrivateSleepCommandDoesNotUseMioSpecificFixedAcknowledgement()
     {
         FakeOneBotRuntime runtime = new();
         QChatService service = CreateStartedService(runtime, new QChatConfig
@@ -2270,6 +2304,42 @@ public class QChatServiceAdapterTests
             OwnerId = 1001,
             EnableBalancedTextStreaming = false
         });
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u4f60\u53bb\u7761\u89c9\u5427"
+        });
+
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string acknowledgement = runtime.PrivateMessages.Single().Message;
+
+        Assert.That(acknowledgement, Does.Not.Contain("\u54aa\u7eea"));
+        Assert.That(acknowledgement, Does.Not.Contain("\u55b5"));
+        Assert.That(acknowledgement, Does.Not.Contain("\u4e3b\u4eba\u771f\u4f1a\u4f7f\u5524\u4eba"));
+    }
+
+    [Test]
+    public async Task OwnerSleepCommandUsesVariedPersonaAcknowledgements()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        GeneratedAcknowledgementQChatService service = new(functionCaller, runtime, [
+            "好，术术，我先安静待着。",
+            "嗯，我会放轻声音等你。",
+            "收到，我先退到一旁。"
+        ])
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
 
         for (int i = 0; i < 3; i++)
         {
@@ -2304,6 +2374,8 @@ public class QChatServiceAdapterTests
         Assert.That(distinctSleepReplies, Has.Length.GreaterThan(1));
         Assert.That(sleepReplies, Has.All.Not.Contains("不回复"));
         Assert.That(sleepReplies, Has.All.Not.Contains("保持安静"));
+        Assert.That(sleepReplies, Has.All.Not.Contains("咪绪"));
+        Assert.That(sleepReplies, Has.All.Not.Contains("喵"));
     }
 
     [Test]
@@ -2390,9 +2462,9 @@ public class QChatServiceAdapterTests
         releaseDispatch.SetResult();
 
         await Task.Delay(300);
-        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] {
-            (3001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来")
-        }));
+        Assert.That(runtime.GroupMessages, Has.Count.EqualTo(1));
+        Assert.That(runtime.GroupMessages[0].Target, Is.EqualTo(3001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.GroupMessages[0].Message);
     }
 
     [Test]
@@ -2448,9 +2520,9 @@ public class QChatServiceAdapterTests
         releaseDispatch.SetResult();
 
         await Task.Delay(300);
-        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] {
-            (3001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来")
-        }));
+        Assert.That(runtime.GroupMessages, Has.Count.EqualTo(1));
+        Assert.That(runtime.GroupMessages[0].Target, Is.EqualTo(3001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.GroupMessages[0].Message);
     }
 
     [Test]
@@ -2698,7 +2770,9 @@ public class QChatServiceAdapterTests
         await Task.Delay(300);
         Assert.That(service.IsQuietModeEnabled, Is.True);
         Assert.That(dispatchCount, Is.Zero);
-        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来") }));
+        Assert.That(runtime.GroupMessages, Has.Count.EqualTo(1));
+        Assert.That(runtime.GroupMessages[0].Target, Is.EqualTo(3001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.GroupMessages[0].Message);
 
         runtime.Raise(new OneBotMessageEvent
         {
@@ -2722,10 +2796,9 @@ public class QChatServiceAdapterTests
         });
 
         await WaitUntilAsync(() => runtime.GroupMessages.Count == 2);
-        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] {
-            (3001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来"),
-            (3001L, "reply-1")
-        }));
+        Assert.That(runtime.GroupMessages[0].Target, Is.EqualTo(3001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.GroupMessages[0].Message);
+        Assert.That(runtime.GroupMessages[1], Is.EqualTo((3001L, "reply-1")));
     }
 
     [Test]
@@ -2764,10 +2837,9 @@ public class QChatServiceAdapterTests
         });
 
         await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
-        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] {
-            (1001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来"),
-            (1001L, "awake-reply")
-        }));
+        Assert.That(runtime.PrivateMessages[0].Target, Is.EqualTo(1001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.PrivateMessages[0].Message);
+        Assert.That(runtime.PrivateMessages[1], Is.EqualTo((1001L, "awake-reply")));
     }
 
     [Test]
@@ -2815,11 +2887,11 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => runtime.PrivateMessages.Count == 3);
         Assert.That(dispatchCount, Is.EqualTo(1));
-        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] {
-            (1001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来"),
-            (2002L, "听到啦，咪绪回来陪你了喵"),
-            (2002L, "role-PrivateGuest")
-        }));
+        Assert.That(runtime.PrivateMessages[0].Target, Is.EqualTo(1001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.PrivateMessages[0].Message);
+        Assert.That(runtime.PrivateMessages[1].Target, Is.EqualTo(2002));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.PrivateMessages[1].Message);
+        Assert.That(runtime.PrivateMessages[2], Is.EqualTo((2002L, "role-PrivateGuest")));
     }
 
     [Test]
@@ -2866,10 +2938,12 @@ public class QChatServiceAdapterTests
         await WaitUntilAsync(() => service.IsQuietModeEnabled == false);
         Assert.That(dispatchCount, Is.Zero);
         Assert.That(runtime.PrivateMessages, Is.Empty);
-        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] {
-            (3001L, "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来"),
-            (3001L, "妈妈，听到啦，咪绪回来陪你了喵")
-        }));
+        Assert.That(runtime.GroupMessages, Has.Count.EqualTo(2));
+        Assert.That(runtime.GroupMessages[0].Target, Is.EqualTo(3001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.GroupMessages[0].Message);
+        Assert.That(runtime.GroupMessages[1].Target, Is.EqualTo(3001));
+        Assert.That(runtime.GroupMessages[1].Message, Does.StartWith("\u5988\u5988"));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.GroupMessages[1].Message);
     }
 
     [Test]
@@ -2968,6 +3042,15 @@ public class QChatServiceAdapterTests
             [])).GetAwaiter().GetResult();
     }
 
+    static void AssertQuietAcknowledgementIsPersonaNeutral(string message)
+    {
+        Assert.That(message, Is.Not.Empty);
+        Assert.That(message, Does.Not.Contain("咪绪"));
+        Assert.That(message, Does.Not.Contain("喵"));
+        Assert.That(message, Does.Not.Contain("猫娘"));
+        Assert.That(message, Does.Not.Contain("主人真会使唤人"));
+    }
+
     static string GetPendingPokeText(QChatService service)
     {
         PropertyInfo chatBotProperty = typeof(InteractiveModule)
@@ -3059,6 +3142,20 @@ public class QChatServiceAdapterTests
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         public void Raise(OneBotBaseEvent ev) => EventReceived?.Invoke(ev);
+    }
+
+    sealed class GeneratedAcknowledgementQChatService(
+        XmlFunctionCaller functionCaller,
+        IOneBotRuntime runtime,
+        IReadOnlyList<string> acknowledgements) : QChatService(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+    {
+        int index;
+
+        protected override Task<string> GenerateQuietModeAcknowledgementAsync(string prompt)
+        {
+            int selected = Interlocked.Increment(ref index) - 1;
+            return Task.FromResult(acknowledgements[selected % acknowledgements.Count]);
+        }
     }
 
     sealed class PlainReplyQChatService(

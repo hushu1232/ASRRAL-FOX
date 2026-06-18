@@ -149,21 +149,8 @@ public class QChatService(
     IModuleHealthReporter,
     IAgentQChatJoinedGroupProvider
 {
-    static readonly string[] QuietModeSleepAcknowledgements =
-    [
-        "主人真会使唤人喵，咪绪先安静待命，叫我醒醒就回来",
-        "好哦，我把声音放轻一点，先在旁边等你叫我",
-        "收到，我先乖乖安静下来，你叫我醒醒我就回来",
-        "那我先眯一会儿，不吵你了，醒醒的时候叫我"
-    ];
-
-    static readonly string[] QuietModeWakeAcknowledgements =
-    [
-        "听到啦，咪绪回来陪你了喵",
-        "嗯，我醒着了，回来听你说",
-        "在呢，我重新把注意力放回来",
-        "醒啦，我重新看这边"
-    ];
+    const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
+    const string QuietModeWakeFallbackAcknowledgement = "我在。";
 
     [XmlFunction(FunctionMode.OneShot)]
     public void GetQChatGuide()
@@ -2000,7 +1987,7 @@ public class QChatService(
         return false;
     }
 
-    Task SendQuietModeAcknowledgementAsync(OneBotMessageEvent messageEvent)
+    async Task SendQuietModeAcknowledgementAsync(OneBotMessageEvent messageEvent)
     {
         string targetType = messageEvent.MessageType == OneBotMessageType.Group ? "group" : "private";
         long targetId = messageEvent.MessageType == OneBotMessageType.Group
@@ -2008,12 +1995,13 @@ public class QChatService(
             : messageEvent.UserId;
 
         if (targetId <= 0)
-            return Task.CompletedTask;
+            return;
 
-        return SendChatAsyncCore(
+        string acknowledgement = await BuildQuietModeAcknowledgementAsync(messageEvent, enabled: true);
+        await SendChatAsyncCore(
             targetType,
             targetId,
-            SelectQuietModeAcknowledgement(messageEvent, QuietModeSleepAcknowledgements),
+            acknowledgement,
             bypassQuietMode: true);
     }
 
@@ -2062,7 +2050,7 @@ public class QChatService(
         return true;
     }
 
-    Task SendQuietModeWakeAcknowledgementAsync(OneBotMessageEvent messageEvent)
+    async Task SendQuietModeWakeAcknowledgementAsync(OneBotMessageEvent messageEvent)
     {
         string targetType = messageEvent.MessageType == OneBotMessageType.Group ? "group" : "private";
         long targetId = messageEvent.MessageType == OneBotMessageType.Group
@@ -2070,14 +2058,74 @@ public class QChatService(
             : messageEvent.UserId;
 
         if (targetId <= 0)
-            return Task.CompletedTask;
+            return;
 
-        string acknowledgement = SelectQuietModeAcknowledgement(messageEvent, QuietModeWakeAcknowledgements);
+        string acknowledgement = await BuildQuietModeAcknowledgementAsync(messageEvent, enabled: false);
         string message = messageEvent.MessageType == OneBotMessageType.Group
             ? $"{GetNaturalGroupAddress(messageEvent, QChatMessageSecurity.Classify(Configuration!, messageEvent))}，{acknowledgement}"
             : acknowledgement;
 
-        return SendChatAsyncCore(targetType, targetId, message, bypassQuietMode: true);
+        await SendChatAsyncCore(targetType, targetId, message, bypassQuietMode: true);
+    }
+
+    async Task<string> BuildQuietModeAcknowledgementAsync(OneBotMessageEvent messageEvent, bool enabled)
+    {
+        string fallback = enabled
+            ? QuietModeSleepFallbackAcknowledgement
+            : QuietModeWakeFallbackAcknowledgement;
+
+        try
+        {
+            string prompt = BuildQuietModeAcknowledgementPrompt(messageEvent, enabled);
+            string generated = await GenerateQuietModeAcknowledgementAsync(prompt);
+            return SanitizeQuietModeAcknowledgement(generated, fallback);
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-quiet-ack-generation-failed", "Quiet mode acknowledgement generation failed; neutral fallback will be used.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                enabled
+            }, ex);
+            return fallback;
+        }
+    }
+
+    protected virtual Task<string> GenerateQuietModeAcknowledgementAsync(string prompt)
+    {
+        if (ChatBot == null)
+            return Task.FromResult("");
+
+        return ChatBot.ChatAsync(ChatTextFilter(prompt));
+    }
+
+    string BuildQuietModeAcknowledgementPrompt(OneBotMessageEvent messageEvent, bool enabled)
+    {
+        string senderRole = QChatMessageSecurity.Classify(Configuration!, messageEvent).ToString();
+        string conversationType = messageEvent.MessageType == OneBotMessageType.Group ? "群聊" : "私聊";
+        string readableMessage = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        string commandMeaning = enabled
+            ? "对方让你进入睡眠/安静/不打扰状态"
+            : "对方让你醒来/恢复回应";
+        string responseIntent = enabled
+            ? "表示你已经安静下来，先不打扰对方"
+            : "表示你已经恢复注意力，正在这里";
+
+        return $"""
+                当前 QQ {conversationType}收到一条安静模式控制消息。
+                发送者角色: {senderRole}
+                原始消息: {readableMessage}
+                控制含义: {commandMeaning}
+
+                请以当前角色自己的人设，回复一句自然的 QQ 确认语。
+                要求:
+                - 只输出确认语，不要解释，不要 XML，不要工具标签。
+                - {responseIntent}。
+                - 按当前关系和称呼自然回应；如果是主人，保持温柔。
+                - 不要使用“咪绪”“喵”“猫娘”，不要照搬固定模板。
+                - 20 字左右，最多 40 字。
+                """;
     }
 
     string GetNaturalGroupAddress(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
@@ -2113,17 +2161,51 @@ public class QChatService(
         return true;
     }
 
-    static string SelectQuietModeAcknowledgement(OneBotBaseEvent messageEvent, IReadOnlyList<string> acknowledgements)
+    static string SanitizeQuietModeAcknowledgement(string? value, string fallback)
     {
-        if (acknowledgements.Count == 0)
-            return "";
+        if (string.IsNullOrWhiteSpace(value))
+            return fallback;
 
-        long seed = messageEvent.Time;
-        if (seed <= 0)
-            return acknowledgements[0];
+        string normalized = value.Trim();
+        while (normalized.Length >= 2 && IsWrappingPair(normalized[0], normalized[^1]))
+            normalized = normalized[1..^1].Trim();
 
-        int index = (int)(seed % acknowledgements.Count);
-        return acknowledgements[index];
+        string[] lines = normalized
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        normalized = lines.FirstOrDefault() ?? "";
+        if (string.IsNullOrWhiteSpace(normalized))
+            return fallback;
+
+        if (normalized.Contains('<', StringComparison.Ordinal) ||
+            normalized.Contains('>', StringComparison.Ordinal) ||
+            normalized.Contains("```", StringComparison.Ordinal))
+        {
+            return fallback;
+        }
+
+        string compact = normalized
+            .Replace(" ", "", StringComparison.Ordinal)
+            .Replace("\t", "", StringComparison.Ordinal)
+            .ToLowerInvariant();
+
+        if (compact.Contains("咪绪", StringComparison.Ordinal) ||
+            compact.Contains("喵", StringComparison.Ordinal) ||
+            compact.Contains("猫娘", StringComparison.Ordinal) ||
+            compact.Contains("主人真会使唤人", StringComparison.Ordinal) ||
+            compact.Contains("不回复", StringComparison.Ordinal) ||
+            compact.Contains("不回覆", StringComparison.Ordinal) ||
+            compact.Contains("无需回复", StringComparison.Ordinal) ||
+            compact.Contains("不用回复", StringComparison.Ordinal) ||
+            compact.Contains("不插话", StringComparison.Ordinal) ||
+            compact.Contains("不插話", StringComparison.Ordinal))
+        {
+            return fallback;
+        }
+
+        const int MaxAcknowledgementLength = 60;
+        return normalized.Length <= MaxAcknowledgementLength
+            ? normalized
+            : normalized[..MaxAcknowledgementLength].TrimEnd();
     }
 
     bool IsQuietModeWakeUser(long userId)
@@ -2780,8 +2862,16 @@ public class QChatService(
                || compact.Contains("不用回复", StringComparison.Ordinal)
                || compact.Contains("保持安静", StringComparison.Ordinal)
                || compact.Contains("保持安靜", StringComparison.Ordinal)
+               || compact.Contains("安静听着", StringComparison.Ordinal)
+               || compact.Contains("安靜聽著", StringComparison.Ordinal)
+               || compact.Contains("安静待着", StringComparison.Ordinal)
+               || compact.Contains("安靜待著", StringComparison.Ordinal)
                || compact.Contains("不插话", StringComparison.Ordinal)
                || compact.Contains("不插話", StringComparison.Ordinal)
+               || compact.Contains("不需要插话", StringComparison.Ordinal)
+               || compact.Contains("不需要插話", StringComparison.Ordinal)
+               || compact.Contains("无需插话", StringComparison.Ordinal)
+               || compact.Contains("無需插話", StringComparison.Ordinal)
                || compact.Contains("不打扰", StringComparison.Ordinal)
                || compact.Contains("不打擾", StringComparison.Ordinal)
                || compact.Contains("旁观", StringComparison.Ordinal)
