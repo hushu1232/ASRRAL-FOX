@@ -9,8 +9,16 @@
 !/开发规范/*
 
 !/.gitignore
+!/AGENTS.md
 !/Alife.slnx
 !/Directory.Build.props
+
+!/docs/
+!/docs/github-upload-via-foxd.md
+
+!/tools/
+!/tools/upload-alife-service-via-foxd.ps1
+!/tools/start-alife-napcat-live.ps1
 
 !/README.md
 !/LICENSE

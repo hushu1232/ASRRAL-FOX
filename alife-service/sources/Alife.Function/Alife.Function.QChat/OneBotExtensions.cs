@@ -54,4 +54,20 @@ public static class OneBotExtensions
         OneBotForwardData? data = await client.CallActionAsync<OneBotForwardData>("get_forward_msg", new { id = forwardId });
         return data?.Messages;
     }
+
+    public static async Task<IReadOnlyList<OneBotGroupMember>> GetGroupMemberList(this OneBotClient client, long groupId)
+    {
+        List<OneBotGroupMember>? members = await client.CallActionAsync<List<OneBotGroupMember>>(
+            "get_group_member_list",
+            new { group_id = groupId });
+        return members ?? [];
+    }
+
+    public static async Task<IReadOnlyList<OneBotGroupInfo>> GetGroupList(this OneBotClient client)
+    {
+        List<OneBotGroupInfo>? groups = await client.CallActionAsync<List<OneBotGroupInfo>>(
+            "get_group_list",
+            new { });
+        return groups ?? [];
+    }
 }

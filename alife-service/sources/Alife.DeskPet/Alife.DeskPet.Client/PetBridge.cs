@@ -145,6 +145,7 @@ public class PetBridge : IDisposable
         try
         {
             string json = e.WebMessageAsJson;
+            File.AppendAllText("pet.log", "[web] " + json + Environment.NewLine);
             using JsonDocument doc = JsonDocument.Parse(json);
             JsonElement root = doc.RootElement;
 

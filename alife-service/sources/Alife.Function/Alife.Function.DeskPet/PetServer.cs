@@ -13,7 +13,10 @@ namespace Alife.Function.DeskPet;
 
 public record PetClientStartInfo(string FileName, string Arguments, string WorkingDirectory);
 
-public class PetServer : IAsyncDisposable, IEmotionParameterSink
+/// <summary>
+/// 桌宠服务的控制中枢，负责管理进程生命周期与业务逻辑分配
+/// </summary>
+public class PetServer : IDeskPetRuntime
 {
     public event Action<string>? OnInput;
     public event Action<string>? OnInteracted;
@@ -49,14 +52,14 @@ public class PetServer : IAsyncDisposable, IEmotionParameterSink
                 WorkingDirectory = clientStartInfo.WorkingDirectory
             }
         };
-        nativeProcess.Start();
-        ProcessTracker.Track(nativeProcess);
-
-        nativeProcess.BeginErrorReadLine();
+        //进程异常信息
         nativeProcess.ErrorDataReceived += (_, e) => {
             if (e.Data != null)
                 AlifeTerminal.LogWarning($"[PetProcess Error] {e.Data}");
         };
+        nativeProcess.Start();
+        ProcessTracker.Track(nativeProcess);
+        nativeProcess.BeginErrorReadLine();
 
         petProcess = new PetProcess(nativeProcess.StandardInput, nativeProcess.StandardOutput);
         petProcess.OutputReceived += OnEventReceived;

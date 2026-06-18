@@ -145,6 +145,55 @@ public record OneBotForwardData
     public List<OneBotForwardMessage> Messages { get; init; } = [];
 }
 
+public sealed record OneBotGroupMember
+{
+    [JsonPropertyName("group_id")]
+    public long GroupId { get; init; }
+
+    [JsonPropertyName("user_id")]
+    public long UserId { get; init; }
+
+    [JsonPropertyName("nickname")]
+    public string Nickname { get; init; } = "";
+
+    [JsonPropertyName("card")]
+    public string Card { get; init; } = "";
+
+    [JsonPropertyName("role")]
+    public string Role { get; init; } = "";
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = "";
+
+    [JsonIgnore]
+    public string DisplayName
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Card) == false)
+                return Card.Trim();
+            if (string.IsNullOrWhiteSpace(Nickname) == false)
+                return Nickname.Trim();
+            return UserId.ToString();
+        }
+    }
+}
+
+public sealed record OneBotGroupInfo
+{
+    [JsonPropertyName("group_id")]
+    public long GroupId { get; init; }
+
+    [JsonPropertyName("group_name")]
+    public string GroupName { get; init; } = "";
+
+    [JsonPropertyName("member_count")]
+    public int MemberCount { get; init; }
+
+    [JsonPropertyName("max_member_count")]
+    public int MaxMemberCount { get; init; }
+}
+
 #endregion
 
 #region API 模型
