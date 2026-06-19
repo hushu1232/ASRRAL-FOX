@@ -33,7 +33,7 @@ public class QChatManagedFileServiceTests
     }
 
     [Test]
-    public async Task DownloadAsyncSavesApprovedTextFileIntoManagedFolderAndReturnsPreview()
+    public async Task DownloadAsyncStoresPrivateFileUnderSenderAndExtensionFolder()
     {
         string root = CreateTempRoot();
         QChatManagedFileService service = new(root, (_, _) => Task.FromResult(Encoding.UTF8.GetBytes("hello from file")));
@@ -51,9 +51,31 @@ public class QChatManagedFileServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.Record!.Status, Is.EqualTo(QChatManagedFileStatus.Downloaded));
         Assert.That(result.Record.LocalPath, Does.StartWith(root));
+        Assert.That(result.Record.LocalPath, Is.EqualTo(Path.Combine(root, "downloads", "private-1001", "txt", "notes.txt")));
         Assert.That(File.Exists(result.Record.LocalPath!), Is.True);
         Assert.That(await File.ReadAllTextAsync(result.Record.LocalPath!), Is.EqualTo("hello from file"));
         Assert.That(result.TextPreview, Does.Contain("hello from file"));
+    }
+
+    [Test]
+    public async Task DownloadAsyncStoresGroupFileUnderGroupAndExtensionFolder()
+    {
+        string root = CreateTempRoot();
+        QChatManagedFileService service = new(root, (_, _) => Task.FromResult(Encoding.UTF8.GetBytes("group file")));
+        QChatManagedFileRecord record = await service.RegisterAsync(new QChatManagedFileRegistration(
+            MessageType: OneBotMessageType.Group,
+            SenderId: 1001,
+            GroupId: 2002,
+            FileId: "qq-file-group-path",
+            OriginalName: @"..\group report.csv",
+            Size: 10,
+            Url: "https://example.invalid/group-report.csv"));
+
+        QChatManagedFileOperationResult result = await service.DownloadAsync(record.Id);
+
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Record!.LocalPath, Is.EqualTo(Path.Combine(root, "downloads", "group-2002", "csv", "group report.csv")));
+        Assert.That(File.Exists(result.Record.LocalPath!), Is.True);
     }
 
     [Test]
@@ -150,6 +172,67 @@ public class QChatManagedFileServiceTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.Record!.LocalPath, Does.StartWith(root));
         Assert.That(Path.GetFileName(result.Record.LocalPath!), Is.EqualTo("evil.txt"));
+    }
+
+    [Test]
+    public async Task ReadAndDeleteWorkWhenRootHasTrailingSeparator()
+    {
+        string root = CreateTempRoot();
+        QChatManagedFileService service = new(root + Path.DirectorySeparatorChar, (_, _) => Task.FromResult(Encoding.UTF8.GetBytes("trailing root")));
+        QChatManagedFileRecord record = await service.RegisterAsync(new QChatManagedFileRegistration(
+            MessageType: OneBotMessageType.Private,
+            SenderId: 1001,
+            GroupId: 0,
+            FileId: "qq-file-trailing-root",
+            OriginalName: "trailing.txt",
+            Size: 13,
+            Url: "https://example.invalid/trailing.txt"));
+        QChatManagedFileOperationResult downloaded = await service.DownloadAsync(record.Id);
+
+        QChatManagedFileOperationResult read = await service.ReadAsync(record.Id);
+        QChatManagedFileOperationResult deleted = await service.DeleteAsync(record.Id);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(downloaded.Success, Is.True);
+            Assert.That(read.Success, Is.True);
+            Assert.That(read.TextPreview, Does.Contain("trailing root"));
+            Assert.That(deleted.Success, Is.True);
+            Assert.That(File.Exists(downloaded.Record!.LocalPath!), Is.False);
+        });
+    }
+
+    [Test]
+    public async Task DownloadAsyncReturnsExistingDownloadedFileForSameRecordWithoutCreatingDuplicate()
+    {
+        string root = CreateTempRoot();
+        int downloadCalls = 0;
+        QChatManagedFileService service = new(root, (_, _) =>
+        {
+            downloadCalls++;
+            return Task.FromResult(Encoding.UTF8.GetBytes("same file"));
+        });
+        QChatManagedFileRecord record = await service.RegisterAsync(new QChatManagedFileRegistration(
+            MessageType: OneBotMessageType.Private,
+            SenderId: 1001,
+            GroupId: 0,
+            FileId: "qq-file-repeat",
+            OriginalName: "repeat.txt",
+            Size: 9,
+            Url: "https://example.invalid/repeat.txt"));
+        QChatManagedFileOperationResult first = await service.DownloadAsync(record.Id);
+
+        QChatManagedFileOperationResult second = await service.DownloadAsync(record.Id);
+
+        string folder = Path.Combine(root, "downloads", "private-1001", "txt");
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.Success, Is.True);
+            Assert.That(second.Success, Is.True);
+            Assert.That(second.Record!.LocalPath, Is.EqualTo(first.Record!.LocalPath));
+            Assert.That(downloadCalls, Is.EqualTo(1));
+            Assert.That(Directory.GetFiles(folder, "repeat*.txt"), Has.Length.EqualTo(1));
+        });
     }
 
     static string CreateTempRoot()

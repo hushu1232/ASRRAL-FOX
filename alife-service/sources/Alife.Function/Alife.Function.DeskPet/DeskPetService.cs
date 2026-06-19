@@ -94,17 +94,6 @@ public class DeskPetService(
     }
 
     [XmlFunction(FunctionMode.OneShot)]
-    [Description("Perform a semantic Live2D action by name, such as idle, cry, shy, surprised, happy, sad.")]
-    public void Action(string option)
-    {
-        option = option.Trim();
-        if (string.IsNullOrWhiteSpace(option))
-            return;
-        if (client!.TryPlayInteraction(option) == false)
-            throw new Exception("Action option does not exist.");
-    }
-
-    [XmlFunction(FunctionMode.OneShot)]
     [Description("获取当前屏幕位置（使用后需等待结果返回）")]
     public async Task Position()
     {
@@ -177,14 +166,11 @@ public class DeskPetService(
 
         string? modelName = Configuration?.ModelName;
         if (string.IsNullOrWhiteSpace(modelName))
-            modelName = new DeskPetServiceConfig().ModelName;
+            modelName = "Mao";
         client = petRuntime ?? new PetServer(modelName);
         string supportedExpressionsDescription = string.Join(", ", client.SupportedExpressions);
         if (string.IsNullOrEmpty(supportedExpressionsDescription)) supportedExpressionsDescription = $"当前不支持<{nameof(Expression)}>功能";
         string supportedMotionsDescription = string.Join(", ", client.SupportedMotions.Keys);
-        string supportedActionsDescription = string.Join(", ", client.SupportedActions);
-        if (string.IsNullOrEmpty(supportedActionsDescription))
-            supportedActionsDescription = $"current model does not support {nameof(Action)} options";
         if (string.IsNullOrEmpty(supportedMotionsDescription)) supportedMotionsDescription = $"当前不支持<{nameof(Motion)}>功能";
 
         XmlHandler xmlHandler = new(this);
@@ -195,7 +181,6 @@ public class DeskPetService(
 
                 ## 支持工具
                 {xmlHandler.FunctionDocument()}
-                Supported {nameof(Action)} options: {supportedActionsDescription}
 
                 ## 工具选项
                 - 支持的 {nameof(Expression)} 选项：{supportedExpressionsDescription}

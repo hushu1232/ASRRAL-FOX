@@ -12,9 +12,29 @@ public static class OneBotExtensions
     {
         await client.CallActionAsync<object>("send_private_msg", new { user_id = userId, message });
     }
+    public static Task<OneBotSendMessageResult?> SendPrivateMessageWithResult(this OneBotClient client, long userId, string message)
+    {
+        return client.CallActionAsync<OneBotSendMessageResult>("send_private_msg", new { user_id = userId, message });
+    }
     public static async Task SendGroupMessage(this OneBotClient client, long groupId, string message)
     {
         await client.CallActionAsync<object>("send_group_msg", new { group_id = groupId, message });
+    }
+    public static Task<OneBotSendMessageResult?> SendGroupMessageWithResult(this OneBotClient client, long groupId, string message)
+    {
+        return client.CallActionAsync<OneBotSendMessageResult>("send_group_msg", new { group_id = groupId, message });
+    }
+    public static Task DeleteMessage(this OneBotClient client, long messageId)
+    {
+        return client.CallActionAsync<object>("delete_msg", new { message_id = messageId });
+    }
+    public static Task PokePrivate(this OneBotClient client, long userId)
+    {
+        return client.CallActionAsync<object>("friend_poke", new { user_id = userId });
+    }
+    public static Task PokeGroup(this OneBotClient client, long groupId, long userId)
+    {
+        return client.CallActionAsync<object>("group_poke", new { group_id = groupId, user_id = userId });
     }
     public static async Task UploadPrivateFile(this OneBotClient client, long userId, string filePath, string name)
     {

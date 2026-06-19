@@ -322,6 +322,14 @@ public static class QChatMessageSecurity
         return rawMessage.Contains("确认执行", StringComparison.OrdinalIgnoreCase) ||
                rawMessage.Contains("确认高风险", StringComparison.OrdinalIgnoreCase) ||
                rawMessage.Contains("确认授权", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("允许上传", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("确认上传", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("可以上传", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("允许上传文件", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("确认上传文件", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("允许发送文件", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("确认发送文件", StringComparison.OrdinalIgnoreCase) ||
+               rawMessage.Contains("授权上传文件", StringComparison.OrdinalIgnoreCase) ||
                rawMessage.Contains("confirm high risk", StringComparison.OrdinalIgnoreCase) ||
                rawMessage.Contains("confirm execute", StringComparison.OrdinalIgnoreCase);
     }

@@ -22,10 +22,7 @@ public sealed class AgentPermissionGate(AgentPermissionPolicy policy)
             return new AgentPermissionGateDecision(AgentPermissionDecisionKind.Allow, "System-originated action.");
 
         if (request.RiskLevel == AgentRiskLevel.High && actorIsOwner == false)
-            return new AgentPermissionGateDecision(AgentPermissionDecisionKind.Deny, $"high-risk action '{action}' requires owner authority");
-
-        if (request.RiskLevel == AgentRiskLevel.High && request.HasExplicitConfirmation == false)
-            return new AgentPermissionGateDecision(AgentPermissionDecisionKind.AskOwner, $"high-risk action '{action}' requires explicit owner confirmation");
+            return new AgentPermissionGateDecision(AgentPermissionDecisionKind.AskOwner, $"high-risk action '{action}' requires owner confirmation");
 
         if (request.RiskLevel == AgentRiskLevel.Medium
             && actorIsOwner == false

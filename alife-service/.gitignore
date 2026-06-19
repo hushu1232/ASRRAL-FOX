@@ -5,7 +5,6 @@
 !/Demos/*
 !/Tests/*
 !/Sources/*
-!/docs/**
 !/开发规范/*
 
 !/.gitignore

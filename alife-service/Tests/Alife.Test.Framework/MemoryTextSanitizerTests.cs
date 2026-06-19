@@ -101,11 +101,36 @@ public class MemoryTextSanitizerTests
     }
 
     [Test]
+    public void SanitizeText_RemovesStageDirectionNoReplyVariants()
+    {
+        string text = """
+                      主人要求夏羽在群聊中少刷屏。
+                      （安静等待）
+                      （安静待机）
+                      [不插话]
+                      *沉默看着*
+                      术术允许正常问题继续回复。
+                      """;
+
+        MemoryTextSanitizationResult result = MemoryTextSanitizer.Default.SanitizeText(text);
+
+        Assert.That(result.Changed, Is.True);
+        Assert.That(result.RemovedSegments, Is.EqualTo(4));
+        Assert.That(result.Text, Does.Contain("主人要求夏羽在群聊中少刷屏。"));
+        Assert.That(result.Text, Does.Contain("术术允许正常问题继续回复。"));
+        Assert.That(result.Text, Does.Not.Contain("安静等待"));
+        Assert.That(result.Text, Does.Not.Contain("安静待机"));
+        Assert.That(result.Text, Does.Not.Contain("不插话"));
+        Assert.That(result.Text, Does.Not.Contain("沉默看着"));
+    }
+
+    [Test]
     public void ShouldDropHistoryRecord_DropsLeakedSilentStatusAtLevelZeroOnly()
     {
         MemoryTextSanitizer sanitizer = MemoryTextSanitizer.Default;
 
         Assert.That(sanitizer.ShouldDropHistoryRecord("（没理，保持安静）", level: 0), Is.True);
+        Assert.That(sanitizer.ShouldDropHistoryRecord("（安静待机）", level: 0), Is.True);
         Assert.That(sanitizer.ShouldDropHistoryRecord("主人要求咪绪在群聊中保持安静，减少刷屏。", level: 0), Is.False);
     }
 }

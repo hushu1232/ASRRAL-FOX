@@ -229,7 +229,7 @@ public class QZoneProactiveExecutionServiceTests
             config);
 
         Assert.That(blocked.Succeeded, Is.False);
-        Assert.That(blocked.Message, Does.Contain("Blocked"));
+        Assert.That(blocked.Message, Does.Contain("Owner confirmation required"));
         Assert.That(allowed.Succeeded, Is.True);
         Assert.That(runtime.Likes, Is.EqualTo(new[] { (1001L, "post-b") }));
     }
@@ -283,7 +283,7 @@ public class QZoneProactiveExecutionServiceTests
         Assert.That(allowed.Succeeded, Is.True);
         Assert.That(entries.Select(entry => entry.Action), Is.EqualTo(new[] { "qzone.like", "qzone.like" }));
         Assert.That(entries[0].Succeeded, Is.False);
-        Assert.That(entries[0].Error, Does.Contain("Blocked"));
+        Assert.That(entries[0].Error, Does.Contain("Owner confirmation required"));
         Assert.That(entries[1].Succeeded, Is.True);
         Assert.That(runtime.Likes, Is.EqualTo(new[] { (1001L, "post-b") }));
     }
@@ -329,7 +329,7 @@ public class QZoneProactiveExecutionServiceTests
             config);
 
         Assert.That(blocked.Succeeded, Is.False);
-        Assert.That(blocked.Message, Does.Contain("Blocked"));
+        Assert.That(blocked.Message, Does.Contain("Owner confirmation required"));
         Assert.That(runtime.Likes, Is.Empty);
         Assert.That(proactiveBehavior.GetCompletedSuggestion(pending.Id)?.Status, Is.EqualTo(AgentProactivePendingStatus.Confirmed));
     }

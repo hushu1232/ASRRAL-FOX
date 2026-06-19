@@ -46,6 +46,36 @@ public sealed class MemoryTextSanitizer
         "qchat-quiet-message-suppressed"
     ];
 
+    static readonly string[] InvisibleStateMarkers =
+    [
+        "心理状态",
+        "内心",
+        "心想",
+        "状态：",
+        "状态:",
+        "安静",
+        "待机",
+        "等待",
+        "观察",
+        "旁观",
+        "沉默",
+        "不语",
+        "不回",
+        "不回复",
+        "不回覆",
+        "不回应",
+        "不回應",
+        "不作",
+        "不做",
+        "不插话",
+        "不插話",
+        "看着",
+        "看著",
+        "听着",
+        "聽著",
+        "待命"
+    ];
+
     public MemoryTextSanitizationResult SanitizeText(string? text)
     {
         string source = text ?? "";
@@ -147,24 +177,85 @@ public sealed class MemoryTextSanitizer
 
     static bool IsLeakedSilentStatusText(string text)
     {
-        string compact = text
+        string trimmed = text.Trim();
+        string compact = trimmed
             .Replace('(', '（')
             .Replace(')', '）')
             .Replace(',', '，')
             .Replace('、', '，')
-            .Replace(" ", "", StringComparison.Ordinal);
+            .Replace("[", "【", StringComparison.Ordinal)
+            .Replace("]", "】", StringComparison.Ordinal)
+            .Replace(" ", "", StringComparison.Ordinal)
+            .Replace("\t", "", StringComparison.Ordinal);
 
-        if (compact.Contains('（') == false || compact.Contains('）') == false)
-            return false;
-        if (compact.Contains("保持安静", StringComparison.Ordinal) == false)
-            return false;
+        if (compact.Contains("心理状态", StringComparison.Ordinal)
+            || compact.Contains("内心", StringComparison.Ordinal)
+            || compact.Contains("心想", StringComparison.Ordinal))
+        {
+            return true;
+        }
 
-        return compact.Contains("不回复", StringComparison.Ordinal)
-               || compact.Contains("没理", StringComparison.Ordinal)
-               || compact.Contains("无回复", StringComparison.Ordinal)
-               || compact.Contains("不回应", StringComparison.Ordinal)
-               || compact.Contains("等主人说完", StringComparison.Ordinal)
-               || compact.TrimStart().StartsWith("（保持安静", StringComparison.Ordinal);
+        string inner = UnwrapWholeDirective(trimmed);
+        if (inner.Length != trimmed.Length)
+            return ContainsInvisibleStateMarker(inner);
+
+        return ContainsWrappedInvisibleStateSegment(compact);
+    }
+
+    static bool ContainsInvisibleStateMarker(string value)
+    {
+        string compact = value
+            .Replace(" ", "", StringComparison.Ordinal)
+            .Replace("\t", "", StringComparison.Ordinal)
+            .Replace("\r", "", StringComparison.Ordinal)
+            .Replace("\n", "", StringComparison.Ordinal);
+        return InvisibleStateMarkers.Any(marker => compact.Contains(marker, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static bool ContainsWrappedInvisibleStateSegment(string value)
+    {
+        return ContainsWrappedInvisibleStateSegment(value, '（', '）')
+               || ContainsWrappedInvisibleStateSegment(value, '【', '】')
+               || ContainsWrappedInvisibleStateSegment(value, '*', '*');
+    }
+
+    static bool ContainsWrappedInvisibleStateSegment(string value, char start, char end)
+    {
+        int searchFrom = 0;
+        while (searchFrom < value.Length)
+        {
+            int startIndex = value.IndexOf(start, searchFrom);
+            if (startIndex < 0)
+                return false;
+            int endIndex = value.IndexOf(end, startIndex + 1);
+            if (endIndex < 0)
+                return false;
+
+            string inner = value[(startIndex + 1)..endIndex];
+            if (ContainsInvisibleStateMarker(inner))
+                return true;
+
+            searchFrom = endIndex + 1;
+        }
+
+        return false;
+    }
+
+    static string UnwrapWholeDirective(string value)
+    {
+        string current = value.Trim();
+        while (current.Length >= 2 && IsWrappingPair(current[0], current[^1]))
+            current = current[1..^1].Trim();
+        return current;
+    }
+
+    static bool IsWrappingPair(char start, char end)
+    {
+        return (start == '(' && end == ')')
+               || (start == '（' && end == '）')
+               || (start == '[' && end == ']')
+               || (start == '【' && end == '】')
+               || (start == '*' && end == '*');
     }
 
     static IEnumerable<string> TrimExcessBlankLines(IEnumerable<string> lines)

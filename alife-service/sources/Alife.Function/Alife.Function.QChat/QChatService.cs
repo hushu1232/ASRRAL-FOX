@@ -39,6 +39,8 @@ public record QChatConfig
     public bool EnablePrivateFileUpload { get; set; } = true;
     public bool EnableVideoMessage { get; set; } = true;
     public bool EnableBalancedTextStreaming { get; set; } = true;
+    public float AutoPokeBackPrivateProbability { get; set; } = 0.35f;
+    public float AutoPokeBackGroupProbability { get; set; } = 0.20f;
     public bool PersistQuietModeAcrossRestart { get; set; }
     public bool PersistedQuietModeEnabled { get; set; }
     public DateTimeOffset? PersistedQuietModeChangedAt { get; set; }
@@ -130,6 +132,13 @@ sealed record QChatReplySession(
     QChatSenderRole SenderRole,
     AgentPermissionRequest PermissionRequest);
 
+sealed record QChatRecentSentMessage(
+    long MessageId,
+    OneBotMessageType MessageType,
+    long TargetId,
+    string Preview,
+    DateTimeOffset SentAt);
+
 [Module("QQ聊天", """
                 连接 OneBot v11 WebSocket 服务器，实现 QQ 消息收发及文件传输。
                 可用于搭建服务器QQ机器人平台应用：
@@ -219,6 +228,17 @@ public partial class QChatService(
               强提醒示例：`<qchat type="Group" targetId="群号">[CQ:at,qq=发送者ID] 这件事需要你确认。</qchat>`
               多媒体示例：`<qchat>[CQ:record,file=1.mp3]</qchat>`
 
+              ## 跨会话发送
+              - 普通 `<qchat>` 只能回复当前 QQ 会话，不能从私聊直接写到群聊，也不能从群聊直接私聊别人。
+              - 当主人用自然语言明确要求你“去某个群/私聊找某人、喊一下、帮我说一声”时，使用 `qchat_cross_session_send`。这代表你主动切换到另一个 QQ 会话，以自己的身份说一句话。
+              - 不要把主人私聊原文直接转发到群里；除非主人明确要求“转述/原话发出”。目标或内容不清楚时，先在当前会话问清楚。
+
+              ## QQ文件发送
+              - 发送本地文件到群文件请调用 `QGroupFile`/`QFile`，不要把代码或文档正文直接贴进 `<qchat>` 里代替文件上传。
+              - 文件上传属于高风险操作；如果主人消息里已经明确说了“确认执行”“确认授权”“允许上传文件”“确认上传文件”“允许上传”“可以上传”，下一步应直接调用上传工具。
+              - 如果缺少确认，应请主人发送“允许上传文件”或 `confirm execute <QGroupFile groupId="群号" file="本地绝对路径" />`。不要自行声称系统已经授权，也不要在未调用上传工具时说“权限卡住”。
+              - 只有在 `QGroupFile`/`QFile` 调用成功返回后，才可以说“传好了/上传完成”；如果没有调用上传工具或工具报错，必须说明还没上传成功。
+
               ## 表情库功能
               你有一个丰富的预设表情库，可用在 QImage 中直接指定表情库中的名称或分类名快速发送表情。你要积极的使用该功能，来增加聊天的趣味性。
               目前支持的表情库选项有：
@@ -237,6 +257,9 @@ public partial class QChatService(
                 throw new Exception("不允许将消息发生给自己");
 
             string message = ctx.FullContent.Trim();
+            if (string.IsNullOrEmpty(message))
+                return;
+            message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, type, targetId, message);
             if (string.IsNullOrEmpty(message))
                 return;
             if (IsInternalNoReplyStatus(message))
@@ -284,6 +307,194 @@ public partial class QChatService(
                 }, ex);
                 Poke($"[QQ消息发送失败] {ex.Message}");
             }
+        }
+    }
+
+    [XmlFunction(FunctionMode.Content, "qchat_cross_session_send", riskLevel: XmlFunctionRiskLevel.Medium, budgetCost: 4)]
+    [Description("主人明确要求你切换到另一个 QQ 会话时，以自己的身份发送一条消息。普通当前会话回复仍必须使用 qchat。")]
+    public async Task QChatCrossSessionSend(
+        XmlExecutorContext ctx,
+        OneBotMessageType type,
+        long targetId,
+        [Description("主人要求跨会话发送的自然语言原因")] string? reason = null)
+    {
+        if (ctx.CallMode != CallMode.Closing)
+            return;
+        if (targetId == Configuration!.BotId)
+            throw new Exception("不允许将消息发生给自己");
+
+        string message = ctx.FullContent.Trim();
+        if (string.IsNullOrEmpty(message))
+            return;
+
+        message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, type, targetId, message);
+        if (string.IsNullOrEmpty(message) || IsInternalNoReplyStatus(message))
+            return;
+
+        if (TryAuthorizeOwnerCrossSessionSend(type, targetId, reason) == false)
+            return;
+        if (ShouldSuppressOutgoingForQuietMode(type, targetId, "qchat-cross-session-send"))
+            return;
+
+        try
+        {
+            if (type == OneBotMessageType.Group)
+                EnsureTargetAllowed(Configuration.AllowedGroupIds, targetId, "QQ group");
+            else
+                EnsureTargetAllowed(Configuration.AllowedPrivateUserIds, targetId, "QQ private user");
+
+            await SendTextOrMediaMessageAsync(type, targetId, message, streamText: true);
+            WriteQChatDiagnostic("qchat-cross-session-sent", "QChat cross-session tool sent a QQ message.", new {
+                type,
+                targetId,
+                reason,
+                message
+            });
+
+            PublishLifeEvent($"You sent a cross-session QQ {type.ToString().ToLowerInvariant()} message to {targetId}.");
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-cross-session-send-failed", ex.Message, new {
+                type,
+                targetId,
+                reason
+            }, ex);
+            TryPokeSendFailure(ex.Message);
+        }
+    }
+
+    [XmlFunction(FunctionMode.OneShot, "qchat_recall_recent", riskLevel: XmlFunctionRiskLevel.Medium, budgetCost: 2)]
+    [Description("主人明确要求撤回刚才发出的 QQ 消息时，撤回当前 QQ 会话里 bot 自己最近发送的一条消息。")]
+    public async Task QChatRecallRecent(
+        XmlExecutorContext ctx,
+        [Description("主人要求撤回的自然语言原因")] string? reason = null)
+    {
+        if (ctx.CallMode != CallMode.Closing)
+            return;
+
+        QChatReplySession? session = GetCurrentReplySessionForGuard();
+        if (session is not { SenderRole: QChatSenderRole.Owner })
+        {
+            WriteQChatDiagnostic("qchat-recall-denied", "QQ message recall denied because current sender is not owner or reply context is unavailable.", new {
+                reason,
+                session?.MessageType,
+                session?.TargetId,
+                session?.SenderId,
+                session?.SenderRole
+            });
+            return;
+        }
+
+        QChatRecentSentMessage? message = FindRecentSentMessageForCurrentSession();
+        if (message == null)
+        {
+            WriteQChatDiagnostic("qchat-recall-skipped", "No recent bot message in current QQ session can be recalled.", new {
+                reason,
+                session.MessageType,
+                session.TargetId
+            });
+            return;
+        }
+
+        try
+        {
+            await GetOneBotClient().DeleteMessage(message.MessageId);
+            RemoveRecentSentMessage(message.MessageId);
+            WriteQChatDiagnostic("qchat-recall-succeeded", "Recent QQ message was recalled.", new {
+                reason,
+                message.MessageId,
+                message.MessageType,
+                message.TargetId,
+                message.Preview
+            });
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-recall-failed", ex.Message, new {
+                reason,
+                message.MessageId,
+                message.MessageType,
+                message.TargetId
+            }, ex);
+            TryPokeSendFailure($"QQ recall failed: {ex.Message}");
+        }
+    }
+
+    [XmlFunction(FunctionMode.OneShot, "qchat_poke", riskLevel: XmlFunctionRiskLevel.Low, budgetCost: 1)]
+    [Description("主人明确要求戳 QQ 头像时使用。私聊戳 targetId；群聊戳 groupId 内的 targetId。")]
+    public async Task QChatPoke(
+        XmlExecutorContext ctx,
+        OneBotMessageType type,
+        long targetId,
+        long groupId = 0,
+        [Description("主人要求戳头像的自然语言原因")] string? reason = null)
+    {
+        if (ctx.CallMode != CallMode.Closing)
+            return;
+
+        QChatReplySession? session = GetCurrentReplySessionForGuard();
+        if (session is not { SenderRole: QChatSenderRole.Owner })
+        {
+            WriteQChatDiagnostic("qchat-poke-denied", "QQ poke denied because current sender is not owner or reply context is unavailable.", new {
+                type,
+                targetId,
+                groupId,
+                reason,
+                session?.MessageType,
+                session?.TargetId,
+                session?.SenderId,
+                session?.SenderRole
+            });
+            return;
+        }
+
+        if (targetId <= 0 || targetId == Configuration!.BotId)
+            return;
+
+        long resolvedGroupId = type == OneBotMessageType.Group
+            ? groupId > 0 ? groupId : session.MessageType == OneBotMessageType.Group ? session.TargetId : 0
+            : 0;
+        if (type == OneBotMessageType.Group && resolvedGroupId <= 0)
+            return;
+
+        string cooldownKey = type == OneBotMessageType.Group
+            ? $"group:{resolvedGroupId}:{targetId}"
+            : $"private:{targetId}";
+        if (TryEnterPokeCooldown(cooldownKey) == false)
+        {
+            WriteQChatDiagnostic("qchat-poke-throttled", "QQ poke skipped by cooldown.", new {
+                type,
+                targetId,
+                groupId = resolvedGroupId,
+                reason
+            });
+            return;
+        }
+
+        try
+        {
+            if (type == OneBotMessageType.Group)
+                await GetOneBotClient().PokeGroup(resolvedGroupId, targetId);
+            else
+                await GetOneBotClient().PokePrivate(targetId);
+
+            WriteQChatDiagnostic("qchat-poke-succeeded", "QQ poke action succeeded.", new {
+                type,
+                targetId,
+                groupId = resolvedGroupId,
+                reason
+            });
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-poke-failed", ex.Message, new {
+                type,
+                targetId,
+                groupId = resolvedGroupId,
+                reason
+            }, ex);
+            TryPokeSendFailure($"QQ poke failed: {ex.Message}");
         }
     }
 
@@ -581,30 +792,177 @@ public partial class QChatService(
         if (type == OneBotMessageType.Group)
             OnAIGroupActivity(targetId);
 
+        message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, type, targetId, message);
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
         if (streamText == false || Configuration?.EnableBalancedTextStreaming == false || ShouldStreamTextMessage(message) == false)
         {
             await SendSingleMessageAsync(type, targetId, message);
             return;
         }
 
-        StreamingOutputSegmenter segmenter = new(type == OneBotMessageType.Group
-            ? StreamingOutputPolicy.QqGroupText
-            : StreamingOutputPolicy.QqPrivateText);
-        List<string> segments = new();
-        segments.AddRange(segmenter.Push(message));
-        segments.AddRange(segmenter.Flush());
-
-        foreach (string segment in segments)
-            await SendSingleMessageAsync(type, targetId, segment);
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(message);
+        await new QChatOutboundDispatcher().DispatchAsync(
+            plan,
+            async (item, _) => await SendSingleMessageAsync(type, targetId, item.Text));
     }
 
     async Task SendSingleMessageAsync(OneBotMessageType type, long targetId, string message)
     {
+        OneBotSendMessageResult? result;
         if (type == OneBotMessageType.Group)
-            await GetOneBotClient().SendGroupMessage(targetId, message);
+            result = await GetOneBotClient().SendGroupMessageWithResult(targetId, message);
         else
-            await GetOneBotClient().SendPrivateMessage(targetId, message);
+            result = await GetOneBotClient().SendPrivateMessageWithResult(targetId, message);
+        if (result is { MessageId: > 0 })
+            RememberSentMessage(new QChatRecentSentMessage(result.MessageId, type, targetId, message, DateTimeOffset.Now));
         Interlocked.Increment(ref outboundMessageVersion);
+    }
+
+    void RememberSentMessage(QChatRecentSentMessage message)
+    {
+        lock (recentSentMessagesGate)
+        {
+            recentSentMessages.Enqueue(message);
+            TrimRecentSentMessages(DateTimeOffset.Now);
+        }
+    }
+
+    void TrimRecentSentMessages(DateTimeOffset now)
+    {
+        while (recentSentMessages.Count > 0
+               && (recentSentMessages.Count > MaxRecentSentMessages
+                   || now - recentSentMessages.Peek().SentAt > RecentSentMessageRetention))
+        {
+            recentSentMessages.Dequeue();
+        }
+    }
+
+    QChatRecentSentMessage? FindRecentSentMessageForCurrentSession()
+    {
+        QChatReplySession? session = GetCurrentReplySessionForGuard();
+        if (session == null)
+            return null;
+
+        return FindRecentSentMessage(session.MessageType, session.TargetId);
+    }
+
+    QChatRecentSentMessage? FindRecentSentMessage(OneBotMessageType messageType, long targetId)
+    {
+        DateTimeOffset now = DateTimeOffset.Now;
+        lock (recentSentMessagesGate)
+        {
+            TrimRecentSentMessages(now);
+            return recentSentMessages
+                .Reverse()
+                .FirstOrDefault(message =>
+                    message.MessageType == messageType &&
+                    message.TargetId == targetId);
+        }
+    }
+
+    void RemoveRecentSentMessage(long messageId)
+    {
+        lock (recentSentMessagesGate)
+        {
+            QChatRecentSentMessage[] retained = recentSentMessages
+                .Where(message => message.MessageId != messageId)
+                .ToArray();
+            recentSentMessages.Clear();
+            foreach (QChatRecentSentMessage message in retained)
+                recentSentMessages.Enqueue(message);
+        }
+    }
+
+    bool TryEnterPokeCooldown(string key)
+    {
+        DateTimeOffset now = DateTimeOffset.Now;
+        lock (pokeCooldownGate)
+        {
+            if (pokeCooldownTimes.TryGetValue(key, out DateTimeOffset lastPokedAt)
+                && now - lastPokedAt < PokeCooldown)
+            {
+                return false;
+            }
+
+            pokeCooldownTimes[key] = now;
+            return true;
+        }
+    }
+
+    async Task TryAutoPokeBackAsync(OneBotPokeEvent pokeEvent)
+    {
+        QChatConfig config = Configuration!;
+        if (config.BotId <= 0 || pokeEvent.TargetId != config.BotId)
+            return;
+        if (pokeEvent.UserId <= 0 || pokeEvent.UserId == config.BotId)
+            return;
+
+        float probability = pokeEvent.MessageType == OneBotMessageType.Group
+            ? config.AutoPokeBackGroupProbability
+            : config.AutoPokeBackPrivateProbability;
+        if (probability <= 0)
+            return;
+        if (probability < 1.0f && Random.Shared.NextSingle() >= probability)
+        {
+            WriteQChatDiagnostic("qchat-auto-poke-back-skipped", "QQ auto poke-back skipped by probability.", new {
+                pokeEvent.MessageType,
+                pokeEvent.UserId,
+                pokeEvent.GroupId,
+                pokeEvent.TargetId,
+                probability
+            });
+            return;
+        }
+
+        string cooldownKey = pokeEvent.MessageType == OneBotMessageType.Group
+            ? $"auto-poke:group:{pokeEvent.GroupId}:{pokeEvent.UserId}"
+            : $"auto-poke:private:{pokeEvent.UserId}";
+        if (TryEnterPokeCooldown(cooldownKey) == false)
+        {
+            WriteQChatDiagnostic("qchat-auto-poke-back-throttled", "QQ auto poke-back skipped by cooldown.", new {
+                pokeEvent.MessageType,
+                pokeEvent.UserId,
+                pokeEvent.GroupId,
+                pokeEvent.TargetId,
+                probability
+            });
+            return;
+        }
+
+        try
+        {
+            if (pokeEvent.MessageType == OneBotMessageType.Group)
+            {
+                if (pokeEvent.GroupId <= 0)
+                    return;
+                await GetOneBotClient().PokeGroup(pokeEvent.GroupId, pokeEvent.UserId);
+            }
+            else
+            {
+                await GetOneBotClient().PokePrivate(pokeEvent.UserId);
+            }
+
+            WriteQChatDiagnostic("qchat-auto-poke-back-succeeded", "QQ auto poke-back action succeeded.", new {
+                pokeEvent.MessageType,
+                pokeEvent.UserId,
+                pokeEvent.GroupId,
+                pokeEvent.TargetId,
+                probability
+            });
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-auto-poke-back-failed", ex.Message, new {
+                pokeEvent.MessageType,
+                pokeEvent.UserId,
+                pokeEvent.GroupId,
+                pokeEvent.TargetId,
+                probability
+            }, ex);
+            TryPokeSendFailure($"QQ auto poke-back failed: {ex.Message}");
+        }
     }
 
     static bool ShouldStreamTextMessage(string message)
@@ -745,13 +1103,29 @@ public partial class QChatService(
 
         try
         {
+            WriteQChatDiagnostic("qchat-group-file-upload-start", "QQ group file upload started.", new {
+                groupId,
+                file = normalizedFile,
+                name = fileName
+            });
             OnAIGroupActivity(groupId);
             await GetOneBotClient().UploadGroupFile(groupId, normalizedFile, fileName);
+            WriteQChatDiagnostic("qchat-group-file-upload-succeeded", "QQ group file upload succeeded.", new {
+                groupId,
+                file = normalizedFile,
+                name = fileName
+            });
             PublishLifeEvent($"You uploaded a QQ group file to {groupId}: {fileName}.");
         }
         catch (Exception ex)
         {
-            Poke($"[QQ group file upload failed] {ex.Message}");
+            WriteQChatDiagnostic("qchat-group-file-upload-failed", ex.Message, new {
+                groupId,
+                file = normalizedFile,
+                name = fileName
+            }, ex);
+            TryPoke($"[QQ group file upload failed] {ex.Message}");
+            throw;
         }
     }
 
@@ -1044,13 +1418,15 @@ public partial class QChatService(
     readonly IOneBotRuntime? injectedOneBotRuntime = oneBotRuntime;
     readonly AgentControlCenterService? agentControlCenter = agentControlCenter;
     readonly AgentActionAuthorizationService actionAuthorization = actionAuthorization ?? new AgentActionAuthorizationService();
-    readonly AgentActionGatewayService actionGateway = actionGateway ?? new AgentActionGatewayService(authorization: actionAuthorization);
+    readonly AgentApprovalService approvals = approvalService ??= new AgentApprovalService();
+    readonly AgentActionGatewayService actionGateway = actionGateway ?? new AgentActionGatewayService(
+        authorization: actionAuthorization,
+        approvalService: approvalService);
     readonly AgentAuditLogService? auditLog = auditLog;
     readonly QChatRelationCacheService? injectedRelationCache = relationCacheService;
     QChatRelationCacheService? relationCache;
     readonly QChatUserProfileService userProfiles = userProfileService ?? new QChatUserProfileService();
     readonly QChatManagedFileService? injectedManagedFileService = managedFileService;
-    readonly AgentApprovalService approvals = approvalService ?? new AgentApprovalService();
     readonly AgentEditCheckpointService editCheckpoints = checkpointService
         ?? new AgentEditCheckpointService(Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "checkpoints"));
     readonly AgentTaskService agentTasks = taskService ?? new AgentTaskService();
@@ -1075,6 +1451,13 @@ public partial class QChatService(
     static readonly object emptyGroupFlushDiagnosticGate = new();
     static readonly Dictionary<long, DateTimeOffset> emptyGroupFlushDiagnosticTimes = new();
     static readonly TimeSpan EmptyGroupFlushDiagnosticInterval = TimeSpan.FromMinutes(5);
+    readonly object recentSentMessagesGate = new();
+    readonly Queue<QChatRecentSentMessage> recentSentMessages = new();
+    readonly object pokeCooldownGate = new();
+    readonly Dictionary<string, DateTimeOffset> pokeCooldownTimes = new();
+    static readonly TimeSpan RecentSentMessageRetention = TimeSpan.FromMinutes(5);
+    static readonly TimeSpan PokeCooldown = TimeSpan.FromSeconds(60);
+    const int MaxRecentSentMessages = 40;
     long outboundMessageVersion;
     readonly object permissionGate = new();
     AgentPermissionRequest? currentPermissionRequest;
@@ -1353,6 +1736,7 @@ public partial class QChatService(
                     basicMessageEvent,
                     isMentionedOrWoken,
                     content);
+                await TryAutoPokeBackAsync(pokeEvent);
                 await HandleFormattedMessage(
                     basicMessageEvent,
                     formatted,
@@ -1369,13 +1753,21 @@ public partial class QChatService(
                 string content = await BuildReadableMessageForQChatAsync(messageEvent, client);
                 if (await TryHandleApprovalCommandAsync(messageEvent, senderRole, content))
                     return;
+                if (await TryHandleQChatDiagnosticsCommandAsync(messageEvent, senderRole))
+                    return;
                 if (await TryHandleRollbackCommandAsync(messageEvent, senderRole))
                     return;
                 if (await TryHandleStatusCommandAsync(messageEvent, senderRole))
                     return;
+                if (await TryHandleOwnerRecallCommandAsync(messageEvent, senderRole, content))
+                    return;
+                if (await TryHandleOwnerPokeCommandAsync(messageEvent, senderRole, content))
+                    return;
                 if (await TryApplyOwnerQuietCommandAsync(messageEvent, senderRole, content))
                     return;
                 if (await TryApplyQuietModeWakeUserCommandAsync(messageEvent, content))
+                    return;
+                if (await TryHandleOwnerDeterministicFileCommandAsync(messageEvent, senderRole, content))
                     return;
 
                 string formatted = $"{speaker}：{content}";
@@ -1445,7 +1837,7 @@ public partial class QChatService(
 
     async Task<string> BuildReadableMessageForQChatAsync(OneBotMessageEvent messageEvent, IOneBotRuntime client)
     {
-        string content = await messageEvent.GetReadableMessage(client, includeFiles: false);
+        string content = await messageEvent.GetReadableMessage(client, includeFiles: false, diagnosticWriter: WriteQChatDiagnostic);
         return await RegisterManagedFileSegmentsAsync(messageEvent, content, client);
     }
 
@@ -2187,13 +2579,14 @@ public partial class QChatService(
         if (senderRole != QChatSenderRole.Owner)
             return false;
 
-        string normalized = NormalizeQuietCommandText(messageEvent.RawMessage, readable);
+        string normalized = NormalizeQuietCommandText(messageEvent.RawMessage, messageEvent.RawMessage);
         if (string.IsNullOrWhiteSpace(normalized))
             return false;
 
         if (IsQuietWakeCommand(normalized))
         {
             SetQuietMode(false, messageEvent, "owner-wake-command");
+            await SendQuietModeWakeAcknowledgementAsync(messageEvent);
             return true;
         }
 
@@ -2279,7 +2672,9 @@ public partial class QChatService(
         }
         else if (command == "approve")
         {
-            handled = approvals.TryApprove(approvalId, messageEvent.UserId, out result);
+            AgentApprovalExecutionResult execution = await approvals.ApproveAndExecuteAsync(approvalId, messageEvent.UserId);
+            handled = execution.Executed;
+            result = execution.Message;
         }
         else
         {
@@ -2320,6 +2715,103 @@ public partial class QChatService(
 
         command = match.Groups[1].Value.ToLowerInvariant();
         return true;
+    }
+
+    async Task<bool> TryHandleQChatDiagnosticsCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (IsQChatDiagnosticsCommandText(text) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendTextOrMediaMessageAsync(
+                targetType,
+                targetId,
+                "Only the owner can use QChat diagnostics.",
+                streamText: false);
+            WriteQChatDiagnostic("qchat-diagnostics-denied", "QChat diagnostics command denied for non-owner sender.", new {
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                command = text
+            });
+            return true;
+        }
+
+        QChatAgentRoute route = BuildQChatDiagnosticsRoute(messageEvent);
+        QChatAgentProfile profile = ResolveQChatDiagnosticsProfile(route);
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(text, route, profile);
+        if (result.Handled)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, result.Text, streamText: false);
+            WriteQChatDiagnostic("qchat-diagnostics-command-handled", "QChat diagnostics command handled.", new {
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                command = text,
+                route.AgentId,
+                route.SessionKey
+            });
+        }
+
+        return result.Handled;
+    }
+
+    QChatAgentRoute BuildQChatDiagnosticsRoute(OneBotMessageEvent messageEvent)
+    {
+        long botAccountId = messageEvent.SelfId > 0
+            ? messageEvent.SelfId
+            : Configuration?.BotId ?? 0;
+        QChatAgentRouteService routeService = new(new QChatAgentRouteConfig
+        {
+            OwnerUserId = Configuration?.OwnerId ?? 0,
+            BotAgents =
+            {
+                [2905391496] = "xiayu",
+                [3340947887] = "mixu"
+            }
+        });
+
+        return routeService.Resolve(botAccountId, messageEvent);
+    }
+
+    static QChatAgentProfile ResolveQChatDiagnosticsProfile(QChatAgentRoute route)
+    {
+        try
+        {
+            return QChatProfileService.CreateDefault().Get(route);
+        }
+        catch (InvalidOperationException)
+        {
+            return new QChatAgentProfile(
+                route.AgentId,
+                route.AgentId,
+                string.Empty,
+                $"qchat/{route.AgentId}",
+                "unknown",
+                string.Empty,
+                [],
+                new QChatAgentCapabilities(
+                    AllowComputerFileTools: false,
+                    AllowProjectModification: false,
+                    AllowRecall: false,
+                    AllowPoke: false));
+        }
+    }
+
+    static bool IsQChatDiagnosticsCommandText(string text)
+    {
+        const string prefix = "/qchat";
+        return text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+               && (text.Length == prefix.Length || char.IsWhiteSpace(text[prefix.Length]));
     }
 
     async Task<bool> TryHandleRollbackCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
@@ -2389,6 +2881,263 @@ public partial class QChatService(
         return true;
     }
 
+    async Task<bool> TryHandleOwnerRecallCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string readable)
+    {
+        if (senderRole != QChatSenderRole.Owner)
+            return false;
+
+        string text = $"{OneBotSegment.GetPlainText(messageEvent.RawMessage)}\n{readable}";
+        if (IsRecallCommand(text) == false)
+            return false;
+
+        if (TryExtractReplyMessageId(messageEvent.RawMessage, out long replyMessageId))
+        {
+            try
+            {
+                await GetOneBotClient().DeleteMessage(replyMessageId);
+                RemoveRecentSentMessage(replyMessageId);
+                WriteQChatDiagnostic("qchat-owner-recall-command-handled", "Owner recall command deleted the quoted QQ message before model dispatch.", new {
+                    messageEvent.MessageType,
+                    messageEvent.UserId,
+                    messageEvent.GroupId,
+                    messageId = replyMessageId,
+                    source = "reply"
+                });
+            }
+            catch (Exception ex)
+            {
+                WriteQChatDiagnostic("qchat-owner-recall-command-failed", ex.Message, new {
+                    messageEvent.MessageType,
+                    messageEvent.UserId,
+                    messageEvent.GroupId,
+                    messageId = replyMessageId,
+                    source = "reply"
+                }, ex);
+                TryPokeSendFailure($"QQ recall failed: {ex.Message}");
+            }
+
+            return true;
+        }
+
+        long targetId = GetCurrentMessageTargetId(messageEvent);
+        if (targetId <= 0)
+            return false;
+
+        QChatRecentSentMessage? message = FindRecentSentMessage(messageEvent.MessageType, targetId);
+        if (message == null)
+        {
+            WriteQChatDiagnostic("qchat-owner-recall-command-skipped", "Owner recall command found no recent bot message in this QQ session.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                targetId
+            });
+            return false;
+        }
+
+        try
+        {
+            await GetOneBotClient().DeleteMessage(message.MessageId);
+            RemoveRecentSentMessage(message.MessageId);
+            WriteQChatDiagnostic("qchat-owner-recall-command-handled", "Owner recall command deleted the latest recent QQ message before model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                targetId,
+                message.MessageId,
+                message.Preview,
+                source = "recent"
+            });
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-owner-recall-command-failed", ex.Message, new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                targetId,
+                message.MessageId,
+                source = "recent"
+            }, ex);
+            TryPokeSendFailure($"QQ recall failed: {ex.Message}");
+        }
+
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerPokeCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string readable)
+    {
+        if (senderRole != QChatSenderRole.Owner)
+            return false;
+
+        string text = $"{messageEvent.RawMessage}\n{OneBotSegment.GetPlainText(messageEvent.RawMessage)}\n{readable}";
+        if (IsPokeCommand(text) == false)
+            return false;
+
+        if (await TryResolvePokeTargetAsync(messageEvent, text) is not long targetId)
+            return false;
+        if (targetId <= 0 || targetId == Configuration!.BotId)
+            return true;
+
+        long groupId = messageEvent.MessageType == OneBotMessageType.Group ? messageEvent.GroupId : 0;
+        string cooldownKey = messageEvent.MessageType == OneBotMessageType.Group
+            ? $"group:{groupId}:{targetId}"
+            : $"private:{targetId}";
+        if (TryEnterPokeCooldown(cooldownKey) == false)
+        {
+            WriteQChatDiagnostic("qchat-owner-poke-command-throttled", "Owner poke command skipped by cooldown before model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                targetId
+            });
+            return true;
+        }
+
+        try
+        {
+            if (messageEvent.MessageType == OneBotMessageType.Group)
+                await GetOneBotClient().PokeGroup(groupId, targetId);
+            else
+                await GetOneBotClient().PokePrivate(targetId);
+
+            WriteQChatDiagnostic("qchat-owner-poke-command-handled", "Owner poke command was handled before model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                targetId
+            });
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-owner-poke-command-failed", ex.Message, new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                targetId
+            }, ex);
+            TryPokeSendFailure($"QQ poke failed: {ex.Message}");
+        }
+
+        return true;
+    }
+
+    static bool IsRecallCommand(string text)
+    {
+        return ContainsAny(text, "\u64a4\u56de", "\u6536\u56de", "\u5220\u6389", "\u5220\u9664");
+    }
+
+    static bool IsPokeCommand(string text)
+    {
+        if (ContainsAny(
+                text,
+                "\u522b\u6233",
+                "\u4e0d\u8981\u6233",
+                "\u522b\u53bb\u6233",
+                "\u4e0d\u7528\u6233",
+                "\u4e0d\u662f\u771f\u7684\u6233",
+                "\u4e0d\u662f\u5728\u8ba9\u4f60\u6233",
+                "\u4e0d\u662f\u547d\u4ee4"))
+            return false;
+
+        string compact = CompactPokeCommandText(text);
+        return Regex.IsMatch(
+            compact,
+            @"(?:^|[\u3002\uff0c\uff01\uff1f\u3001\uff1b;,.!?])(?:\u5e2e\u6211|\u66ff\u6211|\u8bf7\u4f60|\u9ebb\u70e6\u4f60|\u53bb)?\u6233(?:\u4e00\u4e0b|\u4e00\u6233|\u6233)?(?:\u6211|\u672f\u672f|\u4ed6|\u5979|\u5b83|ta|\u8fd9\u4e2a|\u90a3\u4e2a\u4eba|[1-9]\d{4,11}|\[CQ:at,|@)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    async Task<long?> TryResolvePokeTargetAsync(OneBotMessageEvent messageEvent, string text)
+    {
+        if (messageEvent.MessageType == OneBotMessageType.Private)
+            return IsPrivateSelfPokeTargetCommand(text) ? messageEvent.UserId : null;
+
+        if (messageEvent.GroupId <= 0)
+            return null;
+
+        if (TryExtractAtTargetId(messageEvent.RawMessage, out long atTargetId))
+            return atTargetId;
+        if (TryExtractExplicitQqId(text, out long explicitTargetId))
+            return explicitTargetId;
+        if (TryExtractReplyMessageId(messageEvent.RawMessage, out long replyMessageId))
+        {
+            OneBotMessageEvent? repliedMessage = await GetOneBotClient().GetMessage(replyMessageId);
+            if (repliedMessage?.UserId > 0)
+                return repliedMessage.UserId;
+        }
+
+        if (ContainsAny(text, "\u6211", "\u672f\u672f"))
+            return messageEvent.UserId;
+
+        return null;
+    }
+
+    static bool IsPrivateSelfPokeTargetCommand(string text)
+    {
+        string compact = CompactPokeCommandText(text);
+        return Regex.IsMatch(
+            compact,
+            @"(?:^|[\u3002\uff0c\uff01\uff1f\u3001\uff1b;,.!?])(?:\u5e2e\u6211|\u66ff\u6211|\u8bf7\u4f60|\u9ebb\u70e6\u4f60|\u53bb)?\u6233(?:\u4e00\u4e0b|\u4e00\u6233|\u6233)?(?:\u6211|\u672f\u672f)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    static string CompactPokeCommandText(string text)
+    {
+        return Regex.Replace(text, @"\s+", "", RegexOptions.CultureInvariant);
+    }
+
+    static long GetCurrentMessageTargetId(OneBotMessageEvent messageEvent)
+    {
+        return messageEvent.MessageType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+    }
+
+    static bool TryExtractReplyMessageId(string? rawMessage, out long messageId)
+    {
+        messageId = 0;
+        if (string.IsNullOrWhiteSpace(rawMessage))
+            return false;
+
+        Match match = Regex.Match(
+            rawMessage,
+            @"\[CQ:reply,[^\]]*?\bid=(?<id>-?\d+)[^\]]*\]",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success
+               && long.TryParse(match.Groups["id"].Value, out messageId);
+    }
+
+    static bool TryExtractAtTargetId(string? rawMessage, out long targetId)
+    {
+        targetId = 0;
+        if (string.IsNullOrWhiteSpace(rawMessage))
+            return false;
+
+        Match match = Regex.Match(
+            rawMessage,
+            @"\[CQ:at,[^\]]*?\bqq=(?<id>\d+)[^\]]*\]",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success
+               && long.TryParse(match.Groups["id"].Value, out targetId);
+    }
+
+    static bool TryExtractExplicitQqId(string text, out long targetId)
+    {
+        targetId = 0;
+        Match match = Regex.Match(
+            text,
+            @"(?<!\d)(?<id>[1-9]\d{4,11})(?!\d)",
+            RegexOptions.CultureInvariant);
+        return match.Success
+               && long.TryParse(match.Groups["id"].Value, out targetId);
+    }
+
     async Task<bool> TryApplyQuietModeWakeUserCommandAsync(OneBotMessageEvent messageEvent, string readable)
     {
         if (IsQuietModeEnabled == false)
@@ -2396,13 +3145,87 @@ public partial class QChatService(
         if (IsQuietModeWakeUser(messageEvent.UserId) == false)
             return false;
 
-        string normalized = NormalizeQuietCommandText(messageEvent.RawMessage, readable);
+        string normalized = NormalizeQuietCommandText(messageEvent.RawMessage, messageEvent.RawMessage);
         if (string.IsNullOrWhiteSpace(normalized) || IsQuietWakeCommand(normalized) == false)
             return false;
 
         SetQuietMode(false, messageEvent, "trusted-wake-user-command");
         await SendQuietModeWakeAcknowledgementAsync(messageEvent);
         return true;
+    }
+
+    async Task<bool> TryHandleOwnerDeterministicFileCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string readable)
+    {
+        if (senderRole != QChatSenderRole.Owner)
+            return false;
+        if (messageEvent.MessageType != OneBotMessageType.Group)
+            return false;
+        if (messageEvent.GroupId <= 0)
+            return false;
+
+        string text = $"{messageEvent.RawMessage}\n{readable}";
+        if (ContainsAny(text, "\u65b0\u5efa", "\u521b\u5efa", "\u5efa\u7acb") == false)
+            return false;
+        if (ContainsAny(text, "\u4e0a\u4f20", "\u7fa4\u6587\u4ef6", "\u672c\u7fa4\u6587\u4ef6") == false)
+            return false;
+        if (text.Contains("Hello World", StringComparison.OrdinalIgnoreCase) == false &&
+            text.Contains("HelloWorld", StringComparison.OrdinalIgnoreCase) == false)
+        {
+            return false;
+        }
+
+        Match fileMatch = Regex.Match(
+            text,
+            @"(?<name>[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.c)(?![A-Za-z0-9._-])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (fileMatch.Success == false)
+            return false;
+
+        string fileName = Path.GetFileName(fileMatch.Groups["name"].Value);
+        if (string.IsNullOrWhiteSpace(fileName) || fileName.Contains("..", StringComparison.Ordinal))
+            return false;
+
+        string outputDirectory = Path.Combine(
+            AlifePath.StorageFolderPath,
+            "AgentWorkspace",
+            "QChatGenerated",
+            messageEvent.GroupId.ToString());
+        Directory.CreateDirectory(outputDirectory);
+
+        string filePath = Path.Combine(outputDirectory, fileName);
+        const string helloWorldC = """
+                                   #include <stdio.h>
+
+                                   int main(void)
+                                   {
+                                       printf("Hello, World!\n");
+                                       return 0;
+                                   }
+                                   """;
+
+        await File.WriteAllTextAsync(filePath, helloWorldC, new UTF8Encoding(false));
+        WriteQChatDiagnostic("qchat-owner-file-command-handled", "Owner deterministic file command created a file before model dispatch.", new {
+            messageEvent.GroupId,
+            messageEvent.UserId,
+            file = filePath,
+            name = fileName
+        });
+
+        await ExecuteQGroupFileCore(messageEvent.GroupId, filePath, fileName);
+        await SendTextOrMediaMessageAsync(
+            OneBotMessageType.Group,
+            messageEvent.GroupId,
+            $"{fileName} \u5df2\u521b\u5efa\u5e76\u4e0a\u4f20\u5230\u7fa4\u6587\u4ef6",
+            streamText: false);
+        return true;
+    }
+
+    static bool ContainsAny(string text, params string[] values)
+    {
+        return values.Any(value => text.Contains(value, StringComparison.OrdinalIgnoreCase));
     }
 
     async Task SendQuietModeWakeAcknowledgementAsync(OneBotMessageEvent messageEvent)
@@ -2632,6 +3455,28 @@ public partial class QChatService(
                 replySession.TargetId,
                 replySession.SenderId,
                 replySession.SenderRole
+            });
+        return false;
+    }
+
+    bool TryAuthorizeOwnerCrossSessionSend(OneBotMessageType type, long targetId, string? reason)
+    {
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        if (replySession is { SenderRole: QChatSenderRole.Owner })
+            return true;
+
+        WriteQChatDiagnostic(
+            "qchat-cross-session-denied",
+            "QQ cross-session send denied because current QQ sender is not owner or reply context is ambiguous.",
+            new {
+                requestedType = type,
+                requestedTargetId = targetId,
+                reason,
+                currentType = replySession?.MessageType,
+                currentTargetId = replySession?.TargetId,
+                replySession?.SenderId,
+                replySession?.SenderRole,
+                hasActiveReplySessions = HasActiveReplySessions()
             });
         return false;
     }
@@ -3156,6 +4001,20 @@ public partial class QChatService(
         }
     }
 
+    void TryPoke(string message)
+    {
+        try
+        {
+            Poke(message);
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-poke-failed", ex.Message, new {
+                message
+            }, ex);
+        }
+    }
+
     static bool ShouldWriteEmptyGroupFlushDiagnostic(long groupId)
     {
         DateTimeOffset now = DateTimeOffset.Now;
@@ -3172,7 +4031,7 @@ public partial class QChatService(
         }
     }
 
-    static bool TryBuildPlainTextFallbackResponse(string? modelResponse, OneBotMessageType messageType, out string message)
+    bool TryBuildPlainTextFallbackResponse(string? modelResponse, OneBotMessageType messageType, out string message)
     {
         message = "";
         if (string.IsNullOrWhiteSpace(modelResponse))
@@ -3189,7 +4048,18 @@ public partial class QChatService(
         if (string.IsNullOrWhiteSpace(trimmed))
             return false;
 
+        if (Configuration?.BotId == 2905391496 &&
+            QChatExperienceSanitizer.IsHumanFacingNoReplyState(trimmed))
+        {
+            message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, messageType, 0, trimmed);
+            return string.IsNullOrWhiteSpace(message) == false;
+        }
+
         if (IsInternalNoReplyStatus(trimmed))
+            return false;
+
+        trimmed = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, messageType, 0, trimmed);
+        if (string.IsNullOrWhiteSpace(trimmed))
             return false;
 
         const int MaxFallbackLength = 1200;
@@ -3317,9 +4187,13 @@ public partial class QChatService(
                || compact.Contains("不回应", StringComparison.Ordinal)
                || compact.Contains("不回應", StringComparison.Ordinal)
                || compact.Contains("不作回应", StringComparison.Ordinal)
+               || compact.Contains("不作任何回应", StringComparison.Ordinal)
                || compact.Contains("不作回應", StringComparison.Ordinal)
+               || compact.Contains("不作任何回應", StringComparison.Ordinal)
                || compact.Contains("不做回应", StringComparison.Ordinal)
+               || compact.Contains("不做任何回应", StringComparison.Ordinal)
                || compact.Contains("不做回應", StringComparison.Ordinal)
+               || compact.Contains("不做任何回應", StringComparison.Ordinal)
                || compact.Contains("保持安静", StringComparison.Ordinal)
                || compact.Contains("保持安靜", StringComparison.Ordinal)
                || compact.Contains("安静听着", StringComparison.Ordinal)

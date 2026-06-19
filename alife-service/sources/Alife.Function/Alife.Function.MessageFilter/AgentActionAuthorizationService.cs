@@ -41,8 +41,8 @@ public class AgentActionAuthorizationService
         }
 
         if (request.RiskLevel == AgentRiskLevel.High
-            && decision.Priority == AgentActorPriority.Owner
-            && request.HasExplicitConfirmation == false)
+            && decision.Priority != AgentActorPriority.Owner
+            && config.OwnerUserIds.Count > 0)
         {
             return new AgentExecutionGatewayDecision(
                 AgentExecutionDecisionStatus.OwnerConfirmationRequired,

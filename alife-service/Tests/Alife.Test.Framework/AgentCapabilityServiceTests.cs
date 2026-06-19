@@ -335,7 +335,7 @@ public class AgentCapabilityServiceTests
                 HasExplicitConfirmation: true,
                 Action: "workspace.apply"),
             config);
-        AgentWorkspaceApplyProposalResult needsConfirmation = workspace.ApplyProposedReplace(
+        AgentWorkspaceApplyProposalResult ownerApplied = workspace.ApplyProposedReplace(
             ownerProposal.Id,
             new AgentPermissionRequest(
                 ActorUserId: 10001,
@@ -345,24 +345,13 @@ public class AgentCapabilityServiceTests
                 HasExplicitConfirmation: false,
                 Action: "workspace.apply"),
             config);
-        AgentWorkspaceApplyProposalResult applied = workspace.ApplyProposedReplace(
-            ownerProposal.Id,
-            new AgentPermissionRequest(
-                ActorUserId: 10001,
-                Source: AgentRequestSource.PrivateChat,
-                IsMentioned: false,
-                RiskLevel: AgentRiskLevel.Low,
-                HasExplicitConfirmation: true,
-                Action: "workspace.apply"),
-            config);
 
         Assert.That(blocked.Applied, Is.False);
-        Assert.That(blocked.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+        Assert.That(blocked.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(blocked.GatewayDecision.RiskLevel, Is.EqualTo(AgentRiskLevel.High));
-        Assert.That(needsConfirmation.Applied, Is.False);
-        Assert.That(needsConfirmation.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
-        Assert.That(applied.Applied, Is.True);
-        Assert.That(applied.Result?.ReplacedCount, Is.EqualTo(1));
+        Assert.That(ownerApplied.Applied, Is.True);
+        Assert.That(ownerApplied.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
+        Assert.That(ownerApplied.Result?.ReplacedCount, Is.EqualTo(1));
         Assert.That(File.ReadAllText(file), Does.Contain("GeneratedAgentNote"));
         Assert.That(File.ReadAllText(file), Does.Not.Contain("BlockedAgentNote"));
         Assert.That(workspace.GetPendingProposals().Select(item => item.Id), Does.Contain(blockedProposal.Id));
@@ -430,10 +419,10 @@ public class AgentCapabilityServiceTests
             config);
 
         Assert.That(blocked.ReadyToRun, Is.False);
-        Assert.That(blocked.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+        Assert.That(blocked.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(blocked.GatewayDecision.RiskLevel, Is.EqualTo(AgentRiskLevel.High));
-        Assert.That(needsConfirmation.ReadyToRun, Is.False);
-        Assert.That(needsConfirmation.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
+        Assert.That(needsConfirmation.ReadyToRun, Is.True);
+        Assert.That(needsConfirmation.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
         Assert.That(allowed.ReadyToRun, Is.True);
         Assert.That(allowed.Command, Does.Contain("upload-alife-service-via-foxd.ps1"));
     }
@@ -545,7 +534,7 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
-    public void PermissionPolicyAllowsOwnerHighRiskOnlyWithExplicitConfirmation()
+    public void PermissionPolicyAllowsOwnerHighRiskWithoutExplicitConfirmation()
     {
         AgentPermissionPolicy policy = new(new AgentPermissionConfig
         {
@@ -577,8 +566,8 @@ public class AgentCapabilityServiceTests
             HasExplicitConfirmation: true,
             Action: "workspace.write"));
 
-        Assert.That(ownerNoConfirm.Allowed, Is.False);
-        Assert.That(ownerNoConfirm.Reason, Does.Contain("confirmation"));
+        Assert.That(ownerNoConfirm.Allowed, Is.True);
+        Assert.That(ownerNoConfirm.Priority, Is.EqualTo(AgentActorPriority.Owner));
         Assert.That(ownerConfirmed.Allowed, Is.True);
         Assert.That(ownerConfirmed.Priority, Is.EqualTo(AgentActorPriority.Owner));
         Assert.That(guestGroup.Allowed, Is.False);
@@ -677,9 +666,9 @@ public class AgentCapabilityServiceTests
 
         Assert.That(lowRiskGroup.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
         Assert.That(lowRiskGroup.AllowedNow, Is.True);
-        Assert.That(ownerNeedsConfirmation.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
-        Assert.That(ownerNeedsConfirmation.RequiresOwnerConfirmation, Is.True);
-        Assert.That(memberBlocked.Status, Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+        Assert.That(ownerNeedsConfirmation.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
+        Assert.That(ownerNeedsConfirmation.RequiresOwnerConfirmation, Is.False);
+        Assert.That(memberBlocked.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(memberBlocked.AllowedNow, Is.False);
         Assert.That(ownerConfirmed.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
         Assert.That(ownerConfirmed.AllowedNow, Is.True);
@@ -717,12 +706,12 @@ public class AgentCapabilityServiceTests
         AgentAuditLogEntry entry = audit.GetRecentEntries(1).Single();
 
         Assert.That(result.Executed, Is.False);
-        Assert.That(result.Decision.Status, Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+        Assert.That(result.Decision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(externalActionCalled, Is.False);
         Assert.That(entry.Action, Is.EqualTo("qzone.like"));
         Assert.That(entry.Succeeded, Is.False);
         Assert.That(entry.Detail, Does.Contain("target=1001"));
-        Assert.That(entry.Error, Does.Contain("Blocked"));
+        Assert.That(entry.Error, Does.Contain("Owner confirmation required"));
     }
 
     [Test]
@@ -1578,9 +1567,9 @@ public class AgentCapabilityServiceTests
         Assert.That(snapshot.SecurityGatewayPreview.Single(item => item.Action == "workspace.apply").Status,
             Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(snapshot.SecurityGatewayPreview.Single(item => item.Action == "qzone.reply").Status,
-            Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+            Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(snapshot.SecurityGatewayPreview.Single(item => item.Action == "github.upload").Status,
-            Is.EqualTo(AgentExecutionDecisionStatus.Blocked));
+            Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
     }
 
     [Test]
@@ -3134,7 +3123,7 @@ public class AgentCapabilityServiceTests
             config);
 
         Assert.That(blocked.Succeeded, Is.False);
-        Assert.That(blocked.Message, Does.Contain("Blocked"));
+        Assert.That(blocked.Message, Does.Contain("Owner confirmation required"));
         Assert.That(executed.Succeeded, Is.True);
         Assert.That(executor.ExecutedIds, Is.EqualTo(new[] { ownerPending.Id }));
         Assert.That(proactive.GetCompletedSuggestion(blockedPending.Id)?.Status, Is.EqualTo(AgentProactivePendingStatus.Confirmed));

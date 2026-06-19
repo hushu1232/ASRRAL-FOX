@@ -1,5 +1,7 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
+using Alife.Function.MessageFilter;
 
 namespace Alife.Function.Agent;
 
@@ -8,14 +10,17 @@ public sealed record AgentActionGatewayResult<T>(
     T? Value,
     AgentExecutionGatewayDecision Decision,
     string Message,
-    Exception? Exception = null);
+    Exception? Exception = null,
+    AgentApprovalRequest? ApprovalRequest = null);
 
 public class AgentActionGatewayService(
     AgentAuditLogService? auditLog = null,
-    AgentActionAuthorizationService? authorization = null)
+    AgentActionAuthorizationService? authorization = null,
+    AgentApprovalService? approvalService = null)
 {
     readonly AgentAuditLogService? auditLog = auditLog;
     readonly AgentActionAuthorizationService authorization = authorization ?? new AgentActionAuthorizationService();
+    readonly AgentApprovalService? approvalService = approvalService;
 
     public async Task<AgentActionGatewayResult<T>> ExecuteAsync<T>(
         AgentPermissionRequest request,
@@ -33,6 +38,28 @@ public class AgentActionGatewayService(
 
         if (decision.AllowedNow == false)
         {
+            if (decision.Status == AgentExecutionDecisionStatus.OwnerConfirmationRequired
+                && approvalService != null
+                && config.OwnerUserIds.Count > 0)
+            {
+                long ownerUserId = config.OwnerUserIds.OrderBy(id => id).First();
+                AgentApprovalRequest approval = approvalService.CreateExecutableRequest(
+                    ownerUserId,
+                    action,
+                    ToApprovalRiskLevel(decision.RiskLevel),
+                    normalizedDetail,
+                    TimeSpan.FromMinutes(10),
+                    async () =>
+                    {
+                        T value = await execute();
+                        Record(action, actor, normalizedDetail, decision.RiskLevel, succeeded: true);
+                        return $"Executed: {decision.Reason}";
+                    });
+                string approvalMessage = $"Owner confirmation required: approval #{approval.Id} for {action}. Use /approve {approval.Id} or /deny {approval.Id}.";
+                Record(action, actor, normalizedDetail, decision.RiskLevel, succeeded: false, error: approvalMessage);
+                return new AgentActionGatewayResult<T>(false, default, decision, approvalMessage, ApprovalRequest: approval);
+            }
+
             string prefix = decision.Status == AgentExecutionDecisionStatus.OwnerConfirmationRequired
                 ? "Owner confirmation required"
                 : "Blocked";
@@ -74,6 +101,16 @@ public class AgentActionGatewayService(
             AgentRiskLevel.Low => AgentAuditRiskLevel.Low,
             AgentRiskLevel.Medium => AgentAuditRiskLevel.Medium,
             _ => AgentAuditRiskLevel.High
+        };
+    }
+
+    static AgentApprovalRisk ToApprovalRiskLevel(AgentRiskLevel riskLevel)
+    {
+        return riskLevel switch
+        {
+            AgentRiskLevel.Low => AgentApprovalRisk.Low,
+            AgentRiskLevel.Medium => AgentApprovalRisk.Medium,
+            _ => AgentApprovalRisk.High
         };
     }
 

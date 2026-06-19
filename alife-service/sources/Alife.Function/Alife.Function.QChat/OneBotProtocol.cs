@@ -132,6 +132,9 @@ public record OneBotForwardMessage
     [JsonPropertyName("content")]
     public System.Text.Json.JsonElement Content { get; init; }
 
+    [JsonPropertyName("message")]
+    public System.Text.Json.JsonElement Message { get; init; }
+
     [JsonPropertyName("sender")]
     public OneBotSender? Sender { get; init; }
 
@@ -223,6 +226,12 @@ public record OneBotResponse<T>
 
     [JsonPropertyName("message")]
     public string Message { get; init; } = "";
+}
+
+public record OneBotSendMessageResult
+{
+    [JsonPropertyName("message_id")]
+    public long MessageId { get; init; }
 }
 
 public record OneBotFile

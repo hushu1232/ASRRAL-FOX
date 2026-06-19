@@ -107,7 +107,6 @@ public class PetProcess : IDisposable
 [JsonDerivedType(typeof(LipSyncCommand), "lip-sync")]
 [JsonDerivedType(typeof(IdleCycleCommand), "idle-cycle")]
 [JsonDerivedType(typeof(GetParamsCommand), "get-params")]
-[JsonDerivedType(typeof(GetCatalogCommand), "get-catalog")]
 public abstract record IpcCommand;
 
 public record WindowMoveCommand(double X, double Y, int Duration) : IpcCommand;
@@ -134,15 +133,11 @@ public record IdleCycleCommand(bool Enabled, Dictionary<string, float>? Params =
 
 public record GetParamsCommand : IpcCommand;
 
-public record GetCatalogCommand : IpcCommand;
-
 [JsonDerivedType(typeof(ReadyEvent), "ready")]
 [JsonDerivedType(typeof(InputEvent), "input")]
 [JsonDerivedType(typeof(InteractionEvent), "interaction")]
 [JsonDerivedType(typeof(PositionEvent), "position")]
 [JsonDerivedType(typeof(ParamsListEvent), "params-list")]
-[JsonDerivedType(typeof(CatalogEvent), "catalog")]
-[JsonDerivedType(typeof(RendererErrorEvent), "renderer-error")]
 public abstract record IpcEvent;
 
 public record ReadyEvent : IpcEvent;
@@ -156,9 +151,3 @@ public record PositionEvent(double X, double Y) : IpcEvent;
 public record ParamInfo(float Value, float Min, float Max);
 
 public record ParamsListEvent(Dictionary<string, ParamInfo> Params) : IpcEvent;
-
-public record CatalogEvent(
-    List<Live2DModelExpressionEntry> Expressions,
-    List<Live2DModelMotionEntry> Motions) : IpcEvent;
-
-public record RendererErrorEvent(string Operation, string Message) : IpcEvent;

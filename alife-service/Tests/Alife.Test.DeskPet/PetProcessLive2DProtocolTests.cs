@@ -31,9 +31,6 @@ public class PetProcessLive2DProtocolTests
         AssertCommandJson(
             new GetParamsCommand(),
             """{"$type":"get-params"}""");
-        AssertCommandJson(
-            new GetCatalogCommand(),
-            """{"$type":"get-catalog"}""");
     }
 
     [Test]
@@ -57,50 +54,6 @@ public class PetProcessLive2DProtocolTests
         Assert.That(paramsListEvent.Params["ParamAngleX"].Min, Is.EqualTo(-30f));
         Assert.That(paramsListEvent.Params["ParamAngleX"].Max, Is.EqualTo(30f));
         Assert.That(paramsListEvent.Params["ParamEyeLOpen"].Value, Is.EqualTo(0.5f));
-    }
-
-    [Test]
-    public void PreviewCatalogEventDeserializesFromPetJsProtocol()
-    {
-        const string json = """
-            {
-              "$type": "catalog",
-              "expressions": [
-                { "name": "哭哭", "file": "exp/哭哭.exp3.json" }
-              ],
-              "motions": [
-                { "name": "常规", "group": "exp", "index": 0, "file": "exp/常规.motion3.json", "loop": true }
-              ]
-            }
-            """;
-
-        IpcEvent? ipcEvent = JsonSerializer.Deserialize<IpcEvent>(json, PetProcess.JsonOptions);
-
-        Assert.That(ipcEvent, Is.TypeOf<CatalogEvent>());
-        CatalogEvent catalogEvent = (CatalogEvent)ipcEvent!;
-        Assert.That(catalogEvent.Expressions.Single().Name, Is.EqualTo("哭哭"));
-        Assert.That(catalogEvent.Motions.Single().Name, Is.EqualTo("常规"));
-        Assert.That(catalogEvent.Motions.Single().Group, Is.EqualTo("exp"));
-        Assert.That(catalogEvent.Motions.Single().Loop, Is.True);
-    }
-
-    [Test]
-    public void RendererErrorEventDeserializesFromPetJsProtocol()
-    {
-        const string json = """
-            {
-              "$type": "renderer-error",
-              "operation": "motion",
-              "message": "Motion not found"
-            }
-            """;
-
-        IpcEvent? ipcEvent = JsonSerializer.Deserialize<IpcEvent>(json, PetProcess.JsonOptions);
-
-        Assert.That(ipcEvent, Is.TypeOf<RendererErrorEvent>());
-        RendererErrorEvent rendererErrorEvent = (RendererErrorEvent)ipcEvent!;
-        Assert.That(rendererErrorEvent.Operation, Is.EqualTo("motion"));
-        Assert.That(rendererErrorEvent.Message, Is.EqualTo("Motion not found"));
     }
 
     static void AssertCommandJson(IpcCommand command, string expectedJson)

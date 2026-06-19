@@ -29,13 +29,11 @@ public class DeskPetServiceAdapterTests
 
         service.Expression("smile");
         service.Motion("wave");
-        service.Action("happy");
         await service.ShowBubbleAsync("hello");
         await service.Move(10, 20, 1);
 
         Assert.That(runtime.Expressions, Is.EqualTo(new[] { "smile" }));
         Assert.That(runtime.Motions, Is.EqualTo(new[] { ("main", 1) }));
-        Assert.That(runtime.Actions, Is.EqualTo(new[] { "happy" }));
         Assert.That(runtime.Bubbles, Is.EqualTo(new[] { "hello" }));
         Assert.That(runtime.Moves, Is.EqualTo(new[] { (10d, 20d, 1) }));
     }
@@ -46,14 +44,12 @@ public class DeskPetServiceAdapterTests
         public event Action<string>? OnInteracted;
 
         public IEnumerable<string> SupportedExpressions => ["smile"];
-        public IEnumerable<string> SupportedActions => ["happy"];
         public IDictionary<string, (string Group, int Index)> SupportedMotions { get; } = new Dictionary<string, (string, int)>
         {
             ["wave"] = ("main", 1)
         };
         public List<string> Expressions { get; } = new();
         public List<(string Group, int Index)> Motions { get; } = new();
-        public List<string> Actions { get; } = new();
         public List<string> Bubbles { get; } = new();
         public List<(double X, double Y, int Duration)> Moves { get; } = new();
 
@@ -62,11 +58,6 @@ public class DeskPetServiceAdapterTests
         public void HideBubble() {}
         public void PlayExpression(string? id) => Expressions.Add(id ?? "");
         public void PlayMotion(string group, int index) => Motions.Add((group, index));
-        public bool TryPlayInteraction(string actionName)
-        {
-            Actions.Add(actionName);
-            return SupportedActions.Contains(actionName);
-        }
         public void SendStatus(bool working) {}
         public void SetParams(Dictionary<string, float> parameters) {}
         public Task MoveAsync(double x, double y, int duration)

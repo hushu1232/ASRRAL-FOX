@@ -1,4 +1,5 @@
 using Alife.Function.MessageFilter;
+using Alife.Function.Agent;
 using NUnit.Framework;
 
 namespace Alife.Test.Framework;
@@ -50,5 +51,51 @@ public class AgentApprovalServiceTests
         Assert.That(service.TryDeny(request.Id, actorUserId: 3045846738, out string result), Is.True);
         Assert.That(result, Does.Contain("denied"));
         Assert.That(service.GetRequest(request.Id)!.Status, Is.EqualTo(AgentApprovalStatus.Denied));
+    }
+
+    [Test]
+    public async Task GatewayCreatesOwnerApprovalForNonOwnerHighRiskAndExecutesAfterApproval()
+    {
+        AgentApprovalService approvals = new();
+        AgentActionGatewayService gateway = new(approvalService: approvals);
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [3045846738],
+            RequireConfirmationForHighRisk = true
+        };
+        bool actionCalled = false;
+
+        AgentActionGatewayResult<string> result = await gateway.ExecuteAsync(
+            new AgentPermissionRequest(
+                ActorUserId: 20002,
+                Source: AgentRequestSource.GroupChat,
+                IsMentioned: true,
+                RiskLevel: AgentRiskLevel.High,
+                HasExplicitConfirmation: false,
+                Action: "qq.group_file_upload"),
+            config,
+            async () =>
+            {
+                actionCalled = true;
+                await Task.Yield();
+                return "uploaded";
+            },
+            detail: "group=925402131; file=hello_world.c");
+
+        Assert.That(result.Executed, Is.False);
+        Assert.That(result.Decision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
+        Assert.That(result.ApprovalRequest, Is.Not.Null);
+        Assert.That(result.ApprovalRequest!.OwnerUserId, Is.EqualTo(3045846738));
+        Assert.That(result.ApprovalRequest.Status, Is.EqualTo(AgentApprovalStatus.Pending));
+        Assert.That(actionCalled, Is.False);
+
+        AgentApprovalExecutionResult execution = await approvals.ApproveAndExecuteAsync(
+            result.ApprovalRequest.Id,
+            actorUserId: 3045846738);
+
+        Assert.That(execution.Executed, Is.True);
+        Assert.That(execution.Message, Does.Contain("Executed"));
+        Assert.That(actionCalled, Is.True);
+        Assert.That(approvals.GetRequest(result.ApprovalRequest.Id)!.Status, Is.EqualTo(AgentApprovalStatus.Approved));
     }
 }

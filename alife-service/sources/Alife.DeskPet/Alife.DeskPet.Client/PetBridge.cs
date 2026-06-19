@@ -25,7 +25,6 @@ public class PetBridge : IDisposable
     public event Action? OnDragEnd;
     public event Action<double, double>? OnResizeDelta;
     public event Action<Dictionary<string, ParamInfo>>? OnParamsReceived;
-    public event Action<string, string>? OnRendererError;
 
     public PetBridge(WebView2 webView, PetModelMetadata metadata)
     {
@@ -112,20 +111,6 @@ public class PetBridge : IDisposable
     {
         SendCommand(new { type = "get-params" });
     }
-    public void SendCatalog()
-    {
-        SendCommand(new
-        {
-            type = "catalog",
-            expressions = metadata.Expressions.Select(expression => new { name = expression }).ToArray(),
-            motions = metadata.Motions.Select(motion => new
-            {
-                name = motion.Key,
-                group = motion.Value.Group,
-                index = motion.Value.Index
-            }).ToArray()
-        });
-    }
 
     readonly WebView2 webView;
     readonly PetModelMetadata metadata;
@@ -182,11 +167,6 @@ public class PetBridge : IDisposable
                     break;
                 case "params-list":
                     OnParamsReceived?.Invoke(ReadParams(root));
-                    break;
-                case "renderer-error":
-                    OnRendererError?.Invoke(
-                        root.GetProperty("operation").GetString() ?? "",
-                        root.GetProperty("message").GetString() ?? "");
                     break;
             }
         }

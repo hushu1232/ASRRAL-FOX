@@ -14,6 +14,19 @@ public interface IOneBotRuntime : IAsyncDisposable
     Task ConnectAsync();
     Task SendGroupMessage(long groupId, string message);
     Task SendPrivateMessage(long userId, string message);
+    async Task<OneBotSendMessageResult?> SendGroupMessageWithResult(long groupId, string message)
+    {
+        await SendGroupMessage(groupId, message);
+        return null;
+    }
+    async Task<OneBotSendMessageResult?> SendPrivateMessageWithResult(long userId, string message)
+    {
+        await SendPrivateMessage(userId, message);
+        return null;
+    }
+    Task DeleteMessage(long messageId) => Task.CompletedTask;
+    Task PokePrivate(long userId) => Task.CompletedTask;
+    Task PokeGroup(long groupId, long userId) => Task.CompletedTask;
     Task UploadGroupFile(long groupId, string filePath, string name);
     Task UploadPrivateFile(long userId, string filePath, string name);
     Task<OneBotFile?> GetPrivateFileUrl(string fileId);
@@ -39,6 +52,11 @@ public sealed class OneBotRuntime(OneBotClient client) : IOneBotRuntime
     public Task ConnectAsync() => client.ConnectAsync();
     public Task SendGroupMessage(long groupId, string message) => client.SendGroupMessage(groupId, message);
     public Task SendPrivateMessage(long userId, string message) => client.SendPrivateMessage(userId, message);
+    public Task<OneBotSendMessageResult?> SendGroupMessageWithResult(long groupId, string message) => client.SendGroupMessageWithResult(groupId, message);
+    public Task<OneBotSendMessageResult?> SendPrivateMessageWithResult(long userId, string message) => client.SendPrivateMessageWithResult(userId, message);
+    public Task DeleteMessage(long messageId) => client.DeleteMessage(messageId);
+    public Task PokePrivate(long userId) => client.PokePrivate(userId);
+    public Task PokeGroup(long groupId, long userId) => client.PokeGroup(groupId, userId);
     public Task UploadGroupFile(long groupId, string filePath, string name) => client.UploadGroupFile(groupId, filePath, name);
     public Task UploadPrivateFile(long userId, string filePath, string name) => client.UploadPrivateFile(userId, filePath, name);
     public Task<OneBotFile?> GetPrivateFileUrl(string fileId) => client.GetPrivateFileUrl(fileId);

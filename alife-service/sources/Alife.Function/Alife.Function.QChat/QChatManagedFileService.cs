@@ -66,6 +66,7 @@ public sealed class QChatManagedFileService
     };
 
     readonly string rootDirectory;
+    readonly string rootDirectoryWithSeparator;
     readonly string registryPath;
     readonly Func<Uri, CancellationToken, Task<byte[]>> downloadBytesAsync;
 
@@ -73,7 +74,8 @@ public sealed class QChatManagedFileService
         string rootDirectory,
         Func<Uri, CancellationToken, Task<byte[]>>? downloadBytesAsync = null)
     {
-        this.rootDirectory = Path.GetFullPath(rootDirectory);
+        this.rootDirectory = TrimEndingDirectorySeparator(Path.GetFullPath(rootDirectory));
+        rootDirectoryWithSeparator = IncludeTrailingSeparator(this.rootDirectory);
         registryPath = Path.Combine(this.rootDirectory, "pending-index.json");
         this.downloadBytesAsync = downloadBytesAsync ?? DownloadBytesWithHttpClientAsync;
     }
@@ -128,6 +130,15 @@ public sealed class QChatManagedFileService
 
         if (record.Status == QChatManagedFileStatus.Deleted)
             return new QChatManagedFileOperationResult(false, $"QQ file '{record.Id}' has already been deleted.", record);
+
+        if (record.Status == QChatManagedFileStatus.Downloaded &&
+            string.IsNullOrWhiteSpace(record.LocalPath) == false &&
+            IsPathUnderRoot(record.LocalPath) &&
+            File.Exists(record.LocalPath))
+        {
+            string? existingPreview = await TryExtractTextPreviewAsync(record.LocalPath, cancellationToken);
+            return new QChatManagedFileOperationResult(true, "QQ file is already downloaded in the managed workspace.", record, existingPreview);
+        }
 
         if (record.Size is > MaxDownloadBytes)
             return await MarkFailedAsync(records, record, $"QQ file is too large. Limit is {MaxDownloadBytes} bytes.", cancellationToken);
@@ -274,25 +285,41 @@ public sealed class QChatManagedFileService
 
     string BuildDownloadPath(QChatManagedFileRecord record)
     {
-        string date = record.ReceivedAt.ToLocalTime().ToString("yyyyMMdd");
         string scope = record.MessageType == OneBotMessageType.Group
             ? $"group-{record.GroupId}"
             : $"private-{record.SenderId}";
-        string directory = Path.Combine(rootDirectory, "downloads", date, scope);
+        string extension = Path.GetExtension(record.SafeName).TrimStart('.');
+        if (string.IsNullOrWhiteSpace(extension))
+            extension = "file";
+
+        string directory = Path.Combine(rootDirectory, "downloads", scope, extension);
         string destination = Path.Combine(directory, record.SafeName);
         if (File.Exists(destination) == false)
             return destination;
 
         string name = Path.GetFileNameWithoutExtension(record.SafeName);
-        string extension = Path.GetExtension(record.SafeName);
-        return Path.Combine(directory, $"{name}-{record.Id[..Math.Min(8, record.Id.Length)]}{extension}");
+        string fileExtension = Path.GetExtension(record.SafeName);
+        string idPrefix = record.Id[..Math.Min(8, record.Id.Length)];
+        int suffix = 0;
+        while (true)
+        {
+            string suffixText = suffix == 0 ? idPrefix : $"{idPrefix}-{suffix}";
+            string candidate = Path.Combine(directory, $"{name}-{suffixText}{fileExtension}");
+            if (File.Exists(candidate) == false)
+                return candidate;
+
+            suffix++;
+        }
     }
 
     bool IsPathUnderRoot(string path)
     {
-        string fullPath = Path.GetFullPath(path);
-        return fullPath.StartsWith(rootDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(fullPath, rootDirectory, StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        string fullPath = TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        return string.Equals(fullPath, rootDirectory, StringComparison.OrdinalIgnoreCase) ||
+               fullPath.StartsWith(rootDirectoryWithSeparator, StringComparison.OrdinalIgnoreCase);
     }
 
     static QChatManagedFileRecord? FindRecord(List<QChatManagedFileRecord> records, string id)
@@ -318,6 +345,25 @@ public sealed class QChatManagedFileService
 
         name = Regex.Replace(name, @"\s+", " ").Trim();
         return string.IsNullOrWhiteSpace(name) ? "qq-file" : name;
+    }
+
+    static string TrimEndingDirectorySeparator(string path)
+    {
+        string root = Path.GetPathRoot(path) ?? string.Empty;
+        while (path.Length > root.Length &&
+               (path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)))
+        {
+            path = path[..^1];
+        }
+
+        return path;
+    }
+
+    static string IncludeTrailingSeparator(string path)
+    {
+        return path.EndsWith(Path.DirectorySeparatorChar) || path.EndsWith(Path.AltDirectorySeparatorChar)
+            ? path
+            : path + Path.DirectorySeparatorChar;
     }
 
     static async Task<byte[]> DownloadBytesWithHttpClientAsync(Uri uri, CancellationToken cancellationToken)

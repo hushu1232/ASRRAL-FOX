@@ -636,6 +636,15 @@ public class QChatMessageSecurityTests
     }
 
     [Test]
+    public void HasExplicitHighRiskConfirmation_AcceptsOwnerFileUploadApprovalPhrase()
+    {
+        Assert.That(QChatMessageSecurity.HasExplicitHighRiskConfirmation("允许上传文件"), Is.True);
+        Assert.That(QChatMessageSecurity.HasExplicitHighRiskConfirmation("确认上传文件"), Is.True);
+        Assert.That(QChatMessageSecurity.HasExplicitHighRiskConfirmation("上传哦，允许上传呢"), Is.True);
+        Assert.That(QChatMessageSecurity.HasExplicitHighRiskConfirmation("可以上传到群文件"), Is.True);
+    }
+
+    [Test]
     public async Task OwnerConfirmedQChatPermissionAllowsHighRiskXmlButMemberSpoofDoesNot()
     {
         QChatConfig config = new() { OwnerId = 10001 };
