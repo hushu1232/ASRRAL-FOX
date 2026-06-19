@@ -54,7 +54,7 @@ public class OneBotClient(string url, string token = "") : IAsyncDisposable
         set => token = value;
     }
 
-    public TimeSpan ActionTimeout { get; set; } = TimeSpan.FromSeconds(10);
+    public TimeSpan ActionTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
 
     public async Task ConnectAsync()

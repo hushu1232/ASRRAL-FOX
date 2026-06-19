@@ -615,7 +615,29 @@ public class AgentWorkspaceService(
     static AgentWorkspacePolicy CreateDefaultPolicy()
     {
         string root = Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace");
-        return new AgentWorkspacePolicy([Environment.CurrentDirectory, root, AlifePath.TempFolderPath]);
+        List<string> roots = [Environment.CurrentDirectory, root, AlifePath.TempFolderPath];
+        string? projectRoot = FindProjectRoot(Environment.CurrentDirectory);
+        if (projectRoot != null)
+            roots.Insert(0, projectRoot);
+
+        return new AgentWorkspacePolicy(roots);
+    }
+
+    static string? FindProjectRoot(string startDirectory)
+    {
+        DirectoryInfo? directory = new(Path.GetFullPath(startDirectory));
+        while (directory != null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Alife.slnx")) ||
+                Directory.Exists(Path.Combine(directory.FullName, ".git")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 
     static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)

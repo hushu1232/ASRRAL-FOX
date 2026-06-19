@@ -58,6 +58,8 @@ public record OneBotSender
 
 public record OneBotMessageEvent : OneBotBasicMessageEvent
 {
+    [JsonPropertyName("message_id")]
+    public long MessageId { get; init; }
 
     [JsonPropertyName("group_name")]
     public string? GroupName { get; init; }
@@ -111,6 +113,15 @@ public record OneBotNoticeEvent : OneBotBasicMessageEvent
     [JsonPropertyName("sub_type")]
     public string? SubType { get; init; }
 
+    [JsonPropertyName("message_id")]
+    public long MessageId { get; init; }
+
+    [JsonPropertyName("operator_id")]
+    public long OperatorId { get; init; }
+
+    [JsonPropertyName("target_id")]
+    public long TargetId { get; init; }
+
     [JsonPropertyName("file")]
     public OneBotNoticeFile? File { get; init; }
 }
@@ -118,7 +129,7 @@ public record OneBotNoticeEvent : OneBotBasicMessageEvent
 public record OneBotPokeEvent : OneBotNoticeEvent
 {
     [JsonPropertyName("target_id")]
-    public long TargetId { get; init; }
+    public new long TargetId { get; init; }
 }
 
 public record OneBotRequestEvent : OneBotBaseEvent

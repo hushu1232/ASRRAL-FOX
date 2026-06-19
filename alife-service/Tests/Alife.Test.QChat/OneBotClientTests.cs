@@ -10,6 +10,14 @@ namespace Alife.Test.QChat;
 public class OneBotClientTests
 {
     [Test]
+    public void DefaultActionTimeoutAllowsSlowNapCatFileActions()
+    {
+        OneBotClient client = new("ws://unused");
+
+        Assert.That(client.ActionTimeout, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(30)));
+    }
+
+    [Test]
     public void CallActionAsync_RemovesPendingActionWhenResponseTimesOut()
     {
         TimeoutOnlyOneBotClient client = new()

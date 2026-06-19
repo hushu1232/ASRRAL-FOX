@@ -126,6 +126,12 @@ public class XmlStreamParser
                 tagMode = currentTagName == null ? 1 : 2;
                 break;
             case '>':
+                if (currentTagName == null && tagBuffer.Length == 0)
+                {
+                    await FlushLiteralTag(ch);
+                    break;
+                }
+
                 FlushTagOrAttributeName();
                 await FlashTag();
                 break;
@@ -139,6 +145,12 @@ public class XmlStreamParser
                 isAnnotation = true;
                 break;
             default:
+                if (currentTagName == null && IsTagNameChar(ch) == false)
+                {
+                    await FlushLiteralTag(ch);
+                    break;
+                }
+
                 HandleTagChar(ch);
                 break;
         }
@@ -210,6 +222,21 @@ public class XmlStreamParser
     void HandleTagChar(char ch)
     {
         tagBuffer.Append(ch);
+    }
+
+    async Task FlushLiteralTag(char ch)
+    {
+        string prefix = tagMode == 1 ? "</" : "<";
+        string content = prefix + tagBuffer + ch;
+        ClearTag();
+        foreach (char contentChar in content)
+            await HandleContentChar(contentChar);
+    }
+
+    static bool IsTagNameChar(char ch)
+    {
+        return char.IsLetterOrDigit(ch) ||
+               ch is '_' or '-' or ':';
     }
 
     async Task FlashEscaping()

@@ -436,6 +436,29 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
+    public void WorkspaceDefaultPolicyIncludesProjectRootWhenClientRunsFromOutputDirectory()
+    {
+        string originalCurrentDirectory = Environment.CurrentDirectory;
+        string root = CreateTempWorkspace();
+        string outputDirectory = Path.Combine(root, "Outputs", "Alife.Client");
+        Directory.CreateDirectory(outputDirectory);
+        File.WriteAllText(Path.Combine(root, "Alife.slnx"), "<Solution />");
+
+        try
+        {
+            Environment.CurrentDirectory = outputDirectory;
+
+            AgentWorkspaceService workspace = new();
+
+            Assert.That(workspace.AllowedRoots, Does.Contain(Path.GetFullPath(root)));
+        }
+        finally
+        {
+            Environment.CurrentDirectory = originalCurrentDirectory;
+        }
+    }
+
+    [Test]
     public void AuditLogRecordsRecentEntriesAndPersistsJsonLines()
     {
         string root = CreateTempWorkspace();
