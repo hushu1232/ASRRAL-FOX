@@ -23,6 +23,20 @@ public class QChatOutboundPlannerTests
         });
     }
 
+    [TestCase("\u95ED\u5634\uFF0C\u5435\u5F97\u5F88\u3002")]
+    [TestCase("\u4F60\u53EF\u4EE5\u70E6\u6211\uFF0C\u522B\u70E6\u672F\u3002")]
+    [TestCase("\u6EDA\u8FDC\u70B9\uFF0C\u522B\u628A\u6211\u8010\u5FC3\u5F53\u514D\u8D39\u8D44\u6E90\u3002")]
+    public void PlanTextKeepsShortAggressiveReplyAsSingleMessage(string text)
+    {
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner(maxTextLength: 40).PlanText(text);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Items, Has.Count.EqualTo(1));
+            Assert.That(plan.Items[0].Text, Is.EqualTo(text));
+        });
+    }
+
     [Test]
     public void EmptyTextProducesNoSendItems()
     {

@@ -177,4 +177,3 @@ powershell -ExecutionPolicy Bypass -File D:\Alife\tools\start-alife-napcat-live.
 ```
 
 Expected: build succeeds and smoke tests pass or report only external live-environment failures.
-

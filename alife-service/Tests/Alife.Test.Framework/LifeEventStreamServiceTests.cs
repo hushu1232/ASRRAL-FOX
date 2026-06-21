@@ -146,8 +146,9 @@ public class LifeEventStreamServiceTests
 
         string result = InvokePrivateFilter(filter, "OnChatSend", "Hello");
 
-        Assert.That(result, Does.StartWith("[Recent experiences]"));
+        Assert.That(result, Does.StartWith("[Internal cognitive honesty protocol]"));
         Assert.That(result, Does.Contain("- 10:04 You waved."));
+        Assert.That(result.IndexOf("[Recent experiences]", StringComparison.Ordinal), Is.LessThan(result.IndexOf("Hello(reply briefly)", StringComparison.Ordinal)));
         Assert.That(result, Does.Contain("[/Recent experiences]\nHello(reply briefly)"));
     }
 

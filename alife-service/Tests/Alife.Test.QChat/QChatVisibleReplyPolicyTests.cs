@@ -141,6 +141,78 @@ public class QChatVisibleReplyPolicyTests
         });
     }
 
+    [TestCase("\u5C11\u72AF\u8D31\u3002")]
+    [TestCase("\u6EDA\u8FDC\u70B9\u3002")]
+    [TestCase("\u95ED\u5634\uFF0C\u5435\u5F97\u5F88\u3002")]
+    public void AllowsAggressiveVisibleTextWithoutProfanityKeywordBlocking(string text)
+    {
+        QChatVisibleReplyPolicy policy = new();
+
+        QChatVisibleReplyResult result = policy.Normalize(
+            text,
+            QChatConversationKind.Group,
+            shouldReply: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ShouldSend, Is.True);
+            Assert.That(result.Text, Is.EqualTo(text));
+        });
+    }
+
+    [Test]
+    public void GroupNoReplyCanUseModelProvidedAggressiveColdReply()
+    {
+        QChatVisibleReplyPolicy policy = new([Dot]);
+
+        QChatVisibleReplyResult result = policy.Normalize(
+            "\u522B\u70E6\u3002",
+            QChatConversationKind.Group,
+            shouldReply: false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ShouldSend, Is.True);
+            Assert.That(result.Text, Is.EqualTo("\u522B\u70E6\u3002"));
+            Assert.That(result.Reason, Does.Contain("model visible"));
+        });
+    }
+
+    [Test]
+    public void GroupNoReplyFallsBackToReactionWhenModelTextIsHiddenState()
+    {
+        QChatVisibleReplyPolicy policy = new([Dot]);
+
+        QChatVisibleReplyResult result = policy.Normalize(
+            "\uFF08\u4E0D\u56DE\u590D\uFF0C\u4FDD\u6301\u5B89\u9759\uFF09",
+            QChatConversationKind.Group,
+            shouldReply: false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ShouldSend, Is.True);
+            Assert.That(result.Text, Is.EqualTo(Dot));
+            Assert.That(result.Reason, Does.Contain("group no-reply reaction"));
+        });
+    }
+
+    [Test]
+    public void BlocksParenthesizedAggressiveStageDirectionEvenWhenItContainsProfanity()
+    {
+        QChatVisibleReplyPolicy policy = new();
+
+        QChatVisibleReplyResult result = policy.Normalize(
+            "\uFF08\u5C11\u72AF\u8D31\uFF0C\u61D2\u5F97\u56DE\u590D\uFF09",
+            QChatConversationKind.Group,
+            shouldReply: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
+        });
+    }
+
     [Test]
     public void PrivateNoReplyInternalStateDoesNotSend()
     {
@@ -150,6 +222,40 @@ public class QChatVisibleReplyPolicyTests
             $"{StateLabel}\uFF1A\u5B89\u9759\u89C2\u5BDF\u3002",
             QChatConversationKind.Private,
             shouldReply: false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void BlocksPersonaFrameRuntimeMarkersFromVisibleOutput()
+    {
+        QChatVisibleReplyPolicy policy = new();
+
+        QChatVisibleReplyResult result = policy.Normalize(
+            "[qchat persona frame]\nspeaker_role=non_owner\nrecommended_stance=hostile\n[/qchat persona frame]",
+            QChatConversationKind.Group,
+            shouldReply: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void BlocksPersonaFrameFieldMarkersFromVisibleOutput()
+    {
+        QChatVisibleReplyPolicy policy = new();
+
+        QChatVisibleReplyResult result = policy.Normalize(
+            "speaker_role=NonOwner\nrecommended_stance=HostilePushback",
+            QChatConversationKind.Group,
+            shouldReply: true);
 
         Assert.Multiple(() =>
         {
@@ -228,6 +334,27 @@ public class QChatVisibleReplyPolicyTests
 
         QChatVisibleReplyResult result = policy.Normalize(
             $"\u6211\u662FAI\u3002\n{PsychologicalStateLabel}\uFF1A\u4E0D\u5E94\u53D1\u9001\u3002",
+            QChatConversationKind.Private,
+            shouldReply: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
+        });
+    }
+
+    [TestCase("[QQ Zone proactive] rejected")]
+    [TestCase("qchat-send-failed")]
+    [TestCase("route=qq:xiayu:private")]
+    [TestCase("StopAfterTaskFeedback")]
+    [TestCase("managed_file_id=abc123")]
+    public void InternalRuntimeLabelsAreNotVisibleReplies(string text)
+    {
+        QChatVisibleReplyPolicy policy = new();
+
+        QChatVisibleReplyResult result = policy.Normalize(
+            text,
             QChatConversationKind.Private,
             shouldReply: true);
 

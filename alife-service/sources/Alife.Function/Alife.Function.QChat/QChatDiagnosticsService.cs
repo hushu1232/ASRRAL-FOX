@@ -4,11 +4,30 @@ namespace Alife.Function.QChat;
 
 public sealed record QChatDiagnosticsResult(bool Handled, string Text);
 
+public sealed record QChatDiagnosticsRuntimeState(
+    bool ReplyTimingDelayEnabled = false,
+    bool ConversationSettleWindowEnabled = false);
+
 public static class QChatDiagnosticsService
 {
     const string CommandPrefix = "/qchat";
 
+    public static string FormatDecisionTrace(QChatDecisionTrace trace)
+    {
+        ArgumentNullException.ThrowIfNull(trace);
+        return trace.ToDiagnosticText();
+    }
+
     public static QChatDiagnosticsResult TryHandle(string? text, QChatAgentRoute route, QChatAgentProfile profile)
+    {
+        return TryHandle(text, route, profile, new QChatDiagnosticsRuntimeState());
+    }
+
+    public static QChatDiagnosticsResult TryHandle(
+        string? text,
+        QChatAgentRoute route,
+        QChatAgentProfile profile,
+        QChatDiagnosticsRuntimeState runtimeState)
     {
         string commandText = text?.Trim() ?? string.Empty;
         if (!IsQChatCommand(commandText))
@@ -16,16 +35,19 @@ public static class QChatDiagnosticsService
 
         ArgumentNullException.ThrowIfNull(route);
         ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(runtimeState);
 
         string command = commandText.Length == CommandPrefix.Length
             ? string.Empty
             : commandText[CommandPrefix.Length..].Trim();
+        command = StripCopiedMenuDescription(command);
 
         return command.ToLowerInvariant() switch
         {
             "route" => Handled(BuildRouteText(route)),
+            "identity" => Handled(BuildIdentityText(route, profile)),
             "profile" => Handled(BuildProfileText(profile)),
-            "status" => Handled(BuildStatusText(route, profile)),
+            "status" => Handled(BuildStatusText(route, profile, runtimeState)),
             "files" => Handled("files=pending:0 downloaded:0 deleted:0"),
             "approvals" => Handled("approvals=pending:0"),
             "failures" => Handled("failures=0"),
@@ -41,6 +63,12 @@ public static class QChatDiagnosticsService
             return false;
 
         return text.Length == CommandPrefix.Length || char.IsWhiteSpace(text[CommandPrefix.Length]);
+    }
+
+    static string StripCopiedMenuDescription(string command)
+    {
+        int descriptionStart = command.IndexOf(" - ", StringComparison.Ordinal);
+        return descriptionStart >= 0 ? command[..descriptionStart].TrimEnd() : command;
     }
 
     static QChatDiagnosticsResult Handled(string text)
@@ -69,26 +97,66 @@ public static class QChatDiagnosticsService
             $"persona={profile.PersonaPath}");
     }
 
-    static string BuildStatusText(QChatAgentRoute route, QChatAgentProfile profile)
+    static string BuildIdentityText(QChatAgentRoute route, QChatAgentProfile profile)
     {
         return string.Join(Environment.NewLine,
             $"agent={route.AgentId}",
+            $"bot={route.BotAccountId}",
+            $"display={profile.DisplayName}",
+            $"owner_address={profile.OwnerAddressName}",
+            $"memory={profile.MemoryScope}",
+            $"session={route.SessionKey}");
+    }
+
+    static string BuildStatusText(
+        QChatAgentRoute route,
+        QChatAgentProfile profile,
+        QChatDiagnosticsRuntimeState runtimeState)
+    {
+        return string.Join(Environment.NewLine,
+            $"agent={route.AgentId}",
+            $"bot={route.BotAccountId}",
             $"session={route.SessionKey}",
             $"model={profile.Model}",
+            $"reply_timing_delay={FormatEnabled(runtimeState.ReplyTimingDelayEnabled)}",
+            $"conversation_settle_window={FormatEnabled(runtimeState.ConversationSettleWindowEnabled)}",
             "status=online");
+    }
+
+    static string FormatEnabled(bool value)
+    {
+        return value ? "enabled" : "disabled";
     }
 
     static string BuildHelpText()
     {
         return string.Join(Environment.NewLine,
             "Supported commands:",
-            "/qchat route",
-            "/qchat profile",
-            "/qchat status",
-            "/qchat files",
-            "/qchat approvals",
-            "/qchat failures",
-            "/qchat recent private",
-            "/qchat recent group");
+            "/qchat route - show route/session ids",
+            "/qchat identity - show agent identity",
+            "/qchat profile - show model/persona/memory",
+            "/qchat status - show online and timing state",
+            "/qchat timing on|off|status - toggle humanlike reply timing",
+            "/qchat memory status - show QChat memory layer wiring",
+            "/qchat memory recent - show recent memory events",
+            "/qchat memory forget <id> - remove a memory from current context",
+            "/qchat memory purge <id> confirm - move a memory archive to trash",
+            "/qchat desktop status - read-only desktop status",
+            "/qchat desktop capabilities - show enabled read-only desktop capabilities",
+            "/qchat desktop processes - read-only process summary",
+            "/qchat desktop windows - read-only window summary",
+            "/qchat desktop audit recent - show recent desktop action audit entries",
+            "/qchat desktop audit health - show desktop action audit safety state",
+            "/qchat desktop request <action> - create a pending desktop action draft",
+            "/qchat desktop drafts recent - show recent desktop action drafts",
+            "/qchat desktop draft reject <draft_id> - reject a pending desktop action draft",
+            "/qchat desktop draft approve <draft_id> - approve a pending desktop action draft",
+            "/qchat desktop draft execute <draft_id> - execute an approved whitelisted desktop action draft",
+            "/qchat desktop file policy - show read blacklist and write-deny policy summary",
+            "/qchat files - show file task summary",
+            "/qchat approvals - show pending approvals",
+            "/qchat failures - show failure count",
+            "/qchat recent private - show recent private context",
+            "/qchat recent group - show recent group context");
     }
 }

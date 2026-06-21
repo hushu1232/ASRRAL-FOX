@@ -43,6 +43,22 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleRouteAcceptsCopiedMenuLineWithoutReturningHelp()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat route - show route/session ids",
+            CreateRoute(),
+            CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
+            Assert.That(result.Text, Does.Not.Contain("Supported commands:"));
+        });
+    }
+
+    [Test]
     public void TryHandleProfileReturnsProfileSnapshot()
     {
         QChatAgentRoute route = CreateRoute();
@@ -79,6 +95,46 @@ public class QChatDiagnosticsServiceTests
         });
     }
 
+    [Test]
+    public void TryHandleStatusReturnsRuntimeTimingState()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat status",
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState(
+                ReplyTimingDelayEnabled: true,
+                ConversationSettleWindowEnabled: true));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("bot=2905391496"));
+            Assert.That(result.Text, Does.Contain("reply_timing_delay=enabled"));
+            Assert.That(result.Text, Does.Contain("conversation_settle_window=enabled"));
+        });
+    }
+
+    [Test]
+    public void TryHandleIdentityReturnsUnifiedRouteAndProfileSnapshot()
+    {
+        QChatAgentRoute route = CreateRoute();
+        QChatAgentProfile profile = CreateProfile();
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat identity", route, profile);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("agent=xiayu"));
+            Assert.That(result.Text, Does.Contain("bot=2905391496"));
+            Assert.That(result.Text, Does.Contain("display=\u590f\u7fbd"));
+            Assert.That(result.Text, Does.Contain("owner_address=\u672f\u672f"));
+            Assert.That(result.Text, Does.Contain("memory=qchat/xiayu"));
+            Assert.That(result.Text, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
+        });
+    }
+
     [TestCase("/qchat files", "files=pending:0 downloaded:0 deleted:0")]
     [TestCase("/qchat approvals", "approvals=pending:0")]
     [TestCase("/qchat failures", "failures=0")]
@@ -105,13 +161,37 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Handled, Is.True);
             Assert.That(result.Text, Does.Contain("Supported commands:"));
             Assert.That(result.Text, Does.Contain("/qchat route"));
+            Assert.That(result.Text, Does.Contain("/qchat identity"));
             Assert.That(result.Text, Does.Contain("/qchat profile"));
             Assert.That(result.Text, Does.Contain("/qchat status"));
+            Assert.That(result.Text, Does.Contain("/qchat timing on|off|status"));
+            Assert.That(result.Text, Does.Contain("/qchat memory status"));
+            Assert.That(result.Text, Does.Contain("/qchat memory recent"));
+            Assert.That(result.Text, Does.Contain("/qchat memory forget"));
+            Assert.That(result.Text, Does.Contain("/qchat memory purge"));
+            Assert.That(result.Text, Does.Contain("/qchat desktop status"));
+            Assert.That(result.Text, Does.Contain("/qchat desktop capabilities"));
             Assert.That(result.Text, Does.Contain("/qchat files"));
             Assert.That(result.Text, Does.Contain("/qchat approvals"));
             Assert.That(result.Text, Does.Contain("/qchat failures"));
             Assert.That(result.Text, Does.Contain("/qchat recent private"));
             Assert.That(result.Text, Does.Contain("/qchat recent group"));
+            Assert.That(result.Text, Does.Contain("show route/session ids"));
+            Assert.That(result.Text, Does.Contain("show agent identity"));
+            Assert.That(result.Text, Does.Contain("show model/persona/memory"));
+            Assert.That(result.Text, Does.Contain("show online and timing state"));
+            Assert.That(result.Text, Does.Contain("toggle humanlike reply timing"));
+            Assert.That(result.Text, Does.Contain("show QChat memory layer wiring"));
+            Assert.That(result.Text, Does.Contain("show recent memory events"));
+            Assert.That(result.Text, Does.Contain("remove a memory from current context"));
+            Assert.That(result.Text, Does.Contain("move a memory archive to trash"));
+            Assert.That(result.Text, Does.Contain("read-only desktop status"));
+            Assert.That(result.Text, Does.Contain("show enabled read-only desktop capabilities"));
+            Assert.That(result.Text, Does.Contain("show file task summary"));
+            Assert.That(result.Text, Does.Contain("show pending approvals"));
+            Assert.That(result.Text, Does.Contain("show failure count"));
+            Assert.That(result.Text, Does.Contain("show recent private context"));
+            Assert.That(result.Text, Does.Contain("show recent group context"));
         });
     }
 

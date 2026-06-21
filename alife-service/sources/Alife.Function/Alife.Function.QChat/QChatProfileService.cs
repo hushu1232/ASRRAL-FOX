@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Alife.Function.QChat;
 
@@ -31,33 +32,9 @@ public sealed class QChatProfileService
 
     public static QChatProfileService CreateDefault()
     {
-        QChatAgentCapabilities defaultCapabilities = new(
-            AllowComputerFileTools: true,
-            AllowProjectModification: true,
-            AllowRecall: true,
-            AllowPoke: true);
-
-        Dictionary<string, QChatAgentProfile> profiles = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["xiayu"] = new QChatAgentProfile(
-                "xiayu",
-                "\u590f\u7fbd",
-                @"C:\Users\hu shu\Desktop\personalitysetting",
-                "qchat/xiayu",
-                "deepseek-v4-flash",
-                "\u672f\u672f",
-                ["17-year-old-girl", "high-intelligence", "cold-to-others", "warm-to-owner"],
-                defaultCapabilities),
-            ["mixu"] = new QChatAgentProfile(
-                "mixu",
-                "\u54aa\u7eea",
-                string.Empty,
-                "qchat/mixu",
-                "deepseek-v4-flash",
-                "\u4e3b\u4eba",
-                ["catgirl"],
-                defaultCapabilities)
-        };
+        Dictionary<string, QChatAgentProfile> profiles = QChatAgentIdentityRegistry.CreateDefault()
+            .GetAll()
+            .ToDictionary(identity => identity.AgentId, identity => identity.Profile, StringComparer.OrdinalIgnoreCase);
 
         return new QChatProfileService(profiles);
     }

@@ -36,11 +36,45 @@ internal static class QChatVisibleTextPolicy
         "不做",
         "不插话",
         "不插話",
+        "懒得回",
+        "懒得理",
+        "懒得管",
+        "不想理",
         "看着",
         "看著",
         "听着",
         "聽著",
         "待命"
+    ];
+
+    static readonly string[] StageActionMarkers =
+    [
+        "揉",
+        "尾巴",
+        "耳朵",
+        "趴",
+        "蹭",
+        "抱住",
+        "垂眸",
+        "抬头",
+        "抬頭",
+        "低头",
+        "低頭",
+        "眨眼",
+        "摇头",
+        "搖頭",
+        "点头",
+        "點頭",
+        "歪头",
+        "歪頭",
+        "攥",
+        "蜷",
+        "贴近",
+        "貼近",
+        "靠近",
+        "缩了缩",
+        "縮了縮",
+        "抖了抖"
     ];
 
     public static bool IsHumanInvisibleStateText(string? message)
@@ -58,7 +92,8 @@ internal static class QChatVisibleTextPolicy
             return compact is "沉默" or "silent" or "stayquiet" or "noreply";
 
         string innerCompact = Compact(unwrapped.Text);
-        return StageStateMarkers.Any(marker => innerCompact.Contains(marker, StringComparison.OrdinalIgnoreCase));
+        return StageStateMarkers.Any(marker => innerCompact.Contains(marker, StringComparison.OrdinalIgnoreCase))
+               || StageActionMarkers.Any(marker => innerCompact.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
     static UnwrappedText UnwrapDirective(string value)

@@ -64,6 +64,57 @@ public class MessageFilterContextComposerTests
     }
 
     [Test]
+    public void FormatChatMessage_UsesFastConversationProfileToExcludeHeavyContext()
+    {
+        MessageFilterService service = new(
+            contextContributors: [
+                new StubContextContributor(new ContextContribution("logs.full", "large diagnostic log should not enter fast chat", Priority: 2000, MaxLength: 500)),
+                new StubContextContributor(new ContextContribution("self-state", "QQ connected; owner priority active.", Priority: 100, MaxLength: 500))
+            ])
+        {
+            Configuration = new MessageFilterData
+            {
+                EnableTimestamp = false,
+                MessageAppend = "",
+                EnableCognitiveHonestyProtocol = false,
+                MaxContextLength = 300,
+                MaxMessageLength = 800
+            }
+        };
+
+        string result = service.FormatChatMessage("hello");
+
+        Assert.That(result, Does.Contain("QQ connected; owner priority active."));
+        Assert.That(result, Does.Not.Contain("large diagnostic log should not enter fast chat"));
+        Assert.That(result, Does.EndWith("hello"));
+    }
+
+    [Test]
+    public void FormatChatMessage_PreservesCurrentMessageWhenContextWouldExceedMessageBudget()
+    {
+        MessageFilterService service = new(
+            contextContributors: [
+                new StubContextContributor(new ContextContribution("self-state", new string('c', 400), Priority: 1000, MaxLength: 400))
+            ])
+        {
+            Configuration = new MessageFilterData
+            {
+                EnableTimestamp = false,
+                MessageAppend = "",
+                EnableCognitiveHonestyProtocol = false,
+                MaxContextLength = 400,
+                MaxMessageLength = 80
+            }
+        };
+
+        string result = service.FormatChatMessage("CURRENT MESSAGE MUST STAY");
+
+        Assert.That(result, Does.Contain("CURRENT MESSAGE MUST STAY"));
+        Assert.That(result.EndsWith("CURRENT MESSAGE MUST STAY", StringComparison.Ordinal), Is.True);
+        Assert.That(result.Length, Is.LessThanOrEqualTo(80));
+    }
+
+    [Test]
     public void FormatChatMessagePrependsCognitiveHonestyProtocolByDefault()
     {
         MessageFilterService service = new()

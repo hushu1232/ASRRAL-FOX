@@ -66,9 +66,12 @@ public class MessageFilterService(
     public string FormatChatMessage(string message)
     {
         MessageFilterData configuration = Configuration ?? new MessageFilterData();
-        string result = $"{PrependContext(message, configuration)}{configuration.MessageAppend}";
-        if (configuration.EnableTimestamp)
-            result = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]{result}";
+        string append = configuration.MessageAppend ?? "";
+        string timestamp = configuration.EnableTimestamp
+            ? $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]"
+            : "";
+        int contextBudget = CalculateContextBudget(configuration, timestamp, message, append);
+        string result = $"{timestamp}{PrependContext(message, configuration, contextBudget)}{append}";
 
         if (result.Length > configuration.MaxMessageLength)
         {
@@ -87,11 +90,14 @@ public class MessageFilterService(
     public string FormatPokeMessage(string message)
     {
         MessageFilterData configuration = Configuration ?? new MessageFilterData();
-        return $"{PrependContext(message, configuration)}{configuration.PokeAppend}";
+        return $"{PrependContext(message, configuration, Math.Max(0, configuration.MaxContextLength))}{configuration.PokeAppend}";
     }
 
-    string PrependContext(string message, MessageFilterData configuration)
+    string PrependContext(string message, MessageFilterData configuration, int contextBudget)
     {
+        if (contextBudget <= 0)
+            return message;
+
         List<ContextContribution> contributions = new();
         if (configuration.EnableCognitiveHonestyProtocol
             && string.IsNullOrWhiteSpace(configuration.CognitiveHonestyProtocol) == false)
@@ -126,10 +132,26 @@ public class MessageFilterService(
                 contributions.Add(new ContextContribution("recent-experiences", recentExperiences, Priority: 800, MaxLength: 1200));
         }
 
-        string context = ContextBudgetComposer.Compose(contributions, configuration.MaxContextLength);
+        ContextBudgetProfile profile = ContextBudgetProfile.FastConversation with
+        {
+            MaxLength = Math.Min(Math.Max(0, configuration.MaxContextLength), contextBudget)
+        };
+        string context = ContextBudgetComposer.Compose(contributions, profile);
         if (string.IsNullOrWhiteSpace(context))
             return message;
 
         return $"{context}\n{message}";
+    }
+
+    static int CalculateContextBudget(
+        MessageFilterData configuration,
+        string timestamp,
+        string message,
+        string append)
+    {
+        int maxMessageLength = Math.Max(0, configuration.MaxMessageLength);
+        int reservedLength = timestamp.Length + (message ?? "").Length + append.Length;
+        int available = maxMessageLength - reservedLength - 1;
+        return Math.Min(Math.Max(0, configuration.MaxContextLength), Math.Max(0, available));
     }
 }

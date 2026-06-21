@@ -128,7 +128,7 @@ public class OneBotClient(string url, string token = "") : IAsyncDisposable
 
             JsonElement result = await tcs.Task;
             OneBotResponse<T>? response = result.Deserialize<OneBotResponse<T>>();
-            
+
             if (response != null && response.RetCode != 0 && response.RetCode != 1)
             {
                 throw new Exception($"调用失败 (RetCode: {response.RetCode}) - {response.Message}");

@@ -39,7 +39,7 @@ public sealed record ContextBudgetProfile(
 {
     public static ContextBudgetProfile FastConversation { get; } = new(
         MaxLength: 2048,
-        MaxContributionLength: 512,
+        MaxContributionLength: 1200,
         ExcludedKeyPrefixes:
         [
             "logs.",

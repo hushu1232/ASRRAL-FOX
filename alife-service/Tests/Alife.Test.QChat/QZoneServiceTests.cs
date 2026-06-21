@@ -1,6 +1,9 @@
 using Alife.Framework;
 using Alife.Function.QChat;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
 using NUnit.Framework;
+using System.Reflection;
 using System.Text.Json;
 
 namespace Alife.Test.QChat;
@@ -217,6 +220,53 @@ public class QZoneServiceTests
         Assert.That(runtime.Likes, Is.Empty);
     }
 
+    [Test]
+    public async Task QZoneReportFeedbackDoesNotPokeInternalQqZoneLabel()
+    {
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = new(runtime)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                PrivateChatContactIds = "1001",
+                PrivateContactLikeProbability = 0.0
+            }
+        };
+        StartService(service);
+
+        QZoneActionResult result = await service.QZoneLike(1001, "post-a", () => 0.5);
+
+        string pending = GetPendingPokeText(service);
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.False);
+            Assert.That(pending, Does.Not.Contain("[QQ Zone"));
+            Assert.That(pending, Does.Not.Contain("qzone-"));
+            Assert.That(pending, Does.Contain("QZone action skipped"));
+            Assert.That(pending, Does.Contain("skipped by random like probability policy"));
+        });
+    }
+
+    [Test]
+    public async Task QZoneProactiveFeedbackDoesNotPokeInternalQqZoneLabel()
+    {
+        QZoneService service = new(new FakeQZoneRuntime());
+        StartService(service);
+
+        QZoneProactiveExecutionResult result = await service.ExecuteConfirmedProactiveSuggestion("missing-id");
+
+        string pending = GetPendingPokeText(service);
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Succeeded, Is.False);
+            Assert.That(pending, Does.Not.Contain("[QQ Zone"));
+            Assert.That(pending, Does.Not.Contain("rejected"));
+            Assert.That(pending, Does.Contain("QZone proactive action was not executed"));
+            Assert.That(pending, Does.Contain("Proactive behavior service is unavailable"));
+        });
+    }
+
     sealed class FakeQZoneRuntime : IQZoneRuntime
     {
         public List<string> Posts { get; } = new();
@@ -299,5 +349,35 @@ public class QZoneServiceTests
         {
             return ValueTask.CompletedTask;
         }
+    }
+
+    static void StartService(QZoneService service)
+    {
+        Character character = new() { Name = "QZoneTest" };
+        ChatHistoryAgentThread thread = new();
+        service.AwakeAsync(new AwakeContext
+        {
+            Character = character,
+            ContextBuilder = thread,
+            KernelBuilder = Kernel.CreateBuilder(),
+        }).GetAwaiter().GetResult();
+        ChatBot chatBot = new(null!, thread);
+        service.StartAsync(Kernel.CreateBuilder().Build(), new ChatActivity(
+            character,
+            Kernel.CreateBuilder().Build(),
+            null!,
+            chatBot,
+            [])).GetAwaiter().GetResult();
+    }
+
+    static string GetPendingPokeText(QZoneService service)
+    {
+        PropertyInfo chatBotProperty = typeof(InteractiveModule)
+            .GetProperty("ChatBot", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        ChatBot chatBot = (ChatBot)chatBotProperty.GetValue(service)!;
+        FieldInfo messageCacheField = typeof(ChatBot)
+            .GetField("messageCache", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        IEnumerable<string> messages = (IEnumerable<string>)messageCacheField.GetValue(chatBot)!;
+        return string.Join("", messages);
     }
 }

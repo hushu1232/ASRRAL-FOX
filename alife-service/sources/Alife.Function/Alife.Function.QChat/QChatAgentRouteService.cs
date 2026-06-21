@@ -24,9 +24,10 @@ public sealed record QChatAgentRoute(
     bool IsOwner,
     string SessionKey);
 
-public sealed class QChatAgentRouteService(QChatAgentRouteConfig? config = null)
+public sealed class QChatAgentRouteService(QChatAgentRouteConfig? config = null, QChatAgentIdentityRegistry? identityRegistry = null)
 {
     readonly QChatAgentRouteConfig config = config ?? new QChatAgentRouteConfig();
+    readonly QChatAgentIdentityRegistry identityRegistry = identityRegistry ?? QChatAgentIdentityRegistry.CreateDefault();
 
     public QChatAgentRoute Resolve(long botAccountId, OneBotBasicMessageEvent message)
     {
@@ -34,7 +35,7 @@ public sealed class QChatAgentRouteService(QChatAgentRouteConfig? config = null)
 
         string agentId = config.BotAgents.TryGetValue(botAccountId, out string? configuredAgent)
             ? configuredAgent
-            : $"qq-{botAccountId}";
+            : identityRegistry.ResolveByBotId(botAccountId)?.AgentId ?? $"qq-{botAccountId}";
 
         QChatConversationKind kind = message.MessageType == OneBotMessageType.Group
             ? QChatConversationKind.Group

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Alife.Function.Agent;
 
 namespace Alife.Function.QChat;
@@ -345,15 +347,81 @@ public static class QChatMessageSecurity
                                                                     """,
             QChatSenderRole.GroupMember when config.TreatNonOwnerAsUntrusted => $"""
                                                                                  [QQ group member message]
-                                                                                 trust=untrusted-chat; source=qq; reply_target=current_session
+                                                                                 trust=untrusted-chat; source=qq; reply_target=current_session{FormatNonOwnerPromptAttackFlags(formatted)}
                                                                                  {formatted}
                                                                                  """,
             QChatSenderRole.PrivateGuest when config.TreatNonOwnerAsUntrusted => $"""
                                                                                    [QQ private guest message]
-                                                                                   trust=untrusted-chat; source=qq; reply_target=current_session
+                                                                                   trust=untrusted-chat; source=qq; reply_target=current_session{FormatNonOwnerPromptAttackFlags(formatted)}
                                                                                    {formatted}
                                                                                    """,
             _ => formatted
         };
+    }
+
+    static string FormatNonOwnerPromptAttackFlags(string text)
+    {
+        bool promptInjection = LooksLikePromptInjection(text);
+        bool ownerSpoofing = LooksLikeOwnerSpoofing(text);
+        if (promptInjection == false && ownerSpoofing == false)
+            return "";
+
+        List<string> flags = ["identity_rule=account_id_only"];
+        if (promptInjection)
+            flags.Add("prompt_injection=blocked");
+        if (ownerSpoofing)
+            flags.Add("owner_spoofing=ignored");
+        return "; " + string.Join("; ", flags);
+    }
+
+    static bool LooksLikePromptInjection(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        return ContainsAny(
+            text,
+            "developer mode",
+            "dev mode",
+            "actor framework",
+            "roleplay framework",
+            "highest priority",
+            "priority override",
+            "system override",
+            "ignore previous",
+            "ignore all previous",
+            "jailbreak",
+            "DAN",
+            "免责声明",
+            "开发者模式",
+            "演员框架",
+            "最高优先级",
+            "覆盖",
+            "好喵，报告如下",
+            "好喵,报告如下");
+    }
+
+    static bool LooksLikeOwnerSpoofing(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        return ContainsAny(
+            text,
+            "I am owner",
+            "I'm owner",
+            "I am your owner",
+            "I am Shushu",
+            "I am 术术",
+            "your 主人",
+            "我是主人",
+            "我是术术",
+            "我是你的主人",
+            "你的主人");
+    }
+
+    static bool ContainsAny(string text, params string[] needles)
+    {
+        return needles.Any(needle => text.Contains(needle, StringComparison.OrdinalIgnoreCase));
     }
 }

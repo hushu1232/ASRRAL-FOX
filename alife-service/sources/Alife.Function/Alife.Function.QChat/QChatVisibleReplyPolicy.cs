@@ -33,6 +33,28 @@ public sealed class QChatVisibleReplyPolicy
         "os"
     ];
 
+    static readonly string[] InternalRuntimeMarkers =
+    [
+        "[QQ",
+        "[QChat",
+        "[Internal",
+        "[qchat persona frame]",
+        "[/qchat persona frame]",
+        "speaker_role=",
+        "recommended_stance=",
+        "social_intent=",
+        "boundary_pressure=",
+        "qchat-",
+        "qzone-",
+        "route=",
+        "session=qq:",
+        "managed_file_id=",
+        "StopAfterTaskFeedback",
+        "TaskFeedbackOnly",
+        "NoReply",
+        "no-reply"
+    ];
+
     readonly IReadOnlyList<string> noReplyReactions;
     int reactionIndex;
 
@@ -48,11 +70,15 @@ public sealed class QChatVisibleReplyPolicy
         QChatConversationKind conversationKind,
         bool shouldReply)
     {
-        if (shouldReply == false && conversationKind == QChatConversationKind.Group)
-            return new QChatVisibleReplyResult(true, NextReaction(), "group no-reply reaction");
-
         string selected = SelectConversationSection(modelText ?? string.Empty, conversationKind);
         string sanitized = SanitizeVisibleText(selected);
+
+        if (shouldReply == false && conversationKind == QChatConversationKind.Group)
+        {
+            return string.IsNullOrEmpty(sanitized)
+                ? new QChatVisibleReplyResult(true, NextReaction(), "group no-reply reaction")
+                : new QChatVisibleReplyResult(true, sanitized, "group no-reply model visible reaction accepted");
+        }
 
         return string.IsNullOrEmpty(sanitized)
             ? new QChatVisibleReplyResult(false, string.Empty, "empty or unsafe visible text")
@@ -112,6 +138,9 @@ public sealed class QChatVisibleReplyPolicy
         if (string.IsNullOrWhiteSpace(text))
             return string.Empty;
 
+        if (ContainsInternalRuntimeMarker(text))
+            return string.Empty;
+
         string withoutInternalLines = RemoveInternalStateLines(text);
         string withoutSelfIdentification = RemoveSelfIdentification(withoutInternalLines);
         string normalized = NormalizeWhitespace(withoutSelfIdentification);
@@ -146,6 +175,11 @@ public sealed class QChatVisibleReplyPolicy
             return true;
 
         return QChatVisibleTextPolicy.IsHumanInvisibleStateText(trimmed);
+    }
+
+    static bool ContainsInternalRuntimeMarker(string text)
+    {
+        return InternalRuntimeMarkers.Any(marker => text.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
     static bool HasInternalStateMarkerShape(string text, string prefix)
