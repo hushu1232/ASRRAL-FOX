@@ -38,13 +38,29 @@ public class GptSoVitsSpeechModel :
 
     public GptSoVitsSpeechModelConfig? Configuration { get; set; }
 
-    public async Task<string?> GenerateSpeechFileAsync(string text, CancellationToken cancellationToken = default)
+    public Task<string?> GenerateSpeechFileAsync(string text, CancellationToken cancellationToken = default)
+    {
+        return GenerateSpeechFileCoreAsync(text, Configuration ?? new GptSoVitsSpeechModelConfig(), cancellationToken);
+    }
+
+    public virtual Task<string?> GenerateSpeechFileAsync(
+        string text,
+        GptSoVitsVoiceProfile profile,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        return GenerateSpeechFileCoreAsync(text, CreateEffectiveConfig(profile), cancellationToken);
+    }
+
+    async Task<string?> GenerateSpeechFileCoreAsync(
+        string text,
+        GptSoVitsSpeechModelConfig config,
+        CancellationToken cancellationToken)
     {
         string trimmedText = text.Trim();
         if (string.IsNullOrWhiteSpace(trimmedText))
             return null;
 
-        GptSoVitsSpeechModelConfig config = Configuration ?? new GptSoVitsSpeechModelConfig();
         if (trimmedText.Length > config.MaxTextChars)
             return null;
 
@@ -145,6 +161,38 @@ public class GptSoVitsSpeechModel :
         return File.Exists(promptPath) ? File.ReadAllText(promptPath) : "";
     }
 
+    GptSoVitsSpeechModelConfig CreateEffectiveConfig(GptSoVitsVoiceProfile profile)
+    {
+        GptSoVitsSpeechModelConfig baseConfig = Configuration ?? new GptSoVitsSpeechModelConfig();
+        return new GptSoVitsSpeechModelConfig
+        {
+            ApiBaseUrl = string.IsNullOrWhiteSpace(profile.ApiBaseUrl) ? baseConfig.ApiBaseUrl : profile.ApiBaseUrl,
+            VoiceId = string.IsNullOrWhiteSpace(profile.VoiceId) ? baseConfig.VoiceId : profile.VoiceId,
+            VoiceRootPath = string.IsNullOrWhiteSpace(profile.VoiceRootPath) ? baseConfig.VoiceRootPath : profile.VoiceRootPath,
+            ReferenceAudioPath = string.IsNullOrWhiteSpace(profile.ReferenceAudioPath)
+                ? baseConfig.ReferenceAudioPath
+                : profile.ReferenceAudioPath,
+            PromptText = string.IsNullOrWhiteSpace(profile.PromptText) ? baseConfig.PromptText : profile.PromptText,
+            TextLanguage = string.IsNullOrWhiteSpace(profile.TextLanguage) ? baseConfig.TextLanguage : profile.TextLanguage,
+            PromptLanguage = string.IsNullOrWhiteSpace(profile.PromptLanguage)
+                ? baseConfig.PromptLanguage
+                : profile.PromptLanguage,
+            TextSplitMethod = baseConfig.TextSplitMethod,
+            MediaType = baseConfig.MediaType,
+            MaxTextChars = profile.MaxTextChars ?? baseConfig.MaxTextChars,
+            TimeoutSeconds = baseConfig.TimeoutSeconds,
+            BatchSize = baseConfig.BatchSize,
+            SpeedFactor = baseConfig.SpeedFactor,
+            TopK = baseConfig.TopK,
+            TopP = baseConfig.TopP,
+            Temperature = baseConfig.Temperature,
+            ParallelInfer = baseConfig.ParallelInfer,
+            RepetitionPenalty = baseConfig.RepetitionPenalty,
+            EnableCache = baseConfig.EnableCache,
+            AllowPersonaFallbackToEdgeTts = baseConfig.AllowPersonaFallbackToEdgeTts
+        };
+    }
+
     static HttpContent CreateRequestContent(
         GptSoVitsSpeechModelConfig config,
         string text,
@@ -189,6 +237,7 @@ public class GptSoVitsSpeechModel :
         string stableInput = string.Join("\n",
         [
             "gpt-sovits-http",
+            config.ApiBaseUrl.TrimEnd('/'),
             config.VoiceId,
             text,
             promptText,

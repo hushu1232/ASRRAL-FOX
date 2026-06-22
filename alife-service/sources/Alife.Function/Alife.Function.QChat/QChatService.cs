@@ -48,6 +48,7 @@ public record QChatConfig
     public bool EnableOwnerVoiceOnIntimateScene { get; set; } = false;
     public bool DenyVoiceForNonOwner { get; set; } = true;
     public int MaxVoiceReplyChars { get; set; } = 120;
+    public QChatVoiceProfileConfig VoiceProfiles { get; set; } = QChatVoiceProfileConfig.CreateDefault();
     public bool EnableImageRecognition { get; set; }
     public string ImageRecognitionProvider { get; set; } = "agnes";
     public string AgnesVisionApiEndpoint { get; set; } = "https://apihub.agnes-ai.com/v1/chat/completions";
@@ -140,6 +141,7 @@ public class GroupState
     public DateTime LastFlushedTime { get; set; }
     public List<string> MessageBuffer { get; set; } = [];
     public List<long> MessageIds { get; set; } = [];
+    public List<long> BotIds { get; set; } = [];
     public List<QChatDeferredImageRecognition> DeferredImageRecognitions { get; set; } = [];
     public AgentPermissionRequest? PermissionRequest { get; set; }
 }
@@ -160,6 +162,7 @@ public sealed record QChatInboundMessage(
     OneBotMessageType MessageType,
     long TargetId,
     long SenderId,
+    long ResolvedBotId,
     string Formatted,
     bool IsAwakening,
     QChatSenderRole SenderRole,
@@ -191,6 +194,7 @@ sealed record QChatReplySession(
     OneBotMessageType MessageType,
     long TargetId,
     long SenderId,
+    long ResolvedBotId,
     QChatSenderRole SenderRole,
     AgentPermissionRequest PermissionRequest,
     bool RequiresFactualityGuard,
@@ -847,11 +851,12 @@ public partial class QChatService(
         QChatSenderRole senderRole = replySession?.SenderRole ?? QChatSenderRole.PrivateGuest;
         string plainText = OneBotSegment.GetPlainText(message);
         string textFallback = BuildVoiceTextFallback(plainText);
+        QChatConfig config = Configuration ?? new QChatConfig();
         QChatPersonaIntent voiceIntent = InferVoicePersonaIntent(replySession, senderRole);
         QChatHardSafetyRisk hardSafetyRisk = InferVoiceHardSafetyRisk(replySession);
         bool isAggressiveBoundaryReply = IsAggressiveBoundaryVoiceReply(voiceIntent, hardSafetyRisk, plainText);
         QChatVoiceTriggerDecision decision = QChatVoiceTriggerPolicy.Evaluate(new QChatVoiceTriggerContext(
-            Configuration ?? new QChatConfig(),
+            config,
             senderRole,
             voiceIntent,
             hardSafetyRisk,
@@ -888,10 +893,41 @@ public partial class QChatService(
             return (textFallback, false);
         }
 
+        QChatVoiceProfileConfig voiceProfiles = config.VoiceProfiles ?? QChatVoiceProfileConfig.CreateDefault();
+        QChatVoiceProfileDecision? profileDecision = null;
+        GptSoVitsSpeechModel? gptSoVitsSpeechModel = speechModel as GptSoVitsSpeechModel;
+        bool usePerAgentGptSoVitsProfile = voiceProfiles.EnablePerAgentVoiceProfiles && gptSoVitsSpeechModel != null;
+        if (usePerAgentGptSoVitsProfile)
+        {
+            profileDecision = ResolveCurrentVoiceProfile(config, replySession);
+            if (profileDecision.Kind != QChatVoiceProfileDecisionKind.Allow || profileDecision.Profile == null)
+            {
+                WriteQChatDiagnostic("qchat-voice-profile-denied", "QChat voice output allowed but no usable per-agent voice profile was available.", new {
+                    source,
+                    type,
+                    targetId,
+                    senderRole,
+                    voiceDecisionReason = decision.Reason,
+                    profileDecisionReason = profileDecision.Reason
+                });
+                return (textFallback, false);
+            }
+        }
+
         string? file;
         try
         {
-            file = await speechModel.GenerateSpeechFileAsync(plainText);
+            if (usePerAgentGptSoVitsProfile && gptSoVitsSpeechModel != null && profileDecision?.Profile != null)
+            {
+                file = await gptSoVitsSpeechModel.GenerateSpeechFileAsync(
+                    plainText,
+                    MapToGptSoVitsProfile(profileDecision.Profile),
+                    CancellationToken.None);
+            }
+            else
+            {
+                file = await speechModel.GenerateSpeechFileAsync(plainText);
+            }
         }
         catch (Exception ex)
         {
@@ -900,7 +936,8 @@ public partial class QChatService(
                 type,
                 targetId,
                 senderRole,
-                decision.Reason
+                voiceDecisionReason = decision.Reason,
+                profileDecisionReason = profileDecision?.Reason
             }, ex);
             return (textFallback, false);
         }
@@ -912,7 +949,8 @@ public partial class QChatService(
                 type,
                 targetId,
                 senderRole,
-                decision.Reason
+                voiceDecisionReason = decision.Reason,
+                profileDecisionReason = profileDecision?.Reason
             });
             return (textFallback, false);
         }
@@ -3508,6 +3546,29 @@ public partial class QChatService(
         return profileRuntimeServices.UserProfiles.ResolvePreferredAddress(agentId, botId, userId, displayName);
     }
 
+    GptSoVitsVoiceProfile MapToGptSoVitsProfile(QChatVoiceProfile profile)
+    {
+        return new GptSoVitsVoiceProfile
+        {
+            VoiceId = profile.VoiceId,
+            AgentId = profile.AgentId,
+            BotId = profile.BotId,
+            ApiBaseUrl = profile.ApiBaseUrl,
+            ReferenceAudioPath = profile.ReferenceAudioPath,
+            PromptText = profile.PromptText,
+            TextLanguage = profile.TextLanguage,
+            PromptLanguage = profile.PromptLanguage,
+            MaxTextChars = profile.MaxTextChars
+        };
+    }
+
+    QChatVoiceProfileDecision ResolveCurrentVoiceProfile(QChatConfig config, QChatReplySession? replySession = null)
+    {
+        string agentId = ResolveCurrentAgentId(config);
+        long botId = Math.Max(0, replySession?.ResolvedBotId ?? config.BotId);
+        return QChatVoiceProfileRouter.Resolve(config.VoiceProfiles, agentId, botId);
+    }
+
     string ResolveCurrentAgentId(QChatConfig config)
     {
         return QChatPersonaStyleContext.FromRuntime(config, Character?.Name).PersonaId;
@@ -3574,6 +3635,8 @@ public partial class QChatService(
         AgentPermissionRequest permissionRequest,
         IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null)
     {
+        QChatConfig config = Configuration!;
+        long resolvedBotId = ResolveCurrentBotId(config, messageEvent);
         if (ShouldSuppressForQuietMode(messageEvent, senderRole, isMentionedOrWoken))
             return;
 
@@ -3590,6 +3653,7 @@ public partial class QChatService(
                     messageEvent.MessageType,
                     messageEvent.UserId,
                     messageEvent.UserId,
+                    resolvedBotId,
                     formatted,
                     isAwakening,
                     senderRole,
@@ -3659,7 +3723,8 @@ public partial class QChatService(
                     senderRole == QChatSenderRole.Owner && Configuration!.OwnerPriorityMode,
                     permissionRequest,
                     GetSourceMessageIds(messageEvent),
-                    deferredImageRecognitions);
+                    deferredImageRecognitions,
+                    resolvedBotId);
                 WriteQChatDiagnostic("group-buffered", "Group message buffered for model dispatch.", new {
                     state.GroupId,
                     state.IsEnabled,
@@ -3687,7 +3752,8 @@ public partial class QChatService(
                     formatted,
                     permissionRequest: permissionRequest,
                     sourceMessageIds: GetSourceMessageIds(messageEvent),
-                    deferredImageRecognitions: deferredImageRecognitions);
+                    deferredImageRecognitions: deferredImageRecognitions,
+                    resolvedBotId: resolvedBotId);
                 state.LastFlushedTime = DateTime.Now;
                 WriteQChatDiagnostic("group-buffered-proactive", "Group message buffered by proactive probability.", new {
                     state.GroupId,
@@ -6323,13 +6389,16 @@ public partial class QChatService(
         bool highPriority = false,
         AgentPermissionRequest? permissionRequest = null,
         IReadOnlyList<long>? sourceMessageIds = null,
-        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null)
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null,
+        long resolvedBotId = 0)
     {
         if (highPriority)
         {
             state.MessageBuffer.Insert(0, formatted);
             if (sourceMessageIds is { Count: > 0 })
                 state.MessageIds.InsertRange(0, sourceMessageIds.Where(id => id > 0));
+            if (resolvedBotId > 0)
+                state.BotIds.Insert(0, resolvedBotId);
             if (deferredImageRecognitions is { Count: > 0 })
                 state.DeferredImageRecognitions.InsertRange(0, deferredImageRecognitions);
         }
@@ -6338,6 +6407,8 @@ public partial class QChatService(
             state.MessageBuffer.Add(formatted);
             if (sourceMessageIds is { Count: > 0 })
                 state.MessageIds.AddRange(sourceMessageIds.Where(id => id > 0));
+            if (resolvedBotId > 0)
+                state.BotIds.Add(resolvedBotId);
             if (deferredImageRecognitions is { Count: > 0 })
                 state.DeferredImageRecognitions.AddRange(deferredImageRecognitions);
         }
@@ -6379,6 +6450,8 @@ public partial class QChatService(
         state.MessageBuffer.Clear();
         long[] sourceMessageIds = state.MessageIds.ToArray();
         state.MessageIds.Clear();
+        long resolvedBotId = ResolveBufferedBotId(state.BotIds);
+        state.BotIds.Clear();
         QChatDeferredImageRecognition[] deferredImageRecognitions = state.DeferredImageRecognitions.ToArray();
         state.DeferredImageRecognitions.Clear();
         AgentPermissionRequest? permissionRequest = state.PermissionRequest;
@@ -6389,7 +6462,7 @@ public partial class QChatService(
             permissionRequest?.ActorUserId,
             permissionRequest?.IsMentioned
         });
-        await DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest, sourceMessageIds, deferredImageRecognitions);
+        await DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest, sourceMessageIds, deferredImageRecognitions, resolvedBotId);
     }
 
     public void QGroup(long groupId, bool enabled)
@@ -6406,6 +6479,7 @@ public partial class QChatService(
         {
             state.MessageBuffer.Clear();
             state.MessageIds.Clear();
+            state.BotIds.Clear();
             state.DeferredImageRecognitions.Clear();
             state.PermissionRequest = null;
         }
@@ -6430,7 +6504,8 @@ public partial class QChatService(
         string cachedMessage,
         AgentPermissionRequest? permissionRequest,
         IReadOnlyList<long>? sourceMessageIds = null,
-        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null)
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null,
+        long resolvedBotId = 0)
     {
         try
         {
@@ -6446,6 +6521,7 @@ public partial class QChatService(
                 OneBotMessageType.Group,
                 state.GroupId,
                 request.ActorUserId ?? 0,
+                resolvedBotId > 0 ? resolvedBotId : Math.Max(0, Configuration?.BotId ?? 0),
                 cachedMessage,
                 request.IsMentioned,
                 request.ActorUserId == Configuration?.OwnerId ? QChatSenderRole.Owner : QChatSenderRole.GroupMember,
@@ -6500,6 +6576,7 @@ public partial class QChatService(
                 : message with
                 {
                     SourceMessageIds = MergeSourceMessageIds(session.Message.SourceMessageIds, message.SourceMessageIds),
+                    ResolvedBotId = session.Message.ResolvedBotId > 0 ? session.Message.ResolvedBotId : message.ResolvedBotId,
                     DeferredImageRecognitions = MergeDeferredImageRecognitions(
                         session.Message.DeferredImageRecognitions,
                         message.DeferredImageRecognitions)
@@ -6621,6 +6698,11 @@ public partial class QChatService(
             .Where(id => id > 0)
             .Distinct()
             .ToArray();
+    }
+
+    static long ResolveBufferedBotId(IEnumerable<long> botIds)
+    {
+        return botIds.FirstOrDefault(id => id > 0);
     }
 
     static IReadOnlyList<QChatDeferredImageRecognition>? MergeDeferredImageRecognitions(
@@ -6771,6 +6853,7 @@ public partial class QChatService(
             message.MessageType,
             message.TargetId,
             message.SenderId,
+            message.ResolvedBotId,
             message.SenderRole,
             message.PermissionRequest,
             RequiresQChatRelationshipFactCheck(message.Formatted),

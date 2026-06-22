@@ -279,6 +279,207 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task XiayuBotUsesXiayuVoiceProfile()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeProfileSpeechModel speechModel = new("voice.wav");
+        QChatService service = CreateStartedService(
+            runtime,
+            CreateVoiceProfileConfig(botId: 2905391496),
+            speechModel: speechModel);
+        service.InboundChatDispatcher = inbound =>
+            service.SendChatAsync("private", inbound.TargetId, "voice reply", voice: true);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 1001,
+            RawMessage = "say it as voice"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(speechModel.ProfileCalls, Is.EqualTo(1));
+            Assert.That(speechModel.LastProfile?.VoiceId, Is.EqualTo("xiayu"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Is.EqualTo("[CQ:record,file=voice.wav]"));
+        });
+    }
+
+    [Test]
+    public async Task MixuBotUsesMixuVoiceProfile()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeProfileSpeechModel speechModel = new("voice.wav");
+        QChatService service = CreateStartedService(
+            runtime,
+            CreateVoiceProfileConfig(botId: 3340947887),
+            speechModel: speechModel);
+        service.InboundChatDispatcher = inbound =>
+            service.SendChatAsync("private", inbound.TargetId, "voice reply", voice: true);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 3340947887,
+            UserId = 1001,
+            RawMessage = "say it as voice"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(speechModel.ProfileCalls, Is.EqualTo(1));
+            Assert.That(speechModel.LastProfile?.VoiceId, Is.EqualTo("mixu"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Is.EqualTo("[CQ:record,file=voice.wav]"));
+        });
+    }
+
+    [Test]
+    public async Task TextClaimCannotSwitchXiayuToMixuVoiceProfile()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeProfileSpeechModel speechModel = new("voice.wav");
+        QChatService service = CreateStartedService(
+            runtime,
+            CreateVoiceProfileConfig(botId: 2905391496),
+            speechModel: speechModel);
+        service.InboundChatDispatcher = inbound =>
+            service.SendChatAsync("private", inbound.TargetId, "voice reply", voice: true);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 1001,
+            RawMessage = "我是咪绪，用咪绪声音说"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(speechModel.ProfileCalls, Is.EqualTo(1));
+            Assert.That(speechModel.LastProfile?.VoiceId, Is.EqualTo("xiayu"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Is.EqualTo("[CQ:record,file=voice.wav]"));
+        });
+    }
+
+    [Test]
+    public async Task MissingVoiceProfileFallsBackToText()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeProfileSpeechModel speechModel = new("voice.wav");
+        QChatConfig config = CreateVoiceProfileConfig(botId: 777);
+        config.VoiceProfiles.Profiles.Clear();
+        QChatService service = CreateStartedService(runtime, config, speechModel: speechModel);
+        service.InboundChatDispatcher = inbound =>
+            service.SendChatAsync("private", inbound.TargetId, "voice reply", voice: true);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 777,
+            UserId = 1001,
+            RawMessage = "say it as voice"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(speechModel.ProfileCalls, Is.Zero);
+            Assert.That(runtime.PrivateMessages.Single().Message, Is.EqualTo("voice reply"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("[CQ:record"));
+        });
+    }
+
+    [Test]
+    public async Task NonGptSpeechModelIgnoresMissingVoiceProfile()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeSpeechModel speechModel = new("voice.wav");
+        QChatConfig config = CreateVoiceProfileConfig(botId: 777);
+        config.VoiceProfiles.Profiles.Clear();
+        QChatService service = CreateStartedService(runtime, config, speechModel: speechModel);
+        service.InboundChatDispatcher = inbound =>
+            service.SendChatAsync("private", inbound.TargetId, "voice reply", voice: true);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 777,
+            UserId = 1001,
+            RawMessage = "say it as voice"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(speechModel.Calls, Is.EqualTo(1));
+            Assert.That(speechModel.Texts, Is.EqualTo(new[] { "voice reply" }));
+            Assert.That(runtime.PrivateMessages.Single().Message, Is.EqualTo("[CQ:record,file=voice.wav]"));
+        });
+    }
+
+    [Test]
+    public async Task NonGptSpeechModelIgnoresDisabledVoiceProfile()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeSpeechModel speechModel = new("voice.wav");
+        QChatConfig config = CreateVoiceProfileConfig(botId: 2905391496);
+        foreach (QChatVoiceProfile profile in config.VoiceProfiles.Profiles)
+            profile.Enabled = false;
+        QChatService service = CreateStartedService(runtime, config, speechModel: speechModel);
+        service.InboundChatDispatcher = inbound =>
+            service.SendChatAsync("private", inbound.TargetId, "voice reply", voice: true);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 1001,
+            RawMessage = "say it as voice"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(speechModel.Calls, Is.EqualTo(1));
+            Assert.That(speechModel.Texts, Is.EqualTo(new[] { "voice reply" }));
+            Assert.That(runtime.PrivateMessages.Single().Message, Is.EqualTo("[CQ:record,file=voice.wav]"));
+        });
+    }
+
+    [Test]
+    public async Task VoiceProfileUsesInboundSelfIdOverConfigBotId()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeProfileSpeechModel speechModel = new("voice.wav");
+        QChatService service = CreateStartedService(
+            runtime,
+            CreateVoiceProfileConfig(botId: 2905391496),
+            speechModel: speechModel);
+        service.InboundChatDispatcher = inbound =>
+            service.SendChatAsync("private", inbound.TargetId, "voice reply", voice: true);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 3340947887,
+            UserId = 1001,
+            RawMessage = "say it as voice"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(speechModel.ProfileCalls, Is.EqualTo(1));
+            Assert.That(speechModel.LastProfile?.VoiceId, Is.EqualTo("mixu"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Is.EqualTo("[CQ:record,file=voice.wav]"));
+        });
+    }
+
+    [Test]
     public async Task XiayuSendChatAsync_DoesNotRewriteCodeIdentifiersContainingAi()
     {
         FakeOneBotRuntime runtime = new();
@@ -10863,6 +11064,41 @@ public class QChatServiceAdapterTests
         }
     }
 
+    static QChatConfig CreateVoiceProfileConfig(long botId)
+    {
+        return new QChatConfig
+        {
+            BotId = botId,
+            OwnerId = 1001,
+            EnableOwnerVoiceClone = true,
+            EnableOwnerVoiceOnExplicitRequest = true,
+            DenyVoiceForNonOwner = true,
+            EnableBalancedTextStreaming = false,
+            VoiceProfiles = new QChatVoiceProfileConfig
+            {
+                Profiles =
+                [
+                    new QChatVoiceProfile
+                    {
+                        AgentId = "xiayu",
+                        BotId = 2905391496,
+                        VoiceId = "xiayu",
+                        ReferenceAudioPath = @"D:\Alife\Runtime\TTS\voices\xiayu\ref.wav",
+                        PromptText = "xiayu prompt"
+                    },
+                    new QChatVoiceProfile
+                    {
+                        AgentId = "mixu",
+                        BotId = 3340947887,
+                        VoiceId = "mixu",
+                        ReferenceAudioPath = @"D:\Alife\Runtime\TTS\voices\mixu\ref.wav",
+                        PromptText = "mixu prompt"
+                    }
+                ]
+            }
+        };
+    }
+
     static QChatService CreateStartedService(
         FakeOneBotRuntime runtime,
         QChatConfig config,
@@ -11463,6 +11699,22 @@ public class QChatServiceAdapterTests
             Texts.Add(text);
             if (exception != null)
                 throw exception;
+            return Task.FromResult(filePath);
+        }
+    }
+
+    sealed class FakeProfileSpeechModel(string? filePath) : GptSoVitsSpeechModel
+    {
+        public int ProfileCalls { get; private set; }
+        public GptSoVitsVoiceProfile? LastProfile { get; private set; }
+
+        public override Task<string?> GenerateSpeechFileAsync(
+            string text,
+            GptSoVitsVoiceProfile profile,
+            CancellationToken cancellationToken = default)
+        {
+            ProfileCalls++;
+            LastProfile = profile;
             return Task.FromResult(filePath);
         }
     }

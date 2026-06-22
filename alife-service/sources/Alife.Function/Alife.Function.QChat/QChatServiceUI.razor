@@ -180,6 +180,40 @@
                                 </FormItem>
                             </Card>
                         </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="角色语音" Class="qchat-card">
+                                <FormItem Label="按账号使用独立音色">
+                                    <Switch @bind-Value="@Configuration.VoiceProfiles.EnablePerAgentVoiceProfiles" />
+                                </FormItem>
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="语音音色只按真实 Bot 账号和 Agent 身份选择，聊天文本、昵称、转发内容不能切换音色。" />
+
+                                @foreach (QChatVoiceProfile profile in Configuration.VoiceProfiles.Profiles)
+                                {
+                                    <Divider Orientation="@DividerOrientation.Left">@($"{profile.AgentId} / {profile.BotId}")</Divider>
+                                    <FormItem Label="启用">
+                                        <Switch @bind-Value="@profile.Enabled" />
+                                    </FormItem>
+                                    <FormItem Label="API 地址">
+                                        <Input @bind-Value="@profile.ApiBaseUrl" />
+                                    </FormItem>
+                                    <FormItem Label="参考音频">
+                                        <Input @bind-Value="@profile.ReferenceAudioPath" />
+                                    </FormItem>
+                                    <FormItem Label="参考文本">
+                                        <TextArea @bind-Value="@profile.PromptText"
+                                                  Rows="3" />
+                                    </FormItem>
+                                    <FormItem Label="最大字数">
+                                        <AntDesign.InputNumber @bind-Value="@profile.MaxTextChars"
+                                                               Min="1"
+                                                               Max="500"
+                                                               Style="width: 100%;" />
+                                    </FormItem>
+                                }
+                            </Card>
+                        </GridCol>
                     </GridRow>
                 </TabPane>
 

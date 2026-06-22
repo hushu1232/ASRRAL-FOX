@@ -197,6 +197,137 @@ public class GptSoVitsSpeechModelTests
     }
 
     [Test]
+    public async Task GenerateSpeechFileAsync_WithVoiceProfile_UsesProfilePayloadValues()
+    {
+        var handler = new RecordingHandler();
+        string voiceFolder = CreateVoiceFolder();
+        string refAudio = Path.Combine(voiceFolder, "custom-ref.wav");
+        await File.WriteAllBytesAsync(refAudio, [1, 2, 3, 4]);
+        var model = CreateModel(handler, voiceFolder, config =>
+        {
+            config.ApiBaseUrl = "http://global.example";
+            config.ReferenceAudioPath = Path.Combine(voiceFolder, "ref.wav");
+            config.PromptText = "global prompt";
+        });
+
+        string? result = await model.GenerateSpeechFileAsync("hello", new GptSoVitsVoiceProfile
+        {
+            VoiceId = "mixu",
+            AgentId = "mixu",
+            BotId = 3340947887,
+            ApiBaseUrl = "http://profile.example",
+            ReferenceAudioPath = refAudio,
+            PromptText = "profile prompt",
+            TextLanguage = "ja",
+            PromptLanguage = "ja",
+            MaxTextChars = 20
+        });
+
+        using JsonDocument document = JsonDocument.Parse(handler.Body);
+        JsonElement root = document.RootElement;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.Not.Null);
+            Assert.That(handler.RequestUri, Is.EqualTo("http://profile.example/tts"));
+            Assert.That(root.GetProperty("ref_audio_path").GetString(), Is.EqualTo(refAudio));
+            Assert.That(root.GetProperty("prompt_text").GetString(), Is.EqualTo("profile prompt"));
+            Assert.That(root.GetProperty("text_lang").GetString(), Is.EqualTo("ja"));
+            Assert.That(root.GetProperty("prompt_lang").GetString(), Is.EqualTo("ja"));
+        });
+    }
+
+    [Test]
+    public async Task GenerateSpeechFileAsync_WithDifferentVoiceProfiles_DoesNotShareCache()
+    {
+        var handler = new RecordingHandler();
+        string voiceFolder = CreateVoiceFolder();
+        string xiayuRef = Path.Combine(voiceFolder, "xiayu.wav");
+        string mixuRef = Path.Combine(voiceFolder, "mixu.wav");
+        await File.WriteAllBytesAsync(xiayuRef, [1, 2, 3, 4]);
+        await File.WriteAllBytesAsync(mixuRef, [5, 6, 7, 8]);
+        var model = CreateModel(handler, voiceFolder);
+
+        string? xiayu = await model.GenerateSpeechFileAsync("hello", new GptSoVitsVoiceProfile
+        {
+            VoiceId = "xiayu",
+            AgentId = "xiayu",
+            BotId = 2905391496,
+            ReferenceAudioPath = xiayuRef,
+            PromptText = "xiayu prompt"
+        });
+        string? mixu = await model.GenerateSpeechFileAsync("hello", new GptSoVitsVoiceProfile
+        {
+            VoiceId = "mixu",
+            AgentId = "mixu",
+            BotId = 3340947887,
+            ReferenceAudioPath = mixuRef,
+            PromptText = "mixu prompt"
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(xiayu, Is.Not.Null);
+            Assert.That(mixu, Is.Not.Null);
+            Assert.That(mixu, Is.Not.EqualTo(xiayu));
+            Assert.That(handler.Calls, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task GenerateSpeechFileAsync_DifferentProfileApiBaseUrls_DoesNotShareCache()
+    {
+        var handler = new RecordingHandler();
+        string voiceFolder = CreateVoiceFolder();
+        string refAudio = Path.Combine(voiceFolder, "ref.wav");
+        var model = CreateModel(handler, voiceFolder);
+
+        var firstProfile = new GptSoVitsVoiceProfile
+        {
+            VoiceId = "xiayu",
+            ApiBaseUrl = "http://server-one.example/",
+            ReferenceAudioPath = refAudio,
+            PromptText = "same prompt"
+        };
+        var secondProfile = firstProfile with
+        {
+            ApiBaseUrl = "http://server-two.example"
+        };
+
+        string? first = await model.GenerateSpeechFileAsync("hello", firstProfile);
+        string? second = await model.GenerateSpeechFileAsync("hello", secondProfile);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first, Is.Not.Null);
+            Assert.That(second, Is.Not.Null);
+            Assert.That(second, Is.Not.EqualTo(first));
+            Assert.That(handler.Calls, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task GenerateSpeechFileAsync_WithVoiceProfileTooLong_ReturnsNullWithoutHttpCall()
+    {
+        var handler = new RecordingHandler();
+        string voiceFolder = CreateVoiceFolder();
+        var model = CreateModel(handler, voiceFolder);
+
+        string? result = await model.GenerateSpeechFileAsync("1234", new GptSoVitsVoiceProfile
+        {
+            VoiceId = "xiayu",
+            ReferenceAudioPath = Path.Combine(voiceFolder, "ref.wav"),
+            MaxTextChars = 3
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.Null);
+            Assert.That(handler.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task Dispose_DoesNotDisposeInjectedHttpClient()
     {
         var handler = new RecordingHandler();
@@ -254,12 +385,14 @@ public class GptSoVitsSpeechModelTests
     {
         public int Calls { get; private set; }
         public string Body { get; private set; } = "";
+        public string RequestUri { get; private set; } = "";
         public byte[] ResponseBytes { get; set; } = [0x52, 0x49, 0x46, 0x46, 0x01];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Calls++;
             Body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
+            RequestUri = request.RequestUri?.ToString() ?? "";
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new ByteArrayContent(ResponseBytes)
