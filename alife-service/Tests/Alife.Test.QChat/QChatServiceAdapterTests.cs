@@ -1013,16 +1013,61 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(dispatchCount, Is.Zero);
-            Assert.That(reply, Does.Contain("Supported commands:"));
+            Assert.That(reply, Does.Contain("QChat 指令菜单"));
+            Assert.That(reply, Does.Contain("只限术术账号使用"));
             Assert.That(reply, Does.Contain("/qchat status"));
-            Assert.That(reply, Does.Contain("/qchat timing on|off|status"));
-            Assert.That(reply, Does.Contain("/qchat memory status"));
-            Assert.That(reply, Does.Contain("/qchat memory recent"));
-            Assert.That(reply, Does.Contain("/qchat memory forget"));
-            Assert.That(reply, Does.Contain("/qchat memory purge"));
-            Assert.That(reply, Does.Contain("/qchat desktop status"));
-            Assert.That(reply, Does.Contain("/qchat desktop capabilities"));
-            Assert.That(reply, Does.Contain("/qchat route"));
+            Assert.That(reply, Does.Contain("/qchat timing"));
+            Assert.That(reply, Does.Contain("/qchat memory"));
+            Assert.That(reply, Does.Contain("/qchat desktop"));
+            Assert.That(reply, Does.Contain("/qchat events"));
+            Assert.That(reply, Does.Contain("/qchat diag"));
+            Assert.That(reply, Does.Not.Contain("/qchat desktop draft approve"));
+            Assert.That(reply, Does.Not.Contain("/qchat memory purge <id> confirm"));
+        });
+    }
+
+    [TestCase("/qchat memory", "记忆指令", "/qchat memory status", "/qchat memory purge <id> confirm")]
+    [TestCase("/qchat desktop", "桌面指令", "/qchat desktop status", "/qchat desktop file policy")]
+    [TestCase("/qchat timing", "回复延时", "/qchat timing status", "/qchat timing off")]
+    [TestCase("/qchat events", "主人事件", "/qchat events status", "/qchat events retry")]
+    [TestCase("/qchat diag", "诊断指令", "/qchat route", "/qchat profile")]
+    public async Task OwnerQChatCategoryMenuReturnsSecondLevelChineseHelpWithoutModelDispatch(
+        string command,
+        string title,
+        string firstCommand,
+        string secondCommand)
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = command
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain(title));
+            Assert.That(reply, Does.Contain(firstCommand));
+            Assert.That(reply, Does.Contain(secondCommand));
+            Assert.That(reply, Does.Not.Contain("Supported commands:"));
         });
     }
 

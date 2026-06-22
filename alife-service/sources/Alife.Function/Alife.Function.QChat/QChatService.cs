@@ -4256,7 +4256,13 @@ public partial class QChatService(
             return true;
         }
 
-        string mode = parts.Length >= 3 ? parts[2] : "status";
+        if (IsCommandOrCopiedMenuLine(text, "/qchat desktop"))
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildDesktopMenuText());
+            return true;
+        }
+
+        string mode = parts[2];
         string actionKey = mode;
         string actionDetail = actionKey;
         if (mode.Equals("audit", StringComparison.OrdinalIgnoreCase) &&
@@ -4481,7 +4487,7 @@ public partial class QChatService(
     {
         string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
         string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length < 3 ||
+        if (parts.Length < 2 ||
             parts[0].Equals("/qchat", StringComparison.OrdinalIgnoreCase) == false ||
             parts[1].Equals("events", StringComparison.OrdinalIgnoreCase) == false)
         {
@@ -4498,6 +4504,12 @@ public partial class QChatService(
         if (senderRole != QChatSenderRole.Owner)
         {
             await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can use QChat owner events.");
+            return true;
+        }
+
+        if (IsCommandOrCopiedMenuLine(text, "/qchat events"))
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildEventsMenuText());
             return true;
         }
 
@@ -4554,7 +4566,13 @@ public partial class QChatService(
             return true;
         }
 
-        string mode = parts.Length >= 3 ? parts[2] : "status";
+        if (IsCommandOrCopiedMenuLine(text, "/qchat timing"))
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildTimingMenuText());
+            return true;
+        }
+
+        string mode = parts[2];
         if (mode.Equals("on", StringComparison.OrdinalIgnoreCase))
         {
             Configuration!.EnableReplyTimingDelay = true;
