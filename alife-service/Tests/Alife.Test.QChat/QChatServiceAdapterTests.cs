@@ -4843,6 +4843,180 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerPrivateImageMessageIncludesAgnesImageAnalysisForModel()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeImageRecognitionClient imageClient = new("image contains a cat");
+        CapturingQChatService service = new(
+            new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+            runtime,
+            imageRecognitionService: new QChatImageRecognitionService(imageClient))
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableImageRecognition = true,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "[CQ:image,file=cat.jpg,url=https://example.invalid/cat.jpg]"
+        });
+
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(inbound.Formatted, Does.Contain("[qchat image analysis]"));
+            Assert.That(inbound.Formatted, Does.Contain("provider=agnes"));
+            Assert.That(inbound.Formatted, Does.Contain("image_1_status=analyzed"));
+            Assert.That(inbound.Formatted, Does.Contain("image_1_summary=image contains a cat"));
+            Assert.That(inbound.Formatted, Does.Not.Contain("https://example.invalid/cat.jpg"));
+            Assert.That(imageClient.Calls, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task OwnerPrivateImageRecognitionWaitsUntilConversationSettleWindowDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeImageRecognitionClient imageClient = new("settled image contains a cat");
+        CapturingQChatService service = new(
+            new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+            runtime,
+            imageRecognitionService: new QChatImageRecognitionService(imageClient))
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableImageRecognition = true,
+                EnableBalancedTextStreaming = false,
+                EnableConversationSettleWindow = true,
+                PrivateSettleMilliseconds = 180,
+                RecallGraceMilliseconds = 1,
+                MaxSettleMilliseconds = 500
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 51,
+            UserId = 1001,
+            RawMessage = "[CQ:image,file=cat.jpg,url=https://example.invalid/cat.jpg]"
+        });
+
+        await Task.Delay(80);
+        Assert.That(imageClient.Calls, Is.Zero);
+
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(imageClient.Calls, Is.EqualTo(1));
+            Assert.That(inbound.Formatted, Does.Contain("[qchat image analysis]"));
+            Assert.That(inbound.Formatted, Does.Contain("image_1_summary=settled image contains a cat"));
+            Assert.That(inbound.Formatted, Does.Not.Contain("https://example.invalid/cat.jpg"));
+        });
+    }
+
+    [Test]
+    public async Task RecalledPrivateImageIsDroppedBeforeImageRecognition()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeImageRecognitionClient imageClient = new("should-not-call");
+        QChatService service = CreateStartedService(
+            runtime,
+            new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableImageRecognition = true,
+                EnableBalancedTextStreaming = false,
+                EnableConversationSettleWindow = true,
+                PrivateSettleMilliseconds = 180,
+                RecallGraceMilliseconds = 1,
+                MaxSettleMilliseconds = 500
+            },
+            imageRecognitionService: new QChatImageRecognitionService(imageClient));
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 52,
+            UserId = 1001,
+            RawMessage = "[CQ:image,file=cat.jpg,url=https://example.invalid/cat.jpg]"
+        });
+        await Task.Delay(40);
+        runtime.Raise(new OneBotNoticeEvent
+        {
+            SelfId = 999,
+            NoticeType = "friend_recall",
+            MessageId = 52,
+            UserId = 1001
+        });
+
+        await Task.Delay(350);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(imageClient.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerQChatCommandWithImageDropsBeforeImageRecognition()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new();
+            FakeImageRecognitionClient imageClient = new("should-not-call");
+            QChatService service = CreateStartedService(
+                runtime,
+                new QChatConfig
+                {
+                    BotId = 999,
+                    OwnerId = 1001,
+                    AllowPrivateGuestChat = true,
+                    EnableImageRecognition = true,
+                    EnableBalancedTextStreaming = false
+                },
+                imageRecognitionService: new QChatImageRecognitionService(imageClient));
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 999,
+                UserId = 2002,
+                RawMessage = "/qchat status [CQ:image,file=cat.jpg,url=https://example.invalid/cat.jpg]"
+            });
+
+            await WaitForQChatCommandDroppedDiagnosticAsync(storageRoot);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(imageClient.Calls, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+                Assert.That(runtime.GroupMessages, Is.Empty);
+            });
+        });
+    }
+
+    [Test]
     public async Task QChatFileToolsDownloadReadAndDeleteManagedTextFile()
     {
         string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
@@ -10430,7 +10604,8 @@ public class QChatServiceAdapterTests
         IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null,
         QChatRiskScoreService? riskScoreService = null,
         IQChatFriendActionGateway? friendActionGateway = null,
-        IQChatOwnerEventPublisher? ownerEventPublisher = null)
+        IQChatOwnerEventPublisher? ownerEventPublisher = null,
+        QChatImageRecognitionService? imageRecognitionService = null)
     {
         riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
@@ -10452,7 +10627,8 @@ public class QChatServiceAdapterTests
             desktopBusinessExecutor: desktopBusinessExecutor,
             riskScoreService: riskScoreService,
             friendActionGateway: friendActionGateway,
-            ownerEventPublisher: ownerEventPublisher)
+            ownerEventPublisher: ownerEventPublisher,
+            imageRecognitionService: imageRecognitionService)
         {
             Configuration = config
         };
@@ -10956,14 +11132,16 @@ public class QChatServiceAdapterTests
         IOneBotRuntime runtime,
         QChatUserProfileService? userProfileService = null,
         QChatRelationCacheService? relationCacheService = null,
-        QChatProfileLearningService? profileLearningService = null) : QChatService(
+        QChatProfileLearningService? profileLearningService = null,
+        QChatImageRecognitionService? imageRecognitionService = null) : QChatService(
             functionCaller,
             new NullLogger<QChatService>(),
             oneBotRuntime: runtime,
             relationCacheService: relationCacheService,
             userProfileService: userProfileService,
             profileLearningService: profileLearningService,
-            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+            imageRecognitionService: imageRecognitionService)
     {
         readonly Channel<QChatInboundMessage> inboundMessages = Channel.CreateUnbounded<QChatInboundMessage>(
             new UnboundedChannelOptions
@@ -10979,6 +11157,20 @@ public class QChatServiceAdapterTests
         {
             inboundMessages.Writer.TryWrite(message);
             return Task.FromResult("");
+        }
+    }
+
+    sealed class FakeImageRecognitionClient(string content) : IQChatImageRecognitionClient
+    {
+        public string ProviderName => "agnes";
+        public int Calls { get; private set; }
+
+        public Task<QChatImageRecognitionProviderResult> AnalyzeAsync(
+            QChatImageRecognitionProviderRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(QChatImageRecognitionProviderResult.Ok("agnes", request.Model, content));
         }
     }
 

@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -42,6 +43,19 @@ public record QChatConfig
     public bool EnableGroupFileUpload { get; set; } = true;
     public bool EnablePrivateFileUpload { get; set; } = true;
     public bool EnableVideoMessage { get; set; } = true;
+    public bool EnableImageRecognition { get; set; }
+    public string ImageRecognitionProvider { get; set; } = "agnes";
+    public string AgnesVisionApiEndpoint { get; set; } = "https://apihub.agnes-ai.com/v1/chat/completions";
+    public string AgnesVisionModel { get; set; } = "agnes-2.0-flash";
+    public string AgnesVisionApiKey { get; set; } = "";
+    public int ImageRecognitionTimeoutMilliseconds { get; set; } = 12000;
+    public int ImageRecognitionMaxTokens { get; set; } = 220;
+    public int MaxImagesPerMessage { get; set; } = 2;
+    public bool AnalyzeOwnerPrivateImages { get; set; } = true;
+    public bool AnalyzeOwnerGroupImages { get; set; } = true;
+    public bool AnalyzePrivateGuestImages { get; set; } = true;
+    public bool AnalyzeMentionedGroupImages { get; set; } = true;
+    public bool AnalyzePassiveGroupImages { get; set; }
     public bool EnableBalancedTextStreaming { get; set; } = true;
     public bool EnableConversationSettleWindow { get; set; }
     public int PrivateSettleMilliseconds { get; set; } = 700;
@@ -121,6 +135,7 @@ public class GroupState
     public DateTime LastFlushedTime { get; set; }
     public List<string> MessageBuffer { get; set; } = [];
     public List<long> MessageIds { get; set; } = [];
+    public List<QChatDeferredImageRecognition> DeferredImageRecognitions { get; set; } = [];
     public AgentPermissionRequest? PermissionRequest { get; set; }
 }
 
@@ -144,7 +159,14 @@ public sealed record QChatInboundMessage(
     bool IsAwakening,
     QChatSenderRole SenderRole,
     AgentPermissionRequest PermissionRequest,
-    IReadOnlyList<long>? SourceMessageIds = null);
+    IReadOnlyList<long>? SourceMessageIds = null,
+    IReadOnlyList<QChatDeferredImageRecognition>? DeferredImageRecognitions = null);
+
+public sealed record QChatDeferredImageRecognition(
+    OneBotMessageEvent MessageEvent,
+    QChatSenderRole SenderRole,
+    bool IsMentionedOrWoken,
+    IReadOnlyList<long> SourceMessageIds);
 
 public sealed record QChatGroupDecisionSnapshot(
     DateTimeOffset Timestamp,
@@ -225,7 +247,8 @@ public partial class QChatService(
     IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null,
     QChatRiskScoreService? riskScoreService = null,
     IQChatFriendActionGateway? friendActionGateway = null,
-    IQChatOwnerEventPublisher? ownerEventPublisher = null) :
+    IQChatOwnerEventPublisher? ownerEventPublisher = null,
+    QChatImageRecognitionService? imageRecognitionService = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -238,6 +261,8 @@ public partial class QChatService(
     const string DesktopControlAgentId = "xiayu";
     readonly IQChatOwnerEventPublisher? injectedOwnerEventPublisher = ownerEventPublisher;
     readonly DesktopActionGateway? injectedDesktopActionGateway = desktopActionGateway;
+    readonly QChatImageRecognitionService? injectedImageRecognitionService = imageRecognitionService;
+    QChatImageRecognitionService? resolvedImageRecognitionService;
     QChatOwnerEventOutbox? resolvedOwnerEventOutbox;
     QChatOwnerEventDispatcher? resolvedOwnerEventDispatcher;
     IQChatOwnerEventPublisher? resolvedOwnerEventPublisher;
@@ -262,6 +287,35 @@ public partial class QChatService(
             desktopActionDraftController,
             desktopBusinessExecutor,
             new QChatDesktopBusinessJobCompletionSink(() => OwnerEventPublisher));
+
+    QChatImageRecognitionService? ImageRecognitionService
+    {
+        get
+        {
+            if (injectedImageRecognitionService != null)
+                return injectedImageRecognitionService;
+            if (Configuration?.EnableImageRecognition != true)
+                return null;
+            if (string.Equals(Configuration.ImageRecognitionProvider, "agnes", StringComparison.OrdinalIgnoreCase) == false)
+                return null;
+
+            resolvedImageRecognitionService ??= new QChatImageRecognitionService(
+                new QChatAgnesImageRecognitionClient(
+                    new HttpClient(),
+                    ResolveAgnesVisionApiKey,
+                    Configuration.AgnesVisionApiEndpoint),
+                WriteQChatDiagnostic);
+            return resolvedImageRecognitionService;
+        }
+    }
+
+    string? ResolveAgnesVisionApiKey()
+    {
+        string? env = Environment.GetEnvironmentVariable("ALIFE_AGNES_VISION_API_KEY");
+        if (string.IsNullOrWhiteSpace(env) == false)
+            return env;
+        return Configuration?.AgnesVisionApiKey;
+    }
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";
@@ -2404,7 +2458,8 @@ public partial class QChatService(
                     content,
                     formatted,
                     isMentionedOrWoken,
-                    personaFramePrompt: null);
+                    personaFramePrompt: null,
+                    imageAnalysisPrompt: null);
                 bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(
                     config,
                     basicMessageEvent,
@@ -2511,6 +2566,17 @@ public partial class QChatService(
                     ResolveCurrentBotId(config, messageEvent),
                     config.OwnerId,
                     messageEvent.UserId));
+                bool deferImageAnalysis = ShouldDeferImageAnalysisUntilSettle(messageEvent);
+                string? imageAnalysisPrompt = deferImageAnalysis
+                    ? null
+                    : await BuildImageAnalysisPromptAsync(
+                        config,
+                        messageEvent,
+                        senderRole,
+                        isMentionedOrWoken);
+                IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = deferImageAnalysis
+                    ? [CreateDeferredImageRecognition(messageEvent, senderRole, isMentionedOrWoken)]
+                    : null;
                 formatted = BuildFormattedModelInput(
                     config,
                     messageEvent,
@@ -2518,7 +2584,8 @@ public partial class QChatService(
                     content,
                     formatted,
                     isMentionedOrWoken,
-                    FormatPersonaFramePrompt(personaFrame));
+                    FormatPersonaFramePrompt(personaFrame),
+                    imageAnalysisPrompt);
                 bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(config, messageEvent, isMentionedOrWoken, controlConfig);
                 AgentPermissionRequest permissionRequest = QChatMessageSecurity.BuildPermissionRequest(
                     config,
@@ -2543,7 +2610,8 @@ public partial class QChatService(
                     isAwakening,
                     isMentionedOrWoken,
                     senderRole,
-                    permissionRequest);
+                    permissionRequest,
+                    deferredImageRecognitions);
             }
         }
         catch (Exception e)
@@ -3003,7 +3071,8 @@ public partial class QChatService(
         string readableMessage,
         string formatted,
         bool isMentionedOrWoken,
-        string? personaFramePrompt)
+        string? personaFramePrompt,
+        string? imageAnalysisPrompt)
     {
         string cognition = QChatConversationCognition.BuildInternalPrompt(
             config,
@@ -3027,24 +3096,82 @@ public partial class QChatService(
             GetQChatConversationTargetId(messageEvent),
             limit: 3,
             DateTimeOffset.Now);
+        string imageBlock = string.IsNullOrWhiteSpace(imageAnalysisPrompt)
+            ? string.Empty
+            : imageAnalysisPrompt.Trim();
         string address = BuildAddressPrompt(config, messageEvent);
-        string secureMessage = QChatMessageSecurity.FormatForModel(config, messageEvent, formatted);
+        string secureMessage = QChatMessageSecurity.FormatForModel(
+            config,
+            messageEvent,
+            string.IsNullOrWhiteSpace(imageBlock) ? formatted : HideImageUrlsForModelContext(formatted));
         string recentBlocks = string.Join(
             Environment.NewLine,
             new[] { recentContext, recentRecallContext }.Where(block => string.IsNullOrWhiteSpace(block) == false));
         string personaBlock = string.IsNullOrWhiteSpace(personaFramePrompt)
             ? string.Empty
             : personaFramePrompt.Trim();
-        if (string.IsNullOrWhiteSpace(recentBlocks))
+        IEnumerable<string> blocks = new[]
         {
-            return string.IsNullOrWhiteSpace(personaBlock)
-                ? $"{cognition}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}"
-                : $"{cognition}{Environment.NewLine}{personaBlock}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}";
-        }
+            cognition,
+            recentBlocks,
+            personaBlock,
+            imageBlock,
+            address,
+            secureMessage
+        }.Where(block => string.IsNullOrWhiteSpace(block) == false);
+        return string.Join(Environment.NewLine, blocks);
+    }
 
-        return string.IsNullOrWhiteSpace(personaBlock)
-            ? $"{cognition}{Environment.NewLine}{recentBlocks}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}"
-            : $"{cognition}{Environment.NewLine}{recentBlocks}{Environment.NewLine}{personaBlock}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}";
+    static string HideImageUrlsForModelContext(string formatted)
+    {
+        if (string.IsNullOrWhiteSpace(formatted))
+            return formatted;
+
+        return Regex.Replace(
+            formatted,
+            @"https?://[^\s\]]+",
+            "[image-url-hidden]",
+            RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    }
+
+    async Task<string?> BuildImageAnalysisPromptAsync(
+        QChatConfig config,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken)
+    {
+        QChatImageRecognitionService? service = ImageRecognitionService;
+        if (service == null)
+            return null;
+
+        int timeout = Math.Max(1000, config.ImageRecognitionTimeoutMilliseconds);
+        using CancellationTokenSource timeoutSource = new(timeout);
+        return await service.BuildPromptAsync(
+            new QChatImageRecognitionContext(
+                config,
+                messageEvent,
+                senderRole,
+                isMentionedOrWoken,
+                messageEvent.MessageType == OneBotMessageType.Group && isMentionedOrWoken == false),
+            timeoutSource.Token);
+    }
+
+    bool ShouldDeferImageAnalysisUntilSettle(OneBotMessageEvent messageEvent)
+    {
+        return Configuration?.EnableConversationSettleWindow == true
+               && GetSourceMessageIds(messageEvent).Any(id => id > 0);
+    }
+
+    static QChatDeferredImageRecognition CreateDeferredImageRecognition(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken)
+    {
+        return new QChatDeferredImageRecognition(
+            messageEvent,
+            senderRole,
+            isMentionedOrWoken,
+            GetSourceMessageIds(messageEvent));
     }
 
     static string FormatPersonaFramePrompt(QChatPersonaFrame frame)
@@ -3303,7 +3430,8 @@ public partial class QChatService(
         bool isAwakening,
         bool isMentionedOrWoken,
         QChatSenderRole senderRole,
-        AgentPermissionRequest permissionRequest)
+        AgentPermissionRequest permissionRequest,
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null)
     {
         if (ShouldSuppressForQuietMode(messageEvent, senderRole, isMentionedOrWoken))
             return;
@@ -3325,7 +3453,8 @@ public partial class QChatService(
                     isAwakening,
                     senderRole,
                     permissionRequest,
-                    GetSourceMessageIds(messageEvent)));
+                    GetSourceMessageIds(messageEvent),
+                    deferredImageRecognitions));
             }
         }
         else//群聊消息
@@ -3388,7 +3517,8 @@ public partial class QChatService(
                     formatted,
                     senderRole == QChatSenderRole.Owner && Configuration!.OwnerPriorityMode,
                     permissionRequest,
-                    GetSourceMessageIds(messageEvent));
+                    GetSourceMessageIds(messageEvent),
+                    deferredImageRecognitions);
                 WriteQChatDiagnostic("group-buffered", "Group message buffered for model dispatch.", new {
                     state.GroupId,
                     state.IsEnabled,
@@ -3411,7 +3541,12 @@ public partial class QChatService(
                     return;
 
                 RecordAcceptedGroupDecision(state, messageEvent, senderRole, isMentionedOrWoken, isAwakening);
-                BufferGroupMessage(state, formatted, permissionRequest: permissionRequest, sourceMessageIds: GetSourceMessageIds(messageEvent));
+                BufferGroupMessage(
+                    state,
+                    formatted,
+                    permissionRequest: permissionRequest,
+                    sourceMessageIds: GetSourceMessageIds(messageEvent),
+                    deferredImageRecognitions: deferredImageRecognitions);
                 state.LastFlushedTime = DateTime.Now;
                 WriteQChatDiagnostic("group-buffered-proactive", "Group message buffered by proactive probability.", new {
                     state.GroupId,
@@ -6028,19 +6163,24 @@ public partial class QChatService(
         string formatted,
         bool highPriority = false,
         AgentPermissionRequest? permissionRequest = null,
-        IReadOnlyList<long>? sourceMessageIds = null)
+        IReadOnlyList<long>? sourceMessageIds = null,
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null)
     {
         if (highPriority)
         {
             state.MessageBuffer.Insert(0, formatted);
             if (sourceMessageIds is { Count: > 0 })
                 state.MessageIds.InsertRange(0, sourceMessageIds.Where(id => id > 0));
+            if (deferredImageRecognitions is { Count: > 0 })
+                state.DeferredImageRecognitions.InsertRange(0, deferredImageRecognitions);
         }
         else
         {
             state.MessageBuffer.Add(formatted);
             if (sourceMessageIds is { Count: > 0 })
                 state.MessageIds.AddRange(sourceMessageIds.Where(id => id > 0));
+            if (deferredImageRecognitions is { Count: > 0 })
+                state.DeferredImageRecognitions.AddRange(deferredImageRecognitions);
         }
         if (permissionRequest != null)
             state.PermissionRequest = ChooseStrongerPermissionRequest(state.PermissionRequest, permissionRequest);
@@ -6080,6 +6220,8 @@ public partial class QChatService(
         state.MessageBuffer.Clear();
         long[] sourceMessageIds = state.MessageIds.ToArray();
         state.MessageIds.Clear();
+        QChatDeferredImageRecognition[] deferredImageRecognitions = state.DeferredImageRecognitions.ToArray();
+        state.DeferredImageRecognitions.Clear();
         AgentPermissionRequest? permissionRequest = state.PermissionRequest;
         state.PermissionRequest = null;
         WriteQChatDiagnostic("group-flush-dispatching", "Dispatching buffered group message to model.", new {
@@ -6088,7 +6230,7 @@ public partial class QChatService(
             permissionRequest?.ActorUserId,
             permissionRequest?.IsMentioned
         });
-        await DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest, sourceMessageIds);
+        await DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest, sourceMessageIds, deferredImageRecognitions);
     }
 
     public void QGroup(long groupId, bool enabled)
@@ -6105,6 +6247,7 @@ public partial class QChatService(
         {
             state.MessageBuffer.Clear();
             state.MessageIds.Clear();
+            state.DeferredImageRecognitions.Clear();
             state.PermissionRequest = null;
         }
     }
@@ -6127,7 +6270,8 @@ public partial class QChatService(
         GroupState state,
         string cachedMessage,
         AgentPermissionRequest? permissionRequest,
-        IReadOnlyList<long>? sourceMessageIds = null)
+        IReadOnlyList<long>? sourceMessageIds = null,
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null)
     {
         try
         {
@@ -6147,7 +6291,8 @@ public partial class QChatService(
                 request.IsMentioned,
                 request.ActorUserId == Configuration?.OwnerId ? QChatSenderRole.Owner : QChatSenderRole.GroupMember,
                 request,
-                sourceMessageIds));
+                sourceMessageIds,
+                deferredImageRecognitions));
         }
         catch (Exception ex)
         {
@@ -6195,7 +6340,10 @@ public partial class QChatService(
                 ? message
                 : message with
                 {
-                    SourceMessageIds = MergeSourceMessageIds(session.Message.SourceMessageIds, message.SourceMessageIds)
+                    SourceMessageIds = MergeSourceMessageIds(session.Message.SourceMessageIds, message.SourceMessageIds),
+                    DeferredImageRecognitions = MergeDeferredImageRecognitions(
+                        session.Message.DeferredImageRecognitions,
+                        message.DeferredImageRecognitions)
                 };
             session.Cancellation?.Cancel();
             session.Cancellation?.Dispose();
@@ -6316,6 +6464,16 @@ public partial class QChatService(
             .ToArray();
     }
 
+    static IReadOnlyList<QChatDeferredImageRecognition>? MergeDeferredImageRecognitions(
+        IReadOnlyList<QChatDeferredImageRecognition>? existing,
+        IReadOnlyList<QChatDeferredImageRecognition>? incoming)
+    {
+        QChatDeferredImageRecognition[] merged = (existing ?? [])
+            .Concat(incoming ?? [])
+            .ToArray();
+        return merged.Length == 0 ? null : merged;
+    }
+
     void MarkPendingMessageRecalled(QChatRecallSnapshot recall)
     {
         long messageId = recall.MessageId;
@@ -6377,11 +6535,34 @@ public partial class QChatService(
         IReadOnlyList<long>? sourceMessageIds = message.SourceMessageIds?
             .Where(id => id <= 0 || recalledMessageIds.Contains(id) == false)
             .ToArray();
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions =
+            FilterDeferredImageRecognitions(message.DeferredImageRecognitions, recalledMessageIds);
         return message with
         {
             Formatted = formatted,
-            SourceMessageIds = sourceMessageIds
+            SourceMessageIds = sourceMessageIds,
+            DeferredImageRecognitions = deferredImageRecognitions
         };
+    }
+
+    static IReadOnlyList<QChatDeferredImageRecognition>? FilterDeferredImageRecognitions(
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions,
+        IReadOnlySet<long> recalledMessageIds)
+    {
+        if (deferredImageRecognitions is not { Count: > 0 })
+            return null;
+
+        QChatDeferredImageRecognition[] retained = deferredImageRecognitions
+            .Where(deferred => deferred.SourceMessageIds.Count == 0 ||
+                               deferred.SourceMessageIds.Any(id => id <= 0 || recalledMessageIds.Contains(id) == false))
+            .Select(deferred => deferred with
+            {
+                SourceMessageIds = deferred.SourceMessageIds
+                    .Where(id => id <= 0 || recalledMessageIds.Contains(id) == false)
+                    .ToArray()
+            })
+            .ToArray();
+        return retained.Length == 0 ? null : retained;
     }
 
     static IReadOnlyList<long> GetSourceMessageIds(OneBotBasicMessageEvent messageEvent)
@@ -6392,8 +6573,39 @@ public partial class QChatService(
         return [];
     }
 
+    async Task<QChatInboundMessage> CompleteDeferredImageRecognitionAsync(QChatInboundMessage message)
+    {
+        if (message.DeferredImageRecognitions is not { Count: > 0 } deferredImageRecognitions)
+            return message;
+
+        List<string> imageBlocks = [];
+        foreach (QChatDeferredImageRecognition deferred in deferredImageRecognitions)
+        {
+            string? prompt = await BuildImageAnalysisPromptAsync(
+                Configuration!,
+                deferred.MessageEvent,
+                deferred.SenderRole,
+                deferred.IsMentionedOrWoken);
+            if (string.IsNullOrWhiteSpace(prompt) == false)
+                imageBlocks.Add(prompt.Trim());
+        }
+
+        if (imageBlocks.Count == 0)
+            return message with { DeferredImageRecognitions = null };
+
+        string formatted = string.Join(
+            Environment.NewLine,
+            imageBlocks.Concat([HideImageUrlsForModelContext(message.Formatted)]));
+        return message with
+        {
+            Formatted = formatted,
+            DeferredImageRecognitions = null
+        };
+    }
+
     async Task DispatchInboundChatCoreAsync(QChatInboundMessage message)
     {
+        message = await CompleteDeferredImageRecognitionAsync(message);
         await inboundModelDispatchGate.WaitAsync();
         QChatReplySession? previousSession = currentReplySession.Value;
         QChatReplySession replySession = new(

@@ -240,6 +240,36 @@
                                 <FormItem Label="允许发送视频消息">
                                     <Switch @bind-Value="@Configuration.EnableVideoMessage" />
                                 </FormItem>
+                                <Divider />
+                                <FormItem Label="Enable QQ image recognition">
+                                    <Switch @bind-Value="@Configuration.EnableImageRecognition" />
+                                </FormItem>
+                                <FormItem Label="Agnes vision endpoint">
+                                    <Input @bind-Value="@Configuration.AgnesVisionApiEndpoint" />
+                                </FormItem>
+                                <FormItem Label="Agnes vision model">
+                                    <Input @bind-Value="@Configuration.AgnesVisionModel" />
+                                </FormItem>
+                                <FormItem Label="Agnes vision API key">
+                                    <InputPassword @bind-Value="@Configuration.AgnesVisionApiKey" />
+                                    <div class="quiet-hint">Prefer ALIFE_AGNES_VISION_API_KEY for runtime secrets.</div>
+                                </FormItem>
+                                <FormItem Label="Max images per message">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.MaxImagesPerMessage"
+                                                           Min="1"
+                                                           Max="4"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="Image recognition timeout ms">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.ImageRecognitionTimeoutMilliseconds"
+                                                           Min="1000"
+                                                           Max="60000"
+                                                           Step="1000"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="Allow passive group image recognition">
+                                    <Switch @bind-Value="@Configuration.AnalyzePassiveGroupImages" />
+                                </FormItem>
                             </Card>
                         </GridCol>
                         <GridCol Xs="24" Md="12">

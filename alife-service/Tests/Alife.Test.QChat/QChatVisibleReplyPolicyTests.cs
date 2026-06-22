@@ -265,6 +265,40 @@ public class QChatVisibleReplyPolicyTests
     }
 
     [Test]
+    public void BlocksImageAnalysisRuntimeMarkersFromVisibleOutput()
+    {
+        QChatVisibleReplyPolicy policy = new();
+
+        QChatVisibleReplyResult result = policy.Normalize(
+            "[qchat image analysis]\nprovider=agnes\nimage_1_summary=cat\n[/qchat image analysis]",
+            QChatConversationKind.Private,
+            shouldReply: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void BlocksImageAnalysisSensitiveFieldsFromVisibleOutput()
+    {
+        QChatVisibleReplyPolicy policy = new();
+
+        QChatVisibleReplyResult result = policy.Normalize(
+            "image_url=https://example.invalid/cat.jpg\nAuthorization: Bearer secret",
+            QChatConversationKind.Group,
+            shouldReply: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
+        });
+    }
+
+    [Test]
     public void InternalStateFilteringKeepsVisibleTechnicalStateAndProtocolText()
     {
         QChatVisibleReplyPolicy policy = new();
