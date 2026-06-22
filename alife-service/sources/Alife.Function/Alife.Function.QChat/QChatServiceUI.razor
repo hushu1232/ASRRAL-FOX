@@ -154,6 +154,32 @@
                                 </FormItem>
                             </Card>
                         </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="语音克隆" Class="qchat-card">
+                                <FormItem Label="主人克隆语音">
+                                    <Switch @bind-Value="@Configuration.EnableOwnerVoiceClone" />
+                                    <div class="quiet-hint">启用后仅在主人相关的低频场景尝试发送克隆语音。</div>
+                                </FormItem>
+                                <FormItem Label="仅主人可触发语音">
+                                    <Switch @bind-Value="@Configuration.DenyVoiceForNonOwner" />
+                                    <div class="quiet-hint">默认开启，非主人不能触发语音回复。</div>
+                                </FormItem>
+                                <FormItem Label="主人明确要求时发语音">
+                                    <Switch @bind-Value="@Configuration.EnableOwnerVoiceOnExplicitRequest" />
+                                </FormItem>
+                                <FormItem Label="亲密场景低频发语音">
+                                    <Switch @bind-Value="@Configuration.EnableOwnerVoiceOnIntimateScene" />
+                                    <div class="quiet-hint">只作为低频主人门控语音，不改变普通文字回复策略。</div>
+                                </FormItem>
+                                <FormItem Label="语音最大字数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.MaxVoiceReplyChars"
+                                                           Min="1"
+                                                           Max="1000"
+                                                           Style="width: 100%;" />
+                                    <div class="quiet-hint">超过该字数的回复不会转为语音，避免长文本占用语音通道。</div>
+                                </FormItem>
+                            </Card>
+                        </GridCol>
                     </GridRow>
                 </TabPane>
 

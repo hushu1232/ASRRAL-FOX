@@ -43,6 +43,11 @@ public record QChatConfig
     public bool EnableGroupFileUpload { get; set; } = true;
     public bool EnablePrivateFileUpload { get; set; } = true;
     public bool EnableVideoMessage { get; set; } = true;
+    public bool EnableOwnerVoiceClone { get; set; } = false;
+    public bool EnableOwnerVoiceOnExplicitRequest { get; set; } = true;
+    public bool EnableOwnerVoiceOnIntimateScene { get; set; } = false;
+    public bool DenyVoiceForNonOwner { get; set; } = true;
+    public int MaxVoiceReplyChars { get; set; } = 120;
     public bool EnableImageRecognition { get; set; }
     public string ImageRecognitionProvider { get; set; } = "agnes";
     public string AgnesVisionApiEndpoint { get; set; } = "https://apihub.agnes-ai.com/v1/chat/completions";
@@ -188,7 +193,8 @@ sealed record QChatReplySession(
     long SenderId,
     QChatSenderRole SenderRole,
     AgentPermissionRequest PermissionRequest,
-    bool RequiresFactualityGuard);
+    bool RequiresFactualityGuard,
+    string SourceText);
 
 sealed record QChatRecentSentMessage(
     long MessageId,
@@ -527,16 +533,8 @@ public partial class QChatService(
             if (ShouldSuppressOutgoingForQuietMode(type, targetId, "xml-qchat"))
                 return;
 
-            if (voice)
-            {
-                if (speechModel == null) throw new Exception("当前语音消息不可用");
-                message = OneBotSegment.GetPlainText(message);
-
-                string? file = await speechModel.GenerateSpeechFileAsync(message);
-                if (file == null)
-                    throw new Exception("语音合成失败");
-                message = $"[CQ:record,file={file}]";
-            }
+            (string voiceMessage, bool sentAsVoice) = await TryApplyQChatVoicePolicyAsync(type, targetId, message, voice, "xml-qchat");
+            message = voiceMessage;
 
             QChatDeterministicTaskResult result = await QChatDeterministicTaskRunner.ExecuteAsync(
                 new QChatDeterministicTaskContext(
@@ -544,7 +542,7 @@ public partial class QChatService(
                     FileName: null,
                     TargetType: type,
                     TargetId: targetId),
-                () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: voice == false));
+                () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: sentAsVoice == false));
 
             if (result.Succeeded)
             {
@@ -812,17 +810,8 @@ public partial class QChatService(
                 return;
         }
 
-        if (voice)
-        {
-            if (speechModel == null)
-                throw new Exception("Voice QQ messages are unavailable.");
-            message = OneBotSegment.GetPlainText(message);
-
-            string? file = await speechModel.GenerateSpeechFileAsync(message);
-            if (file == null)
-                throw new Exception("Speech synthesis failed.");
-            message = $"[CQ:record,file={file}]";
-        }
+        (string voiceMessage, bool sentAsVoice) = await TryApplyQChatVoicePolicyAsync(type, targetId, message, voice, "direct-qchat");
+        message = voiceMessage;
 
         QChatDeterministicTaskResult result = await QChatDeterministicTaskRunner.ExecuteAsync(
             new QChatDeterministicTaskContext(
@@ -830,7 +819,7 @@ public partial class QChatService(
                 FileName: null,
                 TargetType: type,
                 TargetId: targetId),
-            () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: voice == false));
+            () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: sentAsVoice == false));
 
         if (result.Succeeded)
         {
@@ -842,6 +831,158 @@ public partial class QChatService(
             type,
             targetId
         }, result.Exception);
+    }
+
+    async Task<(string Message, bool SentAsVoice)> TryApplyQChatVoicePolicyAsync(
+        OneBotMessageType type,
+        long targetId,
+        string message,
+        bool voiceRequested,
+        string source)
+    {
+        if (voiceRequested == false)
+            return (message, false);
+
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        QChatSenderRole senderRole = replySession?.SenderRole ?? QChatSenderRole.PrivateGuest;
+        string plainText = OneBotSegment.GetPlainText(message);
+        string textFallback = BuildVoiceTextFallback(plainText);
+        QChatPersonaIntent voiceIntent = InferVoicePersonaIntent(replySession, senderRole);
+        QChatHardSafetyRisk hardSafetyRisk = InferVoiceHardSafetyRisk(replySession);
+        bool isAggressiveBoundaryReply = IsAggressiveBoundaryVoiceReply(voiceIntent, hardSafetyRisk, plainText);
+        QChatVoiceTriggerDecision decision = QChatVoiceTriggerPolicy.Evaluate(new QChatVoiceTriggerContext(
+            Configuration ?? new QChatConfig(),
+            senderRole,
+            voiceIntent,
+            hardSafetyRisk,
+            plainText,
+            ExplicitVoiceRequested: true,
+            IsIntimateScene: false,
+            IsAggressiveBoundaryReply: isAggressiveBoundaryReply));
+
+        if (replySession == null || decision.Kind != QChatVoiceTriggerDecisionKind.Allow)
+        {
+            WriteQChatDiagnostic("qchat-voice-denied", "QChat voice output denied by voice trigger policy.", new {
+                source,
+                type,
+                targetId,
+                hasReplySession = replySession != null,
+                senderRole,
+                voiceIntent,
+                hardSafetyRisk,
+                isAggressiveBoundaryReply,
+                decision.Reason
+            });
+            return (textFallback, false);
+        }
+
+        if (speechModel == null)
+        {
+            WriteQChatDiagnostic("qchat-voice-unavailable", "QChat voice output allowed but no speech model is available.", new {
+                source,
+                type,
+                targetId,
+                senderRole,
+                decision.Reason
+            });
+            return (textFallback, false);
+        }
+
+        string? file;
+        try
+        {
+            file = await speechModel.GenerateSpeechFileAsync(plainText);
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-voice-synthesis-failed", "QChat voice output allowed but speech synthesis threw an exception.", new {
+                source,
+                type,
+                targetId,
+                senderRole,
+                decision.Reason
+            }, ex);
+            return (textFallback, false);
+        }
+
+        if (string.IsNullOrWhiteSpace(file))
+        {
+            WriteQChatDiagnostic("qchat-voice-synthesis-failed", "QChat voice output allowed but speech synthesis failed.", new {
+                source,
+                type,
+                targetId,
+                senderRole,
+                decision.Reason
+            });
+            return (textFallback, false);
+        }
+
+        return ($"[CQ:record,file={file}]", true);
+    }
+
+    static QChatPersonaIntent InferVoicePersonaIntent(QChatReplySession? replySession, QChatSenderRole senderRole)
+    {
+        string text = replySession?.SourceText ?? string.Empty;
+        if (ContainsAny(text, "忽略之前", "忽略前面", "ignore previous", "system prompt", "开发者消息"))
+            return QChatPersonaIntent.PromptInjection;
+        if (senderRole != QChatSenderRole.Owner
+            && ContainsAny(text, "我是术术", "我是术", "术术授权", "听我的，我是术"))
+        {
+            return QChatPersonaIntent.Impersonation;
+        }
+        if (senderRole != QChatSenderRole.Owner
+            && ContainsAny(text, "宝贝", "老婆", "亲爱的", "陪我聊", "小羽宝贝", "术术边界", "试探术术", "主人边界"))
+        {
+            return QChatPersonaIntent.ClosenessToOwner;
+        }
+        return QChatPersonaIntent.NormalChat;
+    }
+
+    static QChatHardSafetyRisk InferVoiceHardSafetyRisk(QChatReplySession? replySession)
+    {
+        string text = replySession?.SourceText ?? string.Empty;
+        if (ContainsAny(text, "聊天记录", "私聊记录", "隐私", "地址", "手机号", "身份证", "开盒", "术术的消息"))
+            return QChatHardSafetyRisk.Privacy;
+        if (ContainsAny(text, "自杀", "自残", "伤害自己", "去死"))
+            return QChatHardSafetyRisk.SelfHarm;
+        if (ContainsAny(text, "绕过黑名单", "跳过审批", "没权限也", "越权", "绕过权限", "关闭审计", "关闭 outbox", "关闭主人确认"))
+            return QChatHardSafetyRisk.PermissionBypass;
+        if (ContainsAny(text, "删除文件", "读取敏感文件", "文件黑名单"))
+            return QChatHardSafetyRisk.FileRisk;
+        if (ContainsAny(text, "威胁", "打死", "杀了", "现实里伤害"))
+            return QChatHardSafetyRisk.Violence;
+        if (ContainsAny(text, "违法", "诈骗", "盗号", "黑进", "非法"))
+            return QChatHardSafetyRisk.Illegal;
+        if (ContainsAny(text, "种族歧视", "民族歧视", "性别歧视", "攻击某类人"))
+            return QChatHardSafetyRisk.ProtectedClass;
+        if (ContainsAny(text, "性胁迫", "强迫发生关系"))
+            return QChatHardSafetyRisk.SexualCoercion;
+        return QChatHardSafetyRisk.None;
+    }
+
+    static bool IsAggressiveBoundaryVoiceReply(
+        QChatPersonaIntent intent,
+        QChatHardSafetyRisk hardSafetyRisk,
+        string replyText)
+    {
+        if (hardSafetyRisk != QChatHardSafetyRisk.None)
+            return true;
+        if (intent is QChatPersonaIntent.PromptInjection
+            or QChatPersonaIntent.Impersonation
+            or QChatPersonaIntent.Harassment
+            or QChatPersonaIntent.ClosenessToOwner)
+        {
+            return true;
+        }
+        return ContainsAny(replyText, "滚远点", "闭嘴", "少装", "别装", "别碰术术", "别拿术术试探我");
+    }
+
+    static string BuildVoiceTextFallback(string plainText)
+    {
+        string trimmed = plainText.Trim();
+        return string.IsNullOrWhiteSpace(trimmed)
+            ? "语音现在不可用。"
+            : trimmed;
     }
 
     async Task<bool> TryApplyReplyTimingDelayAsync(OneBotMessageType type, long targetId)
@@ -6632,7 +6773,8 @@ public partial class QChatService(
             message.SenderId,
             message.SenderRole,
             message.PermissionRequest,
-            RequiresQChatRelationshipFactCheck(message.Formatted));
+            RequiresQChatRelationshipFactCheck(message.Formatted),
+            message.Formatted);
         currentReplySession.Value = replySession;
         RegisterActiveReplySession(replySession);
         WriteQChatDiagnostic("model-dispatch-start", "Dispatching inbound QQ message to model.", new {
