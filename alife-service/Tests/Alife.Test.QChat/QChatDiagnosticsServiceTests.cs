@@ -116,6 +116,23 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleStatusReturnsInternetAccessState()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat status",
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState(
+                InternetAccessEnabled: false));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("internet=disabled"));
+        });
+    }
+
+    [Test]
     public void TryHandleIdentityReturnsUnifiedRouteAndProfileSnapshot()
     {
         QChatAgentRoute route = CreateRoute();
@@ -165,10 +182,12 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Text, Does.Contain("/qchat timing"));
             Assert.That(result.Text, Does.Contain("/qchat memory"));
             Assert.That(result.Text, Does.Contain("/qchat desktop"));
+            Assert.That(result.Text, Does.Contain("/qchat rag"));
             Assert.That(result.Text, Does.Contain("/qchat events"));
             Assert.That(result.Text, Does.Contain("/qchat diag"));
             Assert.That(result.Text, Does.Not.Contain("/qchat desktop draft approve"));
             Assert.That(result.Text, Does.Not.Contain("/qchat memory purge <id> confirm"));
+            Assert.That(result.Text, Does.Not.Contain("/qchat rag add <url>"));
             Assert.That(result.Text, Does.Not.Contain("/qchat files"));
         });
     }
@@ -178,6 +197,8 @@ public class QChatDiagnosticsServiceTests
     [TestCase("/qchat timing", "回复延时", "/qchat timing status", "/qchat timing off")]
     [TestCase("/qchat events", "主人事件", "/qchat events status", "/qchat events retry")]
     [TestCase("/qchat diag", "诊断指令", "/qchat route", "/qchat profile")]
+    [TestCase("/qchat internet", "联网指令", "/qchat internet <url>", "仅公网 HTTP/HTTPS")]
+    [TestCase("/qchat rag", "外部 RAG 管理", "/qchat rag add <url>", "/qchat rag status")]
     public void TryHandleSecondLevelMenuReturnsChineseUsage(string command, string title, string firstCommand, string secondCommand)
     {
         QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(command, CreateRoute(), CreateProfile());
@@ -189,6 +210,23 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Text, Does.Contain(firstCommand));
             Assert.That(result.Text, Does.Contain(secondCommand));
             Assert.That(result.Text, Does.Not.Contain("Supported commands:"));
+        });
+    }
+
+    [Test]
+    public void TryHandleRagMenuReturnsOwnerManagementUsage()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat rag", CreateRoute(), CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("外部 RAG 管理"));
+            Assert.That(result.Text, Does.Contain("/qchat rag add <url>"));
+            Assert.That(result.Text, Does.Contain("/qchat rag status"));
+            Assert.That(result.Text, Does.Contain("群成员"));
+            Assert.That(result.Text, Does.Contain("/rag <question>"));
+            Assert.That(result.Text, Does.Contain("不能添加、删除、刷新或配置来源"));
         });
     }
 

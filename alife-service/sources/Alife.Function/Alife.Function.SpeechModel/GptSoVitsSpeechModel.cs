@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Alife.Function.Speech;
 
-[Module("GPT-SoVITS语音克隆", "基于GPT-SoVITS HTTP API的语音克隆引擎",
+[Module("GPT-SoVITS语音克隆（待完成）", "实验中的GPT-SoVITS HTTP API语音克隆引擎；默认不应作为生产语音能力启用",
     defaultCategory: "Alife 官方/模型接入/语音模型",
     EditorUI = typeof(GptSoVitsSpeechModelUI))]
 public class GptSoVitsSpeechModel :

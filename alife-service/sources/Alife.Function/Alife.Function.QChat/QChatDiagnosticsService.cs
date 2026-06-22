@@ -6,7 +6,8 @@ public sealed record QChatDiagnosticsResult(bool Handled, string Text);
 
 public sealed record QChatDiagnosticsRuntimeState(
     bool ReplyTimingDelayEnabled = false,
-    bool ConversationSettleWindowEnabled = false);
+    bool ConversationSettleWindowEnabled = false,
+    bool InternetAccessEnabled = false);
 
 public static class QChatDiagnosticsService
 {
@@ -51,6 +52,8 @@ public static class QChatDiagnosticsService
             "" or "help" or "menu" or "帮助" or "菜单" => Handled(BuildRootMenuText()),
             "memory" => Handled(BuildMemoryMenuText()),
             "desktop" => Handled(BuildDesktopMenuText()),
+            "internet" => Handled(BuildInternetMenuText()),
+            "rag" or "rag status" => Handled(BuildRagMenuText()),
             "timing" => Handled(BuildTimingMenuText()),
             "events" => Handled(BuildEventsMenuText()),
             "diag" or "diagnostics" => Handled(BuildDiagnosticsMenuText()),
@@ -126,6 +129,7 @@ public static class QChatDiagnosticsService
             $"model={profile.Model}",
             $"reply_timing_delay={FormatEnabled(runtimeState.ReplyTimingDelayEnabled)}",
             $"conversation_settle_window={FormatEnabled(runtimeState.ConversationSettleWindowEnabled)}",
+            $"internet={FormatEnabled(runtimeState.InternetAccessEnabled)}",
             "status=online");
     }
 
@@ -144,6 +148,7 @@ public static class QChatDiagnosticsService
             "/qchat timing - 回复延时设置",
             "/qchat memory - 记忆相关指令",
             "/qchat desktop - 桌面能力相关指令",
+            "/qchat rag - 外部 RAG 管理",
             "/qchat events - 主人事件 outbox",
             "/qchat diag - 路由、身份、模型等诊断",
             "",
@@ -186,6 +191,28 @@ public static class QChatDiagnosticsService
             "",
             "说明：",
             "桌面动作仍受权限、审批、审计、文件黑名单和 outbox 约束。");
+    }
+
+    public static string BuildInternetMenuText()
+    {
+        return string.Join(Environment.NewLine,
+            "联网指令：",
+            "/qchat internet <url> - 读取公网 HTTP/HTTPS 页面",
+            "",
+            "说明：",
+            "仅公网 HTTP/HTTPS；localhost、私网 IP、file、javascript、下载、登录、表单提交和 JS 执行都不在第一期范围内。",
+            "网页内容会作为不可信外部上下文进入回复，不能授权工具、主人身份、审批或提示词变更。");
+    }
+
+    public static string BuildRagMenuText()
+    {
+        return string.Join(Environment.NewLine,
+            "外部 RAG 管理：",
+            "/qchat rag add <url> - 添加公开 HTTP/HTTPS 页面到外部 RAG 来源",
+            "/qchat rag status - 查看外部 RAG 管理入口和使用说明",
+            "",
+            "说明：",
+            "群成员只使用 /rag <question> 查询，不能添加、删除、刷新或配置来源。");
     }
 
     public static string BuildTimingMenuText()

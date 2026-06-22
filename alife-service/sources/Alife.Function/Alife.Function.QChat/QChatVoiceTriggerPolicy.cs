@@ -16,7 +16,10 @@ public sealed record QChatVoiceTriggerContext(
     string ReplyText,
     bool ExplicitVoiceRequested,
     bool IsIntimateScene,
-    bool IsAggressiveBoundaryReply);
+    bool IsAggressiveBoundaryReply,
+    OneBotMessageType MessageType = OneBotMessageType.Private,
+    bool IsMentionedOrWoken = false,
+    double ProbabilitySample = 1.0);
 
 public sealed record QChatVoiceTriggerDecision(QChatVoiceTriggerDecisionKind Kind, string Reason);
 
@@ -27,10 +30,18 @@ public static class QChatVoiceTriggerPolicy
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(context.Config);
 
+        if (context.Config.EnableQChatVoiceOutput == false)
+            return Deny("voice_output_disabled");
+
         if (context.Config.EnableOwnerVoiceClone == false)
             return Deny("voice_clone_disabled");
 
-        if (context.SenderRole != QChatSenderRole.Owner && context.Config.DenyVoiceForNonOwner)
+        bool isNonOwner = context.SenderRole != QChatSenderRole.Owner;
+        bool isAllowedNonOwnerMentionCandidate =
+            context.Config.EnableNonOwnerMentionVoice &&
+            context.MessageType == OneBotMessageType.Group &&
+            context.IsMentionedOrWoken;
+        if (isNonOwner && context.Config.DenyVoiceForNonOwner && isAllowedNonOwnerMentionCandidate == false)
             return Deny("non_owner_voice_denied");
 
         if (context.HardSafetyRisk != QChatHardSafetyRisk.None)
@@ -48,6 +59,20 @@ public static class QChatVoiceTriggerPolicy
 
         if (replyText.Length > context.Config.MaxVoiceReplyChars)
             return Deny("voice_text_too_long");
+
+        if (isNonOwner && isAllowedNonOwnerMentionCandidate)
+        {
+            int nonOwnerMaxChars = Math.Max(1, context.Config.NonOwnerMentionVoiceMaxChars);
+            if (replyText.Length > nonOwnerMaxChars)
+                return Deny("non_owner_voice_text_too_long");
+
+            double probability = Math.Clamp(context.Config.NonOwnerMentionVoiceProbability, 0f, 1f);
+            double sample = Math.Clamp(context.ProbabilitySample, 0.0, 1.0);
+            if (probability <= 0 || sample >= probability)
+                return Deny("non_owner_voice_probability_missed");
+
+            return Allow("non_owner_mention_voice");
+        }
 
         if (context.SenderRole == QChatSenderRole.Owner
             && context.ExplicitVoiceRequested

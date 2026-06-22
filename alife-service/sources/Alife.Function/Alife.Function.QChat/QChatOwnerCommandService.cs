@@ -119,7 +119,8 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
             profile,
             new QChatDiagnosticsRuntimeState(
                 ReplyTimingDelayEnabled: config.EnableReplyTimingDelay,
-                ConversationSettleWindowEnabled: config.EnableConversationSettleWindow));
+                ConversationSettleWindowEnabled: config.EnableConversationSettleWindow,
+                InternetAccessEnabled: config.EnableInternetAccess));
         if (result.Handled)
         {
             await sendAsync(targetType, targetId, result.Text);

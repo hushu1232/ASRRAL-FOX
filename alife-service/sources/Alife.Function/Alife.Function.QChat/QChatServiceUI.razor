@@ -152,10 +152,49 @@
                                 <FormItem Label="允许非主人私聊进入模型">
                                     <Switch @bind-Value="@Configuration.AllowPrivateGuestChat" />
                                 </FormItem>
+                                <FormItem Label="Agent 联网">
+                                    <Switch @bind-Value="@Configuration.EnableInternetAccess" />
+                                    <div class="quiet-hint">默认关闭。开启后仍只允许主人账号触发，并受 Agent 白名单、URL 策略、审计和不可信上下文包裹限制。</div>
+                                </FormItem>
+                                <FormItem Label="联网 Agent 白名单">
+                                    <Input @bind-Value="@Configuration.InternetAllowedAgentIds"
+                                           Placeholder="xiayu" />
+                                    <div class="quiet-hint">英文逗号分隔。第一期默认只给夏羽开放。</div>
+                                </FormItem>
+                                <FormItem Label="公开联网搜索">
+                                    <Switch @bind-Value="@Configuration.EnablePublicInternetSearch" />
+                                    <div class="quiet-hint">开启后群成员可使用 /search &lt;query&gt; 临时搜索；不会开放 /qchat、浏览器、登录、下载、本地文件或持久化摄入。</div>
+                                </FormItem>
+                                <FormItem Label="公开外部 RAG 查询">
+                                    <Switch @bind-Value="@Configuration.EnablePublicExternalRagQuery" />
+                                    <div class="quiet-hint">开启后群成员可使用 /rag &lt;question&gt; 查询主人批准的外部 RAG；不能新增、删除、刷新或配置来源。</div>
+                                </FormItem>
+                                <FormItem Label="公开搜索最大结果数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PublicInternetSearchMaxResults"
+                                                           Min="1"
+                                                           Max="8"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="公开查询最大字数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PublicInternetQueryMaxChars"
+                                                           Min="1"
+                                                           Max="1000"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="公开外部 RAG 最大片段数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PublicExternalRagMaxChunks"
+                                                           Min="1"
+                                                           Max="12"
+                                                           Style="width: 100%;" />
+                                </FormItem>
                             </Card>
                         </GridCol>
                         <GridCol Xs="24" Md="12">
                             <Card Size="CardSize.Small" Title="语音克隆" Class="qchat-card">
+                                <FormItem Label="全局 QQ 语音输出">
+                                    <Switch @bind-Value="@Configuration.EnableQChatVoiceOutput" />
+                                    <div class="quiet-hint">默认关闭。关闭时，即使克隆开关或语音请求被打开，也只发送文字回复。</div>
+                                </FormItem>
                                 <FormItem Label="主人克隆语音">
                                     <Switch @bind-Value="@Configuration.EnableOwnerVoiceClone" />
                                     <div class="quiet-hint">启用后仅在主人相关的低频场景尝试发送克隆语音。</div>
@@ -163,6 +202,23 @@
                                 <FormItem Label="仅主人可触发语音">
                                     <Switch @bind-Value="@Configuration.DenyVoiceForNonOwner" />
                                     <div class="quiet-hint">默认开启，非主人不能触发语音回复。</div>
+                                </FormItem>
+                                <FormItem Label="允许非主人@低概率语音">
+                                    <Switch @bind-Value="@Configuration.EnableNonOwnerMentionVoice" />
+                                    <div class="quiet-hint">仅群聊真实@或确认唤醒后参与概率判断；普通群聊和私聊不触发。</div>
+                                </FormItem>
+                                <FormItem Label="非主人@语音概率">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.NonOwnerMentionVoiceProbability"
+                                                           Min="0f"
+                                                           Max="1f"
+                                                           Step="0.05f"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="非主人@语音最大字数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.NonOwnerMentionVoiceMaxChars"
+                                                           Min="1"
+                                                           Max="200"
+                                                           Style="width: 100%;" />
                                 </FormItem>
                                 <FormItem Label="主人明确要求时发语音">
                                     <Switch @bind-Value="@Configuration.EnableOwnerVoiceOnExplicitRequest" />

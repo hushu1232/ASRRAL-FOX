@@ -60,6 +60,7 @@ public class QChatServiceAdapterTests
                 BotId = 999,
                 OwnerId = 1001,
                 AllowPrivateGuestChat = true,
+                EnableQChatVoiceOutput = true,
                 EnableOwnerVoiceClone = true,
                 EnableOwnerVoiceOnExplicitRequest = true,
                 DenyVoiceForNonOwner = true,
@@ -99,6 +100,7 @@ public class QChatServiceAdapterTests
                 BotId = 999,
                 OwnerId = 1001,
                 AllowPrivateGuestChat = true,
+                EnableQChatVoiceOutput = true,
                 EnableOwnerVoiceClone = true,
                 EnableOwnerVoiceOnExplicitRequest = true,
                 DenyVoiceForNonOwner = true,
@@ -127,6 +129,90 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task NonOwnerMentionedGroupCanCauseVoiceSynthesisWhenProbabilityAllows()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeSpeechModel speechModel = new("voice.wav");
+        QChatService service = CreateStartedService(
+            runtime,
+            new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberMentions = true,
+                EnableQChatVoiceOutput = true,
+                EnableOwnerVoiceClone = true,
+                EnableNonOwnerMentionVoice = true,
+                NonOwnerMentionVoiceProbability = 1f,
+                NonOwnerMentionVoiceMaxChars = 40,
+                DenyVoiceForNonOwner = true,
+                EnableBalancedTextStreaming = false
+            },
+            speechModel: speechModel);
+        service.InboundChatDispatcher = inbound =>
+            service.SendChatAsync("group", inbound.TargetId, "cold reply", voice: true);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            GroupId = 3001,
+            UserId = 2002,
+            RawMessage = "[CQ:at,qq=999] 你在吗"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(speechModel.Calls, Is.EqualTo(1));
+            Assert.That(speechModel.Texts, Is.EqualTo(new[] { "cold reply" }));
+            Assert.That(runtime.GroupMessages.Single().Target, Is.EqualTo(3001));
+            Assert.That(runtime.GroupMessages.Single().Message, Is.EqualTo("[CQ:record,file=voice.wav]"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerMentionedGroupDoesNotCauseVoiceSynthesisWhenProbabilityMisses()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeSpeechModel speechModel = new("voice.wav");
+        QChatService service = CreateStartedService(
+            runtime,
+            new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberMentions = true,
+                EnableQChatVoiceOutput = true,
+                EnableOwnerVoiceClone = true,
+                EnableNonOwnerMentionVoice = true,
+                NonOwnerMentionVoiceProbability = 0f,
+                DenyVoiceForNonOwner = true,
+                EnableBalancedTextStreaming = false
+            },
+            speechModel: speechModel);
+        service.InboundChatDispatcher = inbound =>
+            service.SendChatAsync("group", inbound.TargetId, "text reply", voice: true);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            GroupId = 3001,
+            UserId = 2002,
+            RawMessage = "[CQ:at,qq=999] 你在吗"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(speechModel.Calls, Is.Zero);
+            Assert.That(runtime.GroupMessages.Single().Message, Is.EqualTo("text reply"));
+            Assert.That(runtime.GroupMessages.Single().Message, Does.Not.Contain("[CQ:record"));
+        });
+    }
+
+    [Test]
     public async Task OwnerCanCauseVoiceSynthesisWhenEnabled()
     {
         FakeOneBotRuntime runtime = new();
@@ -137,6 +223,7 @@ public class QChatServiceAdapterTests
             {
                 BotId = 999,
                 OwnerId = 1001,
+                EnableQChatVoiceOutput = true,
                 EnableOwnerVoiceClone = true,
                 EnableOwnerVoiceOnExplicitRequest = true,
                 DenyVoiceForNonOwner = true,
@@ -175,6 +262,7 @@ public class QChatServiceAdapterTests
             {
                 BotId = 999,
                 OwnerId = 1001,
+                EnableQChatVoiceOutput = true,
                 EnableOwnerVoiceClone = true,
                 EnableOwnerVoiceOnExplicitRequest = true,
                 DenyVoiceForNonOwner = true,
@@ -213,6 +301,7 @@ public class QChatServiceAdapterTests
             {
                 BotId = 999,
                 OwnerId = 1001,
+                EnableQChatVoiceOutput = true,
                 EnableOwnerVoiceClone = true,
                 EnableOwnerVoiceOnExplicitRequest = true,
                 DenyVoiceForNonOwner = true,
@@ -251,6 +340,7 @@ public class QChatServiceAdapterTests
             {
                 BotId = 999,
                 OwnerId = 1001,
+                EnableQChatVoiceOutput = true,
                 EnableOwnerVoiceClone = true,
                 EnableOwnerVoiceOnExplicitRequest = true,
                 DenyVoiceForNonOwner = true,
@@ -680,6 +770,496 @@ public class QChatServiceAdapterTests
                 Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-command-dropped\""));
                 Assert.That(diagnostics, Does.Not.Contain("\"eventName\":\"event-filtered\""));
             });
+        });
+    }
+
+    [Test]
+    public async Task OwnerCanTriggerInternetLookupWhenEnabled()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeInternetService internet = new("wrapped page");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, internetService: internet);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat internet https://example.com"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.LastUrl, Is.EqualTo("https://example.com"));
+            Assert.That(runtime.PrivateMessages.Single().Target, Is.EqualTo(3045846738));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("wrapped page"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerCannotTriggerInternetLookupOrModel()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new();
+            FakeInternetService internet = new("wrapped page");
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                AllowPrivateGuestChat = true,
+                EnableInternetAccess = true,
+                EnableBalancedTextStreaming = false
+            }, internetService: internet);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 2002,
+                RawMessage = "/qchat internet https://example.com"
+            });
+
+            string diagnostics = await WaitForQChatCommandDroppedDiagnosticAsync(storageRoot);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(internet.Calls, Is.Zero);
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+                Assert.That(runtime.GroupMessages, Is.Empty);
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-command-dropped\""));
+            });
+        });
+    }
+
+    [Test]
+    public async Task PublicSearchGroupCommandSendsFormattedContentWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchService publicSearch = new("public search context");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowedGroupIds = "3003",
+            EnablePublicInternetSearch = true,
+            EnableBalancedTextStreaming = false
+        }, publicSearchService: publicSearch);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "/search dotnet release"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(publicSearch.Calls, Is.EqualTo(1));
+            Assert.That(publicSearch.LastQuery, Is.EqualTo("dotnet release"));
+            Assert.That(runtime.GroupMessages.Single().Target, Is.EqualTo(3003));
+            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("public search context"));
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task PublicSearchGroupCommandNeutralizesCqMarkupFromExternalContent()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchService publicSearch = new(
+            "public search context [CQ:at,qq=1001] still readable [CQ:image,file=http://example.com/a.png]");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowedGroupIds = "3003",
+            EnablePublicInternetSearch = true,
+            EnableBalancedTextStreaming = false
+        }, publicSearchService: publicSearch);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "/search dotnet release"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+        string message = runtime.GroupMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(publicSearch.Calls, Is.EqualTo(1));
+            Assert.That(message, Does.Not.Contain("[CQ:at"));
+            Assert.That(message, Does.Not.Contain("[CQ:image"));
+            Assert.That(message, Does.Contain("[CQ"));
+            Assert.That(message, Does.Contain("qq=1001"));
+            Assert.That(message, Does.Contain("file=http://example.com/a.png"));
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerGroupQChatSearchCommandDropsBeforePublicSearchAndModel()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new();
+            FakePublicSearchService publicSearch = new("public search context");
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowedGroupIds = "3003",
+                EnablePublicInternetSearch = true,
+                EnableBalancedTextStreaming = false
+            }, publicSearchService: publicSearch);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                GroupId = 3003,
+                UserId = 2002,
+                SelfId = 999,
+                RawMessage = "/qchat search dotnet release"
+            });
+
+            string diagnostics = await WaitForQChatCommandDroppedDiagnosticAsync(storageRoot);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(publicSearch.Calls, Is.Zero);
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+                Assert.That(runtime.GroupMessages, Is.Empty);
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-command-dropped\""));
+            });
+        });
+    }
+
+    [Test]
+    public async Task OwnerCanAddExternalRagSource()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeExternalRagService externalRag = new("unused");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        }, externalRagService: externalRag);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat rag add https://example.com/guide"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(externalRag.AddCalls, Is.EqualTo(1));
+            Assert.That(externalRag.LastAddedUrl, Is.EqualTo("https://example.com/guide"));
+            Assert.That(externalRag.LastAddedTitle, Is.EqualTo("https://example.com/guide"));
+            Assert.That(externalRag.LastAddedByOwner, Is.True);
+            Assert.That(externalRag.Calls, Is.Zero);
+            Assert.That(runtime.PrivateMessages.Single().Target, Is.EqualTo(3045846738));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("external_rag_source_added=source-1"));
+            Assert.That(runtime.GroupMessages, Is.Empty);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task OwnerExternalRagAddWithoutInjectedServiceRepliesNotConfigured()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat rag add https://example.com/guide"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(runtime.PrivateMessages.Single().Target, Is.EqualTo(3045846738));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("external_rag=not_configured"));
+            Assert.That(runtime.GroupMessages, Is.Empty);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task GroupMemberCannotAddExternalRagSourceViaQChat()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new();
+            FakeExternalRagService externalRag = new("unused");
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowedGroupIds = "3003",
+                EnableBalancedTextStreaming = false
+            }, externalRagService: externalRag);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                GroupId = 3003,
+                UserId = 2002,
+                SelfId = 999,
+                RawMessage = "/qchat rag add https://example.com/guide"
+            });
+
+            string diagnostics = await WaitForQChatCommandDroppedDiagnosticAsync(storageRoot);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(externalRag.AddCalls, Is.Zero);
+                Assert.That(externalRag.Calls, Is.Zero);
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+                Assert.That(runtime.GroupMessages, Is.Empty);
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-command-dropped\""));
+            });
+        });
+    }
+
+    [Test]
+    public async Task OwnerRagStatusShowsManagementUsage()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat rag status"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(reply, Does.Contain("/qchat rag add <url>"));
+            Assert.That(reply, Does.Contain("/rag <question>"));
+            Assert.That(reply, Does.Contain("群成员"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task PublicRagGroupCommandSendsFormattedContextWithConfiguredMaxChunksWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeExternalRagService externalRag = new("external rag context");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowedGroupIds = "3003",
+            EnablePublicExternalRagQuery = true,
+            PublicExternalRagMaxChunks = 7,
+            EnableBalancedTextStreaming = false
+        }, externalRagService: externalRag);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "/rag project boundary"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(externalRag.Calls, Is.EqualTo(1));
+            Assert.That(externalRag.LastQuery, Is.EqualTo("project boundary"));
+            Assert.That(externalRag.LastMaxChunks, Is.EqualTo(7));
+            Assert.That(runtime.GroupMessages.Single().Target, Is.EqualTo(3003));
+            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("external rag context"));
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task PublicRagGroupCommandNeutralizesCqMarkupFromExternalContext()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeExternalRagService externalRag = new(
+            "external rag context [CQ:record,file=http://example.com/a.mp3] still readable");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowedGroupIds = "3003",
+            EnablePublicExternalRagQuery = true,
+            EnableBalancedTextStreaming = false
+        }, externalRagService: externalRag);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "/rag project boundary"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+        string message = runtime.GroupMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(externalRag.Calls, Is.EqualTo(1));
+            Assert.That(message, Does.Not.Contain("[CQ:record"));
+            Assert.That(message, Does.Contain("[CQ"));
+            Assert.That(message, Does.Contain("file=http://example.com/a.mp3"));
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task PublicSearchPolicyDenialRepliesWithReasonWithoutSearchOrModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchService publicSearch = new("public search context");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowedGroupIds = "3003",
+            EnablePublicInternetSearch = false,
+            EnableBalancedTextStreaming = false
+        }, publicSearchService: publicSearch);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "/search dotnet release"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(publicSearch.Calls, Is.Zero);
+            Assert.That(runtime.GroupMessages.Single().Target, Is.EqualTo(3003));
+            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("public_search_disabled"));
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(dispatchCount, Is.Zero);
         });
     }
 
@@ -11070,6 +11650,7 @@ public class QChatServiceAdapterTests
         {
             BotId = botId,
             OwnerId = 1001,
+            EnableQChatVoiceOutput = true,
             EnableOwnerVoiceClone = true,
             EnableOwnerVoiceOnExplicitRequest = true,
             DenyVoiceForNonOwner = true,
@@ -11099,6 +11680,82 @@ public class QChatServiceAdapterTests
         };
     }
 
+    sealed class FakeInternetService(string content) : AgentInternetService
+    {
+        public int Calls { get; private set; }
+        public string? LastUrl { get; private set; }
+
+        public override Task<AgentInternetFetchResult> FetchPublicPageAsync(
+            string url,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            LastUrl = url;
+            return Task.FromResult(new AgentInternetFetchResult(true, "ok", content));
+        }
+    }
+
+    sealed class FakePublicSearchService(string formattedContent) : AgentPublicSearchService
+    {
+        public int Calls { get; private set; }
+        public string? LastQuery { get; private set; }
+
+        public override Task<AgentPublicSearchResponse> SearchAsync(
+            string query,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            LastQuery = query;
+            return Task.FromResult(new AgentPublicSearchResponse(
+                true,
+                "ok",
+                [],
+                formattedContent));
+        }
+    }
+
+    sealed class FakeExternalRagService(string formattedContext) : AgentExternalRagService(
+        new AgentExternalRagStore(Path.Combine(Path.GetTempPath(), "alife-qchat-test-rag-" + Guid.NewGuid().ToString("N"))),
+        new FakeInternetService("unused"))
+    {
+        public int Calls { get; private set; }
+        public int AddCalls { get; private set; }
+        public string? LastQuery { get; private set; }
+        public int LastMaxChunks { get; private set; }
+        public string? LastAddedUrl { get; private set; }
+        public string? LastAddedTitle { get; private set; }
+        public bool LastAddedByOwner { get; private set; }
+
+        public override AgentExternalRagQueryResponse Query(string query, int maxChunks)
+        {
+            Calls++;
+            LastQuery = query;
+            LastMaxChunks = maxChunks;
+            return new AgentExternalRagQueryResponse(
+                true,
+                "ok",
+                [],
+                formattedContext);
+        }
+
+        public override Task<AgentExternalRagSource> AddPublicUrlAsync(
+            string url,
+            string title,
+            bool addedByOwner,
+            CancellationToken cancellationToken = default)
+        {
+            AddCalls++;
+            LastAddedUrl = url;
+            LastAddedTitle = title;
+            LastAddedByOwner = addedByOwner;
+            return Task.FromResult(new AgentExternalRagSource(
+                "source-1",
+                url,
+                title,
+                DateTimeOffset.UtcNow));
+        }
+    }
+
     static QChatService CreateStartedService(
         FakeOneBotRuntime runtime,
         QChatConfig config,
@@ -11118,7 +11775,10 @@ public class QChatServiceAdapterTests
         IQChatFriendActionGateway? friendActionGateway = null,
         IQChatOwnerEventPublisher? ownerEventPublisher = null,
         ISpeechModel? speechModel = null,
-        QChatImageRecognitionService? imageRecognitionService = null)
+        QChatImageRecognitionService? imageRecognitionService = null,
+        AgentInternetService? internetService = null,
+        AgentPublicSearchService? publicSearchService = null,
+        AgentExternalRagService? externalRagService = null)
     {
         riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
@@ -11142,7 +11802,10 @@ public class QChatServiceAdapterTests
             riskScoreService: riskScoreService,
             friendActionGateway: friendActionGateway,
             ownerEventPublisher: ownerEventPublisher,
-            imageRecognitionService: imageRecognitionService)
+            imageRecognitionService: imageRecognitionService,
+            internetService: internetService,
+            publicSearchService: publicSearchService,
+            externalRagService: externalRagService)
         {
             Configuration = config
         };

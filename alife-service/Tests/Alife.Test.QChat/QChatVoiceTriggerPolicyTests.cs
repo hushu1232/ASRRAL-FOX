@@ -38,6 +38,7 @@ public sealed class QChatVoiceTriggerPolicyTests
         QChatVoiceTriggerDecision decision = Evaluate(
             config: new QChatConfig
             {
+                EnableQChatVoiceOutput = true,
                 EnableOwnerVoiceClone = true,
                 EnableOwnerVoiceOnIntimateScene = true,
             },
@@ -62,6 +63,125 @@ public sealed class QChatVoiceTriggerPolicyTests
         {
             Assert.That(decision.Kind, Is.EqualTo(QChatVoiceTriggerDecisionKind.Deny));
             Assert.That(decision.Reason, Is.EqualTo("non_owner_voice_denied"));
+        });
+    }
+
+    [Test]
+    public void NonOwnerMentionedGroupAllowsWhenProbabilityMatches()
+    {
+        QChatVoiceTriggerDecision decision = Evaluate(
+            config: new QChatConfig
+            {
+                EnableQChatVoiceOutput = true,
+                EnableOwnerVoiceClone = true,
+                EnableNonOwnerMentionVoice = true,
+                NonOwnerMentionVoiceProbability = 1f,
+                NonOwnerMentionVoiceMaxChars = 40
+            },
+            senderRole: QChatSenderRole.GroupMember,
+            messageType: OneBotMessageType.Group,
+            isMentionedOrWoken: true,
+            probabilitySample: 0.5);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Kind, Is.EqualTo(QChatVoiceTriggerDecisionKind.Allow));
+            Assert.That(decision.Reason, Is.EqualTo("non_owner_mention_voice"));
+        });
+    }
+
+    [Test]
+    public void NonOwnerMentionedGroupDeniesWhenProbabilityMisses()
+    {
+        QChatVoiceTriggerDecision decision = Evaluate(
+            config: new QChatConfig
+            {
+                EnableQChatVoiceOutput = true,
+                EnableOwnerVoiceClone = true,
+                EnableNonOwnerMentionVoice = true,
+                NonOwnerMentionVoiceProbability = 0.25f
+            },
+            senderRole: QChatSenderRole.GroupMember,
+            messageType: OneBotMessageType.Group,
+            isMentionedOrWoken: true,
+            probabilitySample: 0.25);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Kind, Is.EqualTo(QChatVoiceTriggerDecisionKind.Deny));
+            Assert.That(decision.Reason, Is.EqualTo("non_owner_voice_probability_missed"));
+        });
+    }
+
+    [Test]
+    public void NonOwnerGroupWithoutMentionDeniesEvenWhenMentionVoiceEnabled()
+    {
+        QChatVoiceTriggerDecision decision = Evaluate(
+            config: new QChatConfig
+            {
+                EnableQChatVoiceOutput = true,
+                EnableOwnerVoiceClone = true,
+                EnableNonOwnerMentionVoice = true,
+                NonOwnerMentionVoiceProbability = 1f
+            },
+            senderRole: QChatSenderRole.GroupMember,
+            messageType: OneBotMessageType.Group,
+            isMentionedOrWoken: false,
+            probabilitySample: 0);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Kind, Is.EqualTo(QChatVoiceTriggerDecisionKind.Deny));
+            Assert.That(decision.Reason, Is.EqualTo("non_owner_voice_denied"));
+        });
+    }
+
+    [Test]
+    public void NonOwnerPrivateMentionVoiceDenies()
+    {
+        QChatVoiceTriggerDecision decision = Evaluate(
+            config: new QChatConfig
+            {
+                EnableQChatVoiceOutput = true,
+                EnableOwnerVoiceClone = true,
+                EnableNonOwnerMentionVoice = true,
+                NonOwnerMentionVoiceProbability = 1f
+            },
+            senderRole: QChatSenderRole.GroupMember,
+            messageType: OneBotMessageType.Private,
+            isMentionedOrWoken: true,
+            probabilitySample: 0);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Kind, Is.EqualTo(QChatVoiceTriggerDecisionKind.Deny));
+            Assert.That(decision.Reason, Is.EqualTo("non_owner_voice_denied"));
+        });
+    }
+
+    [Test]
+    public void NonOwnerMentionVoiceLongTextDeniesWithNonOwnerLimit()
+    {
+        QChatVoiceTriggerDecision decision = Evaluate(
+            config: new QChatConfig
+            {
+                EnableQChatVoiceOutput = true,
+                EnableOwnerVoiceClone = true,
+                EnableNonOwnerMentionVoice = true,
+                NonOwnerMentionVoiceProbability = 1f,
+                MaxVoiceReplyChars = 120,
+                NonOwnerMentionVoiceMaxChars = 10
+            },
+            senderRole: QChatSenderRole.GroupMember,
+            replyText: "this reply is too long",
+            messageType: OneBotMessageType.Group,
+            isMentionedOrWoken: true,
+            probabilitySample: 0);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Kind, Is.EqualTo(QChatVoiceTriggerDecisionKind.Deny));
+            Assert.That(decision.Reason, Is.EqualTo("non_owner_voice_text_too_long"));
         });
     }
 
@@ -146,6 +266,7 @@ public sealed class QChatVoiceTriggerPolicyTests
         QChatVoiceTriggerDecision decision = Evaluate(
             config: new QChatConfig
             {
+                EnableQChatVoiceOutput = true,
                 EnableOwnerVoiceClone = false,
             },
             senderRole: QChatSenderRole.Owner,
@@ -155,6 +276,25 @@ public sealed class QChatVoiceTriggerPolicyTests
         {
             Assert.That(decision.Kind, Is.EqualTo(QChatVoiceTriggerDecisionKind.Deny));
             Assert.That(decision.Reason, Is.EqualTo("voice_clone_disabled"));
+        });
+    }
+
+    [Test]
+    public void DisabledGlobalVoiceOutputDeniesBeforeCloneSwitch()
+    {
+        QChatVoiceTriggerDecision decision = Evaluate(
+            config: new QChatConfig
+            {
+                EnableQChatVoiceOutput = false,
+                EnableOwnerVoiceClone = true,
+            },
+            senderRole: QChatSenderRole.Owner,
+            explicitVoiceRequested: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Kind, Is.EqualTo(QChatVoiceTriggerDecisionKind.Deny));
+            Assert.That(decision.Reason, Is.EqualTo("voice_output_disabled"));
         });
     }
 
@@ -201,10 +341,14 @@ public sealed class QChatVoiceTriggerPolicyTests
         string replyText = "voice reply",
         bool explicitVoiceRequested = false,
         bool isIntimateScene = false,
-        bool isAggressiveBoundaryReply = false)
+        bool isAggressiveBoundaryReply = false,
+        OneBotMessageType messageType = OneBotMessageType.Private,
+        bool isMentionedOrWoken = false,
+        double probabilitySample = 1.0)
     {
         config ??= new QChatConfig
         {
+            EnableQChatVoiceOutput = true,
             EnableOwnerVoiceClone = true,
         };
 
@@ -216,6 +360,9 @@ public sealed class QChatVoiceTriggerPolicyTests
             replyText,
             explicitVoiceRequested,
             isIntimateScene,
-            isAggressiveBoundaryReply));
+            isAggressiveBoundaryReply,
+            messageType,
+            isMentionedOrWoken,
+            probabilitySample));
     }
 }

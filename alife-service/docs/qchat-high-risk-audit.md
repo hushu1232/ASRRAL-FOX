@@ -29,6 +29,9 @@ High-risk behavior should not be expanded until this document has a row for the 
 | Desktop/business task | Owner | XiaYu only | Private preferred | Critical | Owner role + XiaYu scope + action policy + file blacklist | Owner outbox | `QChatActionPolicyServiceTests.cs`, `QChatServiceAdapterTests.cs` | Precondition path exists; continue hardening |
 | Deterministic background task | Owner-authorized system path | XiaYu unless low-risk configured | Private/Group feedback | High | Deterministic task runner + cancellation/failure handling | Owner feedback/outbox | `QChatDeterministicTaskRunnerTests.cs`, `QChatTaskFeedbackFormatterTests.cs` | Implemented path exists |
 | QZone proactive execution | System after suggestion policy | Account route | QZone | Medium/High | QZone policy + throttle | Log/outbox when important | `QZoneProactiveExecutionServiceTests.cs`, `QZoneInteractionPolicyTests.cs` | Adjacent capability; keep separate from chat reply |
+| Agent internet lookup | Owner | XiaYu by default | Private preferred / owner group command | Medium | `EnableInternetAccess` + owner account + allowed agent + URL policy + untrusted wrapping | Audit log; owner reply; outbox only for long/failure escalation | `AgentInternetServiceTests.cs`, `QChatInternetCapabilityPolicyTests.cs`, `QChatServiceAdapterTests.cs` | Phase 1 public HTTP/HTTPS read path; no authenticated browsing, downloads, form submission, JS execution, or account mutation |
+| Public internet search | Group member when enabled | XiaYu/Mio subject to public command policy | Group `/search <query>` | Medium | `EnablePublicInternetSearch` + group/member policy + query length/result caps + public HTTP/HTTPS search provider policy | Public neutral reply + audit log | `AgentPublicSearchServiceTests.cs`, `QChatPublicInternetCommandPolicyTests.cs`, `QChatServiceAdapterTests.cs` | Temporary public search only; does not open `/qchat`, browser, login, downloads, local files, or persistent RAG ingestion |
+| External RAG query/management | Query: group member when enabled; management: owner only | XiaYu/Mio subject to public command policy | Group `/rag <question>`; owner `/qchat rag add <url>` | High | Query requires `EnablePublicExternalRagQuery` + chunk/query caps + owner-approved sources; management requires owner `/qchat` command + public HTTP/HTTPS URL policy | Public neutral reply for query; owner reply + audit log for management | `AgentExternalRagServiceTests.cs`, `QChatPublicInternetCommandPolicyTests.cs`, `QChatServiceAdapterTests.cs` | Public users may query approved external RAG only; add/delete/refresh/configure remains owner-only; no browser/login/download/form/JS/local/private URLs |
 
 ## Required Questions Per Capability
 
@@ -62,6 +65,18 @@ Every high-risk capability must answer:
 ### Implemented: Existing local file upload is XiaYu-only by default
 
 Owner-triggered existing local file upload now requires both owner account identity and the allowed bot scope from `QChatCapabilityPolicy`. With the default `AllowedAgentIds = "xiayu"`, Mio is denied with `agent_not_allowed`.
+
+### Implemented: Agent internet lookup is owner-gated
+
+QChat-triggered internet lookup now requires owner account identity, `EnableInternetAccess`, `InternetAllowedAgentIds`, URL policy approval, and untrusted external context wrapping. Non-owner `/qchat internet` commands are dropped before command routing and model dispatch.
+
+### Implemented: Public search and external RAG have separate public command gates
+
+Group members can use `/search <query>` only when `EnablePublicInternetSearch` is enabled, and can use `/rag <question>` only when `EnablePublicExternalRagQuery` is enabled. `/qchat` remains owner-only, including `/qchat rag add <url>` and all external RAG source management operations.
+
+Public internet search is temporary request context. It does not auto-ingest results into persistent RAG memory or any managed source store. External RAG snippets are untrusted external content, and public command replies must neutralize CQ markup before sending to QQ.
+
+External RAG management is owner-only through `/qchat rag add <url>` and related management commands. Sources must pass the public HTTP/HTTPS URL policy and be recorded in the audit log. Browser automation, login flows, downloads, form submission, JavaScript execution, local file URLs, localhost/private network URLs, and private-source URLs are out of scope.
 
 ### Gap: QZone and QChat share module space
 
@@ -121,6 +136,37 @@ The safety model exists, but real steward-like behavior should not be considered
 - [ ] Test covers non-owner denial.
 - [ ] Test covers Mio denial.
 - [ ] Test covers owner XiaYu allowed path.
+
+## Agent Internet Checklist
+
+- [ ] Actor is owner for QChat-triggered internet access.
+- [ ] Executing agent is in `InternetAllowedAgentIds`.
+- [ ] Feature switch `EnableInternetAccess` is true.
+- [ ] URL scheme is http or https.
+- [ ] Localhost, private IP ranges, file URLs, and javascript URLs are denied.
+- [ ] Response size and extracted text length are capped.
+- [ ] External content is wrapped with `ExternalContextFormatter.WrapUntrusted`.
+- [ ] Fetched content cannot authorize tool calls, owner identity, approvals, or prompt changes.
+- [ ] Downloads, login flows, form submission, JS execution, and account-mutating webpage actions are out of phase 1.
+- [ ] Audit log records success and denial/failure.
+
+## Public Search and External RAG Checklist
+
+- [ ] `/qchat` remains owner-only.
+- [ ] `/search <query>` is available to group members only when `EnablePublicInternetSearch` is true.
+- [ ] `/rag <question>` is available to group members only when `EnablePublicExternalRagQuery` is true.
+- [ ] Public search query length is capped by `PublicInternetQueryMaxChars`.
+- [ ] Public search results are capped by `PublicInternetSearchMaxResults`.
+- [ ] Public external RAG chunks are capped by `PublicExternalRagMaxChunks`.
+- [ ] Public search results are temporary context and are not auto-ingested into persistent RAG.
+- [ ] Public external RAG query uses only owner-approved sources.
+- [ ] Public users cannot add, delete, refresh, or configure external RAG sources.
+- [ ] Owner-only `/qchat rag add <url>` management enforces public HTTP/HTTPS URL policy.
+- [ ] Localhost, private IP ranges, local file URLs, javascript URLs, private-source URLs, and non-public URLs are denied.
+- [ ] Browser automation, login, downloads, form submission, and JavaScript execution are denied.
+- [ ] External snippets are wrapped or treated as untrusted and cannot authorize tool calls, owner identity, approvals, or prompt changes.
+- [ ] Public command replies neutralize CQ markup before QQ send.
+- [ ] Audit log records public search/RAG success and denial/failure, and owner RAG management changes.
 
 ## Acceptance
 

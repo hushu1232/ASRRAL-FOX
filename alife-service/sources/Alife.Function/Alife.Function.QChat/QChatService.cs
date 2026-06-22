@@ -43,10 +43,14 @@ public record QChatConfig
     public bool EnableGroupFileUpload { get; set; } = true;
     public bool EnablePrivateFileUpload { get; set; } = true;
     public bool EnableVideoMessage { get; set; } = true;
+    public bool EnableQChatVoiceOutput { get; set; } = false;
     public bool EnableOwnerVoiceClone { get; set; } = false;
     public bool EnableOwnerVoiceOnExplicitRequest { get; set; } = true;
     public bool EnableOwnerVoiceOnIntimateScene { get; set; } = false;
     public bool DenyVoiceForNonOwner { get; set; } = true;
+    public bool EnableNonOwnerMentionVoice { get; set; }
+    public float NonOwnerMentionVoiceProbability { get; set; } = 0.15f;
+    public int NonOwnerMentionVoiceMaxChars { get; set; } = 40;
     public int MaxVoiceReplyChars { get; set; } = 120;
     public QChatVoiceProfileConfig VoiceProfiles { get; set; } = QChatVoiceProfileConfig.CreateDefault();
     public bool EnableImageRecognition { get; set; }
@@ -62,6 +66,13 @@ public record QChatConfig
     public bool AnalyzePrivateGuestImages { get; set; } = true;
     public bool AnalyzeMentionedGroupImages { get; set; } = true;
     public bool AnalyzePassiveGroupImages { get; set; }
+    public bool EnableInternetAccess { get; set; } = false;
+    public string InternetAllowedAgentIds { get; set; } = "xiayu";
+    public bool EnablePublicInternetSearch { get; set; } = false;
+    public bool EnablePublicExternalRagQuery { get; set; } = false;
+    public int PublicInternetSearchMaxResults { get; set; } = 3;
+    public int PublicInternetQueryMaxChars { get; set; } = 160;
+    public int PublicExternalRagMaxChunks { get; set; } = 4;
     public bool EnableBalancedTextStreaming { get; set; } = true;
     public bool EnableConversationSettleWindow { get; set; }
     public int PrivateSettleMilliseconds { get; set; } = 700;
@@ -198,7 +209,8 @@ sealed record QChatReplySession(
     QChatSenderRole SenderRole,
     AgentPermissionRequest PermissionRequest,
     bool RequiresFactualityGuard,
-    string SourceText);
+    string SourceText,
+    bool IsAwakening);
 
 sealed record QChatRecentSentMessage(
     long MessageId,
@@ -258,7 +270,10 @@ public partial class QChatService(
     QChatRiskScoreService? riskScoreService = null,
     IQChatFriendActionGateway? friendActionGateway = null,
     IQChatOwnerEventPublisher? ownerEventPublisher = null,
-    QChatImageRecognitionService? imageRecognitionService = null) :
+    QChatImageRecognitionService? imageRecognitionService = null,
+    AgentInternetService? internetService = null,
+    AgentPublicSearchService? publicSearchService = null,
+    AgentExternalRagService? externalRagService = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -272,6 +287,9 @@ public partial class QChatService(
     readonly IQChatOwnerEventPublisher? injectedOwnerEventPublisher = ownerEventPublisher;
     readonly DesktopActionGateway? injectedDesktopActionGateway = desktopActionGateway;
     readonly QChatImageRecognitionService? injectedImageRecognitionService = imageRecognitionService;
+    readonly AgentInternetService? injectedInternetService = internetService;
+    readonly AgentPublicSearchService? injectedPublicSearchService = publicSearchService;
+    readonly AgentExternalRagService? injectedExternalRagService = externalRagService;
     QChatImageRecognitionService? resolvedImageRecognitionService;
     QChatOwnerEventOutbox? resolvedOwnerEventOutbox;
     QChatOwnerEventDispatcher? resolvedOwnerEventDispatcher;
@@ -863,7 +881,10 @@ public partial class QChatService(
             plainText,
             ExplicitVoiceRequested: true,
             IsIntimateScene: false,
-            IsAggressiveBoundaryReply: isAggressiveBoundaryReply));
+            IsAggressiveBoundaryReply: isAggressiveBoundaryReply,
+            MessageType: replySession?.MessageType ?? type,
+            IsMentionedOrWoken: replySession?.IsAwakening == true,
+            ProbabilitySample: Random.Shared.NextDouble()));
 
         if (replySession == null || decision.Kind != QChatVoiceTriggerDecisionKind.Allow)
         {
@@ -2680,6 +2701,8 @@ public partial class QChatService(
                     return;
                 if (ShouldBlockQChatMessage(config, messageEvent, includeRiskLocalBlock: true))
                     return;
+                if (await TryHandlePublicInternetCommandAsync(messageEvent, senderRole, content))
+                    return;
                 recentEventMemory.Remember(messageEvent, content, DateTimeOffset.Now);
                 QChatEventRoute eventRoute = QChatEventRouter.Route(messageEvent, senderRole);
                 QChatOwnerCommandService ownerCommandService = BuildOwnerCommandService();
@@ -4208,6 +4231,8 @@ public partial class QChatService(
             context => TryHandleOwnerMemoryPurgeCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerDesktopCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerEventsCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerInternetCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerRagCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
@@ -4218,6 +4243,196 @@ public partial class QChatService(
             context => TryApplyQuietModeWakeUserCommandAsync(context.MessageEvent, context.ReadableMessage),
             context => TryHandleOwnerDeterministicFileCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage)
         ]);
+    }
+
+    async Task<bool> TryHandleOwnerInternetCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (TryParseInternetCommand(text, out string url) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        QChatCapabilityDecision decision = QChatCapabilityPolicy.Evaluate(new QChatCapabilityContext(
+            QChatCapability.InternetLookup,
+            senderRole,
+            ResolveCurrentAgentId(config),
+            UserId: messageEvent.UserId,
+            BotId: ResolveCurrentBotId(config, messageEvent),
+            OwnerId: config.OwnerId,
+            AllowedAgentIds: config.InternetAllowedAgentIds));
+
+        if (config.EnableInternetAccess == false || decision.Allowed == false || injectedInternetService == null)
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "internet=unavailable");
+            WriteQChatDiagnostic("qchat-internet-command-denied", "QChat internet command denied before fetch.", new {
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                decision.Allowed,
+                decision.Reason,
+                config.EnableInternetAccess,
+                HasInternetService = injectedInternetService != null
+            });
+            return true;
+        }
+
+        injectedInternetService.Configuration ??= AgentInternetConfig.CreateDefault();
+        injectedInternetService.Configuration.EnableInternetAccess = true;
+        AgentInternetFetchResult result = await injectedInternetService.FetchPublicPageAsync(url);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, result.Content);
+        WriteQChatDiagnostic("qchat-internet-command-handled", "QChat internet command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            url,
+            result.Success,
+            result.Reason
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerRagCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (text.Equals("/qchat rag", StringComparison.OrdinalIgnoreCase) == false &&
+            text.StartsWith("/qchat rag ", StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can manage external RAG sources.");
+            return true;
+        }
+
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 2 ||
+            (parts.Length == 3 && parts[2].Equals("status", StringComparison.OrdinalIgnoreCase)))
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildRagMenuText());
+            return true;
+        }
+
+        if (parts.Length == 4 && parts[2].Equals("add", StringComparison.OrdinalIgnoreCase))
+        {
+            if (injectedExternalRagService == null)
+            {
+                await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "external_rag=not_configured");
+                return true;
+            }
+
+            string url = parts[3];
+            AgentExternalRagSource source = await injectedExternalRagService.AddPublicUrlAsync(
+                url,
+                url,
+                addedByOwner: true);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, $"external_rag_source_added={source.Id}");
+            return true;
+        }
+
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildRagMenuText());
+        return true;
+    }
+
+    async Task<bool> TryHandlePublicInternetCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string readable)
+    {
+        QChatPublicInternetCommand command = QChatPublicInternetCommandPolicy.Parse(readable);
+        if (command.Kind == QChatPublicInternetCommandKind.None)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        QChatPublicInternetCommandDecision decision = QChatPublicInternetCommandPolicy.Evaluate(
+            new QChatPublicInternetCommandContext(
+                senderRole,
+                command.Kind,
+                command.Query,
+                config.PublicInternetQueryMaxChars,
+                config.EnablePublicInternetSearch,
+                config.EnablePublicExternalRagQuery));
+
+        if (decision.Allowed == false)
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, decision.Reason);
+            return true;
+        }
+
+        switch (command.Kind)
+        {
+            case QChatPublicInternetCommandKind.Search:
+                if (injectedPublicSearchService == null)
+                {
+                    await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "public_search=not_configured");
+                    return true;
+                }
+
+                AgentPublicSearchResponse searchResponse = await injectedPublicSearchService.SearchAsync(command.Query);
+                await SendCommandReplyAsync(
+                    messageEvent,
+                    senderRole,
+                    targetType,
+                    targetId,
+                    NeutralizePublicExternalQqMarkup(searchResponse.FormattedContent));
+                return true;
+
+            case QChatPublicInternetCommandKind.RagQuery:
+                if (injectedExternalRagService == null)
+                {
+                    await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "external_rag=not_configured");
+                    return true;
+                }
+
+                AgentExternalRagQueryResponse ragResponse = injectedExternalRagService.Query(
+                    command.Query,
+                    config.PublicExternalRagMaxChunks);
+                await SendCommandReplyAsync(
+                    messageEvent,
+                    senderRole,
+                    targetType,
+                    targetId,
+                    NeutralizePublicExternalQqMarkup(ragResponse.FormattedContext));
+                return true;
+
+            default:
+                return true;
+        }
+    }
+
+    static string NeutralizePublicExternalQqMarkup(string value)
+    {
+        return value.Replace("[CQ:", "[CQ :", StringComparison.Ordinal);
+    }
+
+    static bool TryParseInternetCommand(string? text, out string url)
+    {
+        url = "";
+        string normalized = text?.Trim() ?? string.Empty;
+        const string prefix = "/qchat internet ";
+        if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        url = normalized[prefix.Length..].Trim();
+        return url.Length > 0;
     }
 
     async Task<bool> TryHandleOwnerMemoryStatusCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
@@ -6857,7 +7072,8 @@ public partial class QChatService(
             message.SenderRole,
             message.PermissionRequest,
             RequiresQChatRelationshipFactCheck(message.Formatted),
-            message.Formatted);
+            message.Formatted,
+            message.IsAwakening);
         currentReplySession.Value = replySession;
         RegisterActiveReplySession(replySession);
         WriteQChatDiagnostic("model-dispatch-start", "Dispatching inbound QQ message to model.", new {
