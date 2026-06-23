@@ -117,6 +117,23 @@ QQ output is intentionally short:
 
 The formatter avoids exposing internal provider names, routing reasons, policy labels, stack traces, or browser strategy details.
 
+## External RAG
+
+External RAG stores owner-approved public pages as reusable public knowledge. It is separate from live web search:
+
+- `/qchat rag add <url>`: owner-only, fetches a public HTTP/HTTPS URL and stores cleaned chunks.
+- `/qchat rag list`: owner-only, lists compact source metadata only.
+- `/qchat rag delete <id|url>`: owner-only, deletes one stored source and its chunks.
+- `/rag <question>`: query stored public knowledge when external RAG querying is enabled.
+
+Token-saving rules:
+
+- Stored content is cleaned before chunking: script/style blocks, HTML tags, common boilerplate, and repeated whitespace are removed.
+- Listing sources never returns chunk text.
+- Query output is capped by `PublicExternalRagMaxChunks`.
+- Add/list/delete management commands do not call the model and do not perform public search.
+- Non-owner `/qchat rag ...` management commands are dropped before the RAG service is called.
+
 ## Live Smoke Checklist
 
 Owner-only diagnostics expose the same checklist through:

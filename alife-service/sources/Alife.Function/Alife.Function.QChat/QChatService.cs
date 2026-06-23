@@ -4498,6 +4498,23 @@ public partial class QChatService(
             return true;
         }
 
+        if (parts.Length == 3 && parts[2].Equals("list", StringComparison.OrdinalIgnoreCase))
+        {
+            if (injectedExternalRagService == null)
+            {
+                await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "external_rag=not_configured");
+                return true;
+            }
+
+            await SendCommandReplyAsync(
+                messageEvent,
+                senderRole,
+                targetType,
+                targetId,
+                FormatExternalRagSources(injectedExternalRagService.ListSources(10)));
+            return true;
+        }
+
         if (parts.Length == 4 && parts[2].Equals("add", StringComparison.OrdinalIgnoreCase))
         {
             if (injectedExternalRagService == null)
@@ -4515,8 +4532,39 @@ public partial class QChatService(
             return true;
         }
 
+        if (parts.Length == 4 && parts[2].Equals("delete", StringComparison.OrdinalIgnoreCase))
+        {
+            if (injectedExternalRagService == null)
+            {
+                await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "external_rag=not_configured");
+                return true;
+            }
+
+            bool deleted = injectedExternalRagService.DeleteSource(parts[3], deletedByOwner: true);
+            await SendCommandReplyAsync(
+                messageEvent,
+                senderRole,
+                targetType,
+                targetId,
+                $"external_rag_source_deleted={deleted.ToString().ToLowerInvariant()}");
+            return true;
+        }
+
         await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildRagMenuText());
         return true;
+    }
+
+    static string FormatExternalRagSources(IReadOnlyList<AgentExternalRagSource> sources)
+    {
+        if (sources.Count == 0)
+            return "external_rag_sources=0";
+
+        StringBuilder builder = new();
+        builder.AppendLine($"external_rag_sources={sources.Count}");
+        foreach (AgentExternalRagSource source in sources.Take(10))
+            builder.AppendLine($"{source.Id} | {source.Title} | {source.Url}");
+
+        return builder.ToString().TrimEnd();
     }
 
     AgentPublicSearchService? ResolvePublicSearchService(QChatConfig config)

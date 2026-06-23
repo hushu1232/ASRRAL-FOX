@@ -44,7 +44,7 @@ public sealed class AgentExternalRagStore
 
         string normalizedUrl = NormalizeRequired(url, nameof(url));
         string normalizedTitle = string.IsNullOrWhiteSpace(title) ? normalizedUrl : title.Trim();
-        string normalizedContent = content?.Trim() ?? "";
+        string normalizedContent = CleanContent(content);
 
         lock (syncRoot)
         {
@@ -71,6 +71,46 @@ public sealed class AgentExternalRagStore
             WriteJsonLines(chunksPath, chunks);
 
             return newSource;
+        }
+    }
+
+    public IReadOnlyList<AgentExternalRagSource> ListSources(int limit)
+    {
+        int take = Math.Clamp(limit, 1, 100);
+        lock (syncRoot)
+        {
+            return ReadJsonLines<AgentExternalRagSource>(sourcesPath)
+                .OrderByDescending(source => source.CreatedAtUtc)
+                .ThenBy(source => source.Title, StringComparer.OrdinalIgnoreCase)
+                .Take(take)
+                .ToArray();
+        }
+    }
+
+    public bool DeleteSource(string urlOrId, bool deletedByOwner)
+    {
+        if (deletedByOwner == false)
+            throw new InvalidOperationException("external_rag_owner_required");
+
+        string normalized = NormalizeRequired(urlOrId, nameof(urlOrId));
+        lock (syncRoot)
+        {
+            List<AgentExternalRagSource> sources = ReadJsonLines<AgentExternalRagSource>(sourcesPath);
+            List<AgentExternalRagChunk> chunks = ReadJsonLines<AgentExternalRagChunk>(chunksPath);
+            HashSet<string> removedSourceIds = sources
+                .Where(source =>
+                    string.Equals(source.Id, normalized, StringComparison.Ordinal) ||
+                    string.Equals(source.Url, normalized, StringComparison.OrdinalIgnoreCase))
+                .Select(source => source.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            if (removedSourceIds.Count == 0)
+                return false;
+
+            sources.RemoveAll(source => removedSourceIds.Contains(source.Id));
+            chunks.RemoveAll(chunk => removedSourceIds.Contains(chunk.SourceId));
+            WriteJsonLines(sourcesPath, sources);
+            WriteJsonLines(chunksPath, chunks);
+            return true;
         }
     }
 
@@ -153,6 +193,21 @@ public sealed class AgentExternalRagStore
                     index++);
             }
         }
+    }
+
+    static string CleanContent(string? content)
+    {
+        string text = content ?? "";
+        text = Regex.Replace(text, @"<script\b[^>]*>.*?</script>", " ", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        text = Regex.Replace(text, @"<style\b[^>]*>.*?</style>", " ", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        text = Regex.Replace(text, @"<[^>]+>", " ");
+        text = Regex.Replace(
+            text,
+            @"\b(cookie banner|subscribe now|navigation|footer|advertisement|privacy policy)\b",
+            " ",
+            RegexOptions.IgnoreCase);
+        text = Regex.Replace(text, @"\s+", " ").Trim();
+        return text;
     }
 
     static IEnumerable<string> SplitParagraphs(string content) => content

@@ -113,17 +113,34 @@ Verification evidence:
 
 ## Priority 4: External RAG Closure
 
-Status: pending.
+Status: completed on 2026-06-23.
 
 Goal: turn approved public research results into reusable external knowledge.
 
 Tasks:
 
-- Add owner-approved source ingestion.
-- Clean and chunk public page text.
-- Deduplicate stored sources.
-- Query stored public knowledge from QQ.
-- Keep add/delete/refresh/configuration owner-only.
+- Add owner-approved source ingestion. Done: `/qchat rag add <url>` remains owner-only and fetches public HTTP/HTTPS pages before storing them.
+- Clean and chunk public page text. Done: HTML tags, script/style blocks, common boilerplate, and repeated whitespace are stripped before chunking.
+- Deduplicate stored sources. Done: adding the same URL replaces the old source and removes stale chunks.
+- Query stored public knowledge from QQ. Done: `/rag <question>` and semantic external RAG query paths return stored public knowledge without network or model dispatch.
+- Keep add/delete/refresh/configuration owner-only. Done: `/qchat rag list` and `/qchat rag delete <id|url>` are owner-only; non-owner `/qchat` commands are dropped before reaching the RAG service.
+
+Token saving effect:
+
+- Source ingestion cleans noisy page text before chunking, so scripts, style blocks, cookie banners, navigation text, and repeated whitespace do not become reusable prompt context.
+- Stored source listing returns only compact metadata: count, id, title, and URL. It never returns chunk text.
+- RAG queries use `PublicExternalRagMaxChunks`, so QQ retrieval has a hard chunk cap.
+- Add/delete/list management commands bypass the model and do not perform public search.
+- Non-owner `/qchat rag ...` commands are dropped before service dispatch, menu rendering, and model execution.
+
+Verification evidence:
+
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AddSource_CleansBoilerplateAndCompactsChunksToSaveTokens|FullyQualifiedName~ListSources_ReturnsCompactMetadataWithoutChunkText|FullyQualifiedName~DeleteSource_RemovesSourceAndChunksByUrl|FullyQualifiedName~DeleteSource_RejectsNonOwnerWrites"` passed: 4 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~ListSources_ReturnsStoredSourcesWithoutFetching|FullyQualifiedName~DeleteSource_WhenOwner_RemovesStoredSourceAndAuditsSuccess|FullyQualifiedName~DeleteSource_WhenNonOwner_DoesNotDeleteOrFetch"` passed: 3 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~OwnerCanListExternalRagSources|FullyQualifiedName~OwnerCanDeleteExternalRagSource|FullyQualifiedName~GroupMemberCannotDeleteExternalRagSourceViaQChat"` passed: 3 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AgentExternalRagServiceTests|FullyQualifiedName~AgentWebAccessServiceTests|FullyQualifiedName~AgentWebAccessRouterTests"` passed: 43 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~Rag|FullyQualifiedName~ExternalRag|FullyQualifiedName~QChatPublicInternetCommandPolicyTests|FullyQualifiedName~QChatInternetCapabilityPolicyTests|FullyQualifiedName~QChatDiagnosticsServiceTests"` passed: 76 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 
 ## Priority 5: Rate Limit, Cache, And Cost Control
 

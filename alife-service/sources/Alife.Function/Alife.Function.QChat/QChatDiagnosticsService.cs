@@ -247,6 +247,8 @@ public static class QChatDiagnosticsService
         return string.Join(Environment.NewLine,
             "外部 RAG 管理：",
             "/qchat rag add <url> - 添加公开 HTTP/HTTPS 页面到外部 RAG 来源",
+            "/qchat rag list - 列出已保存来源，不展开正文",
+            "/qchat rag delete <id|url> - 删除一个外部 RAG 来源",
             "/qchat rag status - 查看外部 RAG 管理入口和使用说明",
             "",
             "说明：",

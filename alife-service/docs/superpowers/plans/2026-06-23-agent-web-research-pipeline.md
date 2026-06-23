@@ -282,6 +282,51 @@ Verification on 2026-06-23:
 - QChat focused tests passed: 71 passed, 0 failed.
 - `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 
+### Task 8: External RAG Closure
+
+**Files:**
+- Modify: `sources/Alife.Function/Alife.Function.MessageFilter/AgentExternalRagStore.cs`
+- Modify: `sources/Alife.Function/Alife.Function.MessageFilter/AgentExternalRagService.cs`
+- Modify: `sources/Alife.Function/Alife.Function.QChat/QChatService.cs`
+- Modify: `sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs`
+- Modify: `Tests/Alife.Test.Framework/AgentExternalRagServiceTests.cs`
+- Modify: `Tests/Alife.Test.QChat/QChatServiceAdapterTests.cs`
+- Modify: `docs/agent-browser-web-research.md`
+- Modify: `docs/browser-global-task-plan.md`
+
+- [x] **Step 1: Add failing tests**
+
+Add tests proving:
+
+- public RAG content is cleaned and compacted before chunking,
+- source list returns metadata without chunk text,
+- delete removes source and chunks,
+- service list/delete do not fetch public pages,
+- owner can list/delete through QQ,
+- group members cannot trigger `/qchat rag delete`.
+
+- [x] **Step 2: Implement store/service closure**
+
+`AgentExternalRagStore` now supports `ListSources` and owner-only `DeleteSource`. Stored content is cleaned before chunking. `AgentExternalRagService` exposes list/delete and audits delete operations.
+
+- [x] **Step 3: Implement QChat management closure**
+
+Owner-only `/qchat rag list` and `/qchat rag delete <id|url>` now run deterministically without model dispatch. The RAG menu documents add/list/delete/status.
+
+- [x] **Step 4: Keep token cost bounded**
+
+Source cleanup removes noisy page text before storage. List replies return only metadata. Query replies stay chunk-capped. Non-owner `/qchat rag ...` commands are dropped before service dispatch.
+
+- [x] **Step 5: Verify and upload**
+
+Run focused Framework/QChat RAG tests and `dotnet build --no-restore`, then upload through the `D:\FOXD` workflow.
+
+Verification on 2026-06-23:
+
+- Framework focused tests passed: 43 passed, 0 failed.
+- QChat focused tests passed: 76 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
+
 ### Self-Review
 
 - Spec coverage: covers keyword trigger, public search, page read, evidence summary, QQ formatting, permissions, and docs.

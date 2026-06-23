@@ -217,6 +217,86 @@ public sealed class AgentExternalRagServiceTests
     }
 
     [Test]
+    public void ListSources_ReturnsStoredSourcesWithoutFetching()
+    {
+        string root = CreateStorageRoot();
+        AgentExternalRagStore store = new(root);
+        FakeAgentInternetService internet = new(new AgentInternetFetchResult(true, "ok", "unused"));
+        AgentExternalRagService service = new(store, internet);
+        store.AddOrReplaceSource(
+            "https://example.com/list",
+            "List Source",
+            "Listable source text.",
+            addedByOwner: true);
+
+        IReadOnlyList<AgentExternalRagSource> sources = service.ListSources(limit: 3);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(sources, Has.Count.EqualTo(1));
+            Assert.That(sources[0].Title, Is.EqualTo("List Source"));
+            Assert.That(internet.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public void DeleteSource_WhenOwner_RemovesStoredSourceAndAuditsSuccess()
+    {
+        string root = CreateStorageRoot();
+        AgentExternalRagStore store = new(root);
+        FakeAgentInternetService internet = new(new AgentInternetFetchResult(true, "ok", "unused"));
+        AgentAuditLogService audit = new(Path.Combine(root, "agent-audit.jsonl"));
+        AgentExternalRagService service = new(store, internet, audit);
+        store.AddOrReplaceSource(
+            "https://example.com/delete-service",
+            "Delete Service",
+            "Delete service plum text.",
+            addedByOwner: true);
+
+        bool deleted = service.DeleteSource("https://example.com/delete-service", deletedByOwner: true);
+        IReadOnlyList<AgentAuditLogEntry> auditEntries = audit.GetRecentEntries(1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(deleted, Is.True);
+            Assert.That(store.Query("plum", maxChunks: 3), Is.Empty);
+            Assert.That(auditEntries, Has.Count.EqualTo(1));
+            Assert.That(auditEntries[0].Action, Is.EqualTo("agent.external_rag.delete"));
+            Assert.That(auditEntries[0].Actor, Is.EqualTo("owner"));
+            Assert.That(auditEntries[0].Succeeded, Is.True);
+        });
+    }
+
+    [Test]
+    public void DeleteSource_WhenNonOwner_DoesNotDeleteOrFetch()
+    {
+        string root = CreateStorageRoot();
+        AgentExternalRagStore store = new(root);
+        FakeAgentInternetService internet = new(new AgentInternetFetchResult(true, "ok", "unused"));
+        AgentAuditLogService audit = new(Path.Combine(root, "agent-audit.jsonl"));
+        AgentExternalRagService service = new(store, internet, audit);
+        store.AddOrReplaceSource(
+            "https://example.com/keep",
+            "Keep",
+            "Keep apricot text.",
+            addedByOwner: true);
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            service.DeleteSource("https://example.com/keep", deletedByOwner: false))!;
+        IReadOnlyList<AgentAuditLogEntry> auditEntries = audit.GetRecentEntries(1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(ex.Message, Is.EqualTo("external_rag_owner_required"));
+            Assert.That(internet.Calls, Is.Zero);
+            Assert.That(store.Query("apricot", maxChunks: 3), Has.Count.EqualTo(1));
+            Assert.That(auditEntries[0].Action, Is.EqualTo("agent.external_rag.delete"));
+            Assert.That(auditEntries[0].Actor, Is.EqualTo("non_owner"));
+            Assert.That(auditEntries[0].Succeeded, Is.False);
+        });
+    }
+
+    [Test]
     public void Query_WhenNoMatch_ReturnsNoMatchWithoutFetching()
     {
         AgentExternalRagStore store = new(CreateStorageRoot());
@@ -341,6 +421,100 @@ public sealed class AgentExternalRagServiceTests
             Assert.That(betaChunks, Has.Count.EqualTo(1));
             Assert.That(betaChunks[0].Text, Does.Contain("Beta searchable content."));
         });
+    }
+
+    [Test]
+    public void AddSource_CleansBoilerplateAndCompactsChunksToSaveTokens()
+    {
+        AgentExternalRagStore store = new(CreateStorageRoot());
+        string noisyContent = """
+            <html>
+            <head><script>alert('tracking')</script><style>body{color:red}</style></head>
+            <body>
+            Durable dragonfruit policy.
+
+
+            Cookie banner Subscribe now Navigation Footer
+            Second useful paragraph with durable facts.
+            </body>
+            </html>
+            """;
+
+        store.AddOrReplaceSource(
+            "https://example.com/noisy",
+            "Noisy Page",
+            noisyContent,
+            addedByOwner: true);
+
+        IReadOnlyList<AgentExternalRagChunk> chunks = store.Query("dragonfruit durable", maxChunks: 3);
+        string formatted = AgentExternalRagStore.FormatQueryContext(chunks);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(chunks, Has.Count.EqualTo(1));
+            Assert.That(chunks[0].Text, Does.Contain("Durable dragonfruit policy."));
+            Assert.That(chunks[0].Text, Does.Contain("Second useful paragraph"));
+            Assert.That(chunks[0].Text, Does.Not.Contain("<script"));
+            Assert.That(chunks[0].Text, Does.Not.Contain("Cookie banner"));
+            Assert.That(chunks[0].Text.Length, Is.LessThan(260));
+            Assert.That(formatted.Length, Is.LessThan(420));
+        });
+    }
+
+    [Test]
+    public void ListSources_ReturnsCompactMetadataWithoutChunkText()
+    {
+        AgentExternalRagStore store = new(CreateStorageRoot());
+        store.AddOrReplaceSource(
+            "https://example.com/a",
+            "A Source",
+            "Alpha token-saving source text.",
+            addedByOwner: true);
+        store.AddOrReplaceSource(
+            "https://example.com/b",
+            "B Source",
+            "Beta token-saving source text.",
+            addedByOwner: true);
+
+        IReadOnlyList<AgentExternalRagSource> sources = store.ListSources(limit: 10);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(sources.Select(source => source.Title), Is.EqualTo(new[] { "B Source", "A Source" }));
+            Assert.That(sources[0].Url, Is.EqualTo("https://example.com/b"));
+        });
+    }
+
+    [Test]
+    public void DeleteSource_RemovesSourceAndChunksByUrl()
+    {
+        AgentExternalRagStore store = new(CreateStorageRoot());
+        store.AddOrReplaceSource(
+            "https://example.com/delete-me",
+            "Delete Me",
+            "Removable guava source text.",
+            addedByOwner: true);
+
+        bool deleted = store.DeleteSource("https://example.com/delete-me", deletedByOwner: true);
+        IReadOnlyList<AgentExternalRagChunk> chunks = store.Query("guava", maxChunks: 3);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(deleted, Is.True);
+            Assert.That(chunks, Is.Empty);
+            Assert.That(store.ListSources(10), Is.Empty);
+        });
+    }
+
+    [Test]
+    public void DeleteSource_RejectsNonOwnerWrites()
+    {
+        AgentExternalRagStore store = new(CreateStorageRoot());
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() =>
+            store.DeleteSource("https://example.com/nope", deletedByOwner: false))!;
+
+        Assert.That(ex.Message, Is.EqualTo("external_rag_owner_required"));
     }
 
     [Test]

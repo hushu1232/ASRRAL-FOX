@@ -105,4 +105,37 @@ public class AgentExternalRagService(
             chunks,
             AgentExternalRagStore.FormatQueryContext(chunks));
     }
+
+    public virtual IReadOnlyList<AgentExternalRagSource> ListSources(int limit)
+    {
+        return store.ListSources(limit);
+    }
+
+    public virtual bool DeleteSource(string urlOrId, bool deletedByOwner)
+    {
+        string actor = deletedByOwner ? "owner" : "non_owner";
+        try
+        {
+            bool deleted = store.DeleteSource(urlOrId, deletedByOwner);
+            auditLog?.Record(
+                "agent.external_rag.delete",
+                actor,
+                urlOrId,
+                AgentAuditRiskLevel.Medium,
+                succeeded: deleted,
+                error: deleted ? null : "external_rag_source_not_found");
+            return deleted;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            auditLog?.Record(
+                "agent.external_rag.delete",
+                actor,
+                urlOrId,
+                AgentAuditRiskLevel.Medium,
+                succeeded: false,
+                error: ex.Message);
+            throw;
+        }
+    }
 }

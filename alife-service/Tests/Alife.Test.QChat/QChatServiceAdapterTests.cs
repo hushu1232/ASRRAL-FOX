@@ -1422,6 +1422,91 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerCanListExternalRagSources()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeExternalRagService externalRag = new("unused");
+        externalRag.Sources.Add(new AgentExternalRagSource(
+            "source-a",
+            "https://example.com/a",
+            "A Compact Source",
+            DateTimeOffset.UtcNow));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        }, externalRagService: externalRag);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat rag list"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(externalRag.ListCalls, Is.EqualTo(1));
+            Assert.That(reply, Does.Contain("external_rag_sources=1"));
+            Assert.That(reply, Does.Contain("source-a"));
+            Assert.That(reply, Does.Contain("A Compact Source"));
+            Assert.That(reply, Does.Contain("https://example.com/a"));
+            Assert.That(reply, Does.Not.Contain("UNTRUSTED EXTERNAL CONTEXT"));
+            Assert.That(externalRag.Calls, Is.Zero);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task OwnerCanDeleteExternalRagSource()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeExternalRagService externalRag = new("unused");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        }, externalRagService: externalRag);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat rag delete https://example.com/a"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(externalRag.DeleteCalls, Is.EqualTo(1));
+            Assert.That(externalRag.LastDeletedSource, Is.EqualTo("https://example.com/a"));
+            Assert.That(externalRag.LastDeletedByOwner, Is.True);
+            Assert.That(reply, Does.Contain("external_rag_source_deleted=true"));
+            Assert.That(externalRag.Calls, Is.Zero);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task GroupMemberCannotAddExternalRagSourceViaQChat()
     {
         await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
@@ -1455,6 +1540,51 @@ public class QChatServiceAdapterTests
 
             Assert.Multiple(() =>
             {
+                Assert.That(externalRag.AddCalls, Is.Zero);
+                Assert.That(externalRag.Calls, Is.Zero);
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+                Assert.That(runtime.GroupMessages, Is.Empty);
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-command-dropped\""));
+            });
+        });
+    }
+
+    [Test]
+    public async Task GroupMemberCannotDeleteExternalRagSourceViaQChat()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new();
+            FakeExternalRagService externalRag = new("unused");
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowedGroupIds = "3003",
+                EnableBalancedTextStreaming = false
+            }, externalRagService: externalRag);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                GroupId = 3003,
+                UserId = 2002,
+                SelfId = 999,
+                RawMessage = "/qchat rag delete https://example.com/guide"
+            });
+
+            string diagnostics = await WaitForQChatCommandDroppedDiagnosticAsync(storageRoot);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(externalRag.DeleteCalls, Is.Zero);
                 Assert.That(externalRag.AddCalls, Is.Zero);
                 Assert.That(externalRag.Calls, Is.Zero);
                 Assert.That(dispatchCount, Is.Zero);
@@ -12683,13 +12813,18 @@ public class QChatServiceAdapterTests
         new AgentExternalRagStore(Path.Combine(Path.GetTempPath(), "alife-qchat-test-rag-" + Guid.NewGuid().ToString("N"))),
         new FakeInternetService("unused"))
     {
+        public List<AgentExternalRagSource> Sources { get; } = [];
         public int Calls { get; private set; }
         public int AddCalls { get; private set; }
+        public int ListCalls { get; private set; }
+        public int DeleteCalls { get; private set; }
         public string? LastQuery { get; private set; }
         public int LastMaxChunks { get; private set; }
         public string? LastAddedUrl { get; private set; }
         public string? LastAddedTitle { get; private set; }
         public bool LastAddedByOwner { get; private set; }
+        public string? LastDeletedSource { get; private set; }
+        public bool LastDeletedByOwner { get; private set; }
 
         public override AgentExternalRagQueryResponse Query(string query, int maxChunks)
         {
@@ -12718,6 +12853,20 @@ public class QChatServiceAdapterTests
                 url,
                 title,
                 DateTimeOffset.UtcNow));
+        }
+
+        public override IReadOnlyList<AgentExternalRagSource> ListSources(int limit)
+        {
+            ListCalls++;
+            return Sources.Take(limit).ToArray();
+        }
+
+        public override bool DeleteSource(string urlOrId, bool deletedByOwner)
+        {
+            DeleteCalls++;
+            LastDeletedSource = urlOrId;
+            LastDeletedByOwner = deletedByOwner;
+            return true;
         }
     }
 
