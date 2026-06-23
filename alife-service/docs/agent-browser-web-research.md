@@ -61,6 +61,36 @@ Unsafe or unreadable search results are skipped. If no usable evidence remains, 
 
 When owner-only page auto-read fails for an otherwise safe public result, the service falls back to the search title and snippet instead of discarding the result. This keeps answers useful when a site returns 403, rejects simple fetch, or is temporarily unavailable. The failed read is also recorded in `AgentBrowserSiteExperienceStore`, so later browser strategy and diagnostics can see hosts that hit login walls, anti-bot pages, or repeated fetch failures.
 
+## Browser Snapshot Productization
+
+Owner-only browser snapshots are still read-only. The productized snapshot path does not click, log in, download, submit forms, or perform browser interaction.
+
+Snapshot extraction now gathers:
+
+- page URL,
+- page title,
+- compact body text,
+- public links with text and href,
+- snapshot diagnostics.
+
+The browser provider first runs one read-only DOM extraction script for `document.title`, `document.body.innerText`, and `a[href]` links. If structured body text is unavailable, it falls back to the existing `ObserveAsync(page)` path.
+
+Snapshot diagnostics include:
+
+- `snapshot_risk=none | login_wall | anti_bot | login_wall,anti_bot`
+- `text_truncated=true original_chars=<n> emitted_chars=<n>` when large text is capped
+- `links_total=<n> emitted=<n>` when link evidence is available
+
+Login-wall and anti-bot detection is deterministic. Common sign-in/account-required text returns `login_required`; captcha, Cloudflare, "checking your browser", or human-verification pages return `anti_bot_challenge`. These pages are not treated as reliable research evidence.
+
+Token-saving rules:
+
+- One structured extraction replaces repeated element inspection.
+- Large body text is capped before formatting.
+- Links are capped by the snapshot element limit.
+- The formatter records counts and truncation metadata instead of dumping full pages.
+- No LLM summarizer is used for browser snapshots.
+
 ## Site Experience Strategy
 
 `AgentBrowserSiteExperienceStore` is part of the research strategy, not only diagnostics.

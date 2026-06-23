@@ -26,7 +26,15 @@ public sealed record AgentBrowserSnapshot(
     string Url,
     string Title,
     string Text,
-    IReadOnlyList<AgentBrowserElement> Elements);
+    IReadOnlyList<AgentBrowserElement> Elements,
+    AgentBrowserSnapshotDiagnostics? Diagnostics = null);
+
+public sealed record AgentBrowserSnapshotDiagnostics(
+    bool LoginWallDetected,
+    bool AntiBotDetected,
+    bool TextTruncated,
+    int OriginalTextChars,
+    int LinkCount);
 
 public interface IAgentBrowserProvider
 {
@@ -50,12 +58,21 @@ public static class AgentBrowserSnapshotFormatter
         int textLimit = Math.Clamp(maxTextChars, 0, 50000);
         int elementLimit = Math.Clamp(maxElements, 0, 500);
         string text = snapshot.Text ?? "";
+        int originalTextChars = snapshot.Diagnostics?.OriginalTextChars ?? text.Length;
         if (text.Length > textLimit)
             text = text[..textLimit];
+        bool textTruncated = snapshot.Diagnostics?.TextTruncated == true
+                             || originalTextChars > text.Length;
 
         StringBuilder builder = new();
         builder.AppendLine($"url={snapshot.Url}");
         builder.AppendLine($"title={snapshot.Title}");
+        builder.AppendLine($"snapshot_risk={FormatRisk(snapshot.Diagnostics)}");
+        if (textTruncated)
+            builder.AppendLine($"text_truncated=true original_chars={originalTextChars} emitted_chars={text.Length}");
+        int totalLinks = snapshot.Diagnostics?.LinkCount ?? (snapshot.Elements ?? []).Count(element => string.Equals(element.Type, "link", StringComparison.OrdinalIgnoreCase));
+        if (totalLinks > 0)
+            builder.AppendLine($"links_total={totalLinks} emitted={Math.Min(totalLinks, elementLimit)}");
         if (text.Length > 0)
             builder.AppendLine(text);
 
@@ -67,6 +84,19 @@ public static class AgentBrowserSnapshotFormatter
         return ExternalContextFormatter.WrapUntrusted(
             "browser-snapshot",
             builder.ToString().TrimEnd());
+    }
+
+    static string FormatRisk(AgentBrowserSnapshotDiagnostics? diagnostics)
+    {
+        if (diagnostics == null)
+            return "unknown";
+
+        List<string> risks = [];
+        if (diagnostics.LoginWallDetected)
+            risks.Add("login_wall");
+        if (diagnostics.AntiBotDetected)
+            risks.Add("anti_bot");
+        return risks.Count == 0 ? "none" : string.Join(",", risks);
     }
 
     static string FormatElement(AgentBrowserElement element)

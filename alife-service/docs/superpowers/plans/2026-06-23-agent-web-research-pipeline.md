@@ -384,6 +384,50 @@ Verification on 2026-06-23:
 - QChat focused tests passed: 81 passed, 0 failed.
 - `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 
+### Task 10: Browser Snapshot Productization
+
+**Files:**
+- Modify: `sources/Alife.Function/Alife.Function.MessageFilter/AgentBrowserProviderModels.cs`
+- Modify: `sources/Alife.Function/Alife.Function.Browser/AgentBrowserRuntimeProvider.cs`
+- Modify: `Tests/Alife.Test.Framework/AgentBrowserProviderModelsTests.cs`
+- Modify: `Tests/Alife.Test.Browser/BrowserServiceAdapterTests.cs`
+- Modify: `docs/agent-browser-web-research.md`
+- Modify: `docs/browser-global-task-plan.md`
+
+- [x] **Step 1: Add failing tests**
+
+Add tests proving:
+
+- browser snapshot formatting emits truncation/link/risk diagnostics inside untrusted context,
+- structured DOM extraction returns title, body text, and links,
+- login-wall pages return `login_required`,
+- anti-bot pages return `anti_bot_challenge`.
+
+- [x] **Step 2: Implement structured read-only extraction**
+
+`AgentBrowserRuntimeProvider` now runs one read-only DOM extraction script for `document.title`, `document.body.innerText`, and `a[href]` links. If structured body text is unavailable, it falls back to `ObserveAsync(page)`.
+
+- [x] **Step 3: Add snapshot diagnostics**
+
+`AgentBrowserSnapshotDiagnostics` records login-wall detection, anti-bot detection, truncation, original text length, and total link count. The formatter emits these as compact metadata.
+
+- [x] **Step 4: Keep token cost bounded**
+
+Large text is capped before formatting, links are capped by `maxElements`, and diagnostics preserve counts without dumping full pages. No LLM summarizer is used.
+
+- [x] **Step 5: Preserve hard browser boundary**
+
+The productized snapshot path remains read-only. It does not add clicking, login, download, form submission, or interactive browser control.
+
+Verification on 2026-06-23:
+
+- Framework browser provider model tests passed: 5 passed, 0 failed.
+- Browser runtime provider tests passed: 5 passed, 0 failed.
+- Framework focused browser/web tests passed: 56 passed, 0 failed.
+- Browser adapter tests passed: 10 passed, 0 failed.
+- QChat focused browser/diagnostics/policy tests passed: 74 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
+
 ### Self-Review
 
 - Spec coverage: covers keyword trigger, public search, page read, evidence summary, QQ formatting, permissions, and docs.

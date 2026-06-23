@@ -181,17 +181,34 @@ Verification evidence:
 
 ## Priority 6: Browser Snapshot Productization
 
-Status: pending.
+Status: completed on 2026-06-23.
 
 Goal: make owner-only read-only browser snapshots more reliable.
 
 Tasks:
 
-- Improve title/body/link extraction.
-- Detect login walls and anti-bot pages.
-- Summarize large pages safely.
-- Keep snapshots as untrusted external context.
-- Do not add click/login/download/form/JS interaction without a separate owner-approved high-risk design.
+- Improve title/body/link extraction. Done: `AgentBrowserRuntimeProvider` now runs one read-only DOM extraction script for `document.title`, compact `document.body.innerText`, and public links, with `ObserveAsync` retained as fallback.
+- Detect login walls and anti-bot pages. Done: snapshot analysis detects common sign-in/account-required and captcha/Cloudflare/human-verification signals; detected pages return `login_required` or `anti_bot_challenge`.
+- Summarize large pages safely. Done: formatter records truncation metadata and emits capped text plus capped link evidence instead of dumping full page text.
+- Keep snapshots as untrusted external context. Done: successful snapshots remain wrapped in `[UNTRUSTED EXTERNAL CONTEXT: browser-snapshot]` and include risk metadata inside that wrapper.
+- Do not add click/login/download/form/JS interaction without a separate owner-approved high-risk design. Done: the productized snapshot path remains read-only; it navigates, reads DOM text/links, and observes fallback text only.
+
+Token saving effect:
+
+- One structured DOM extraction gathers title/body/links in a single browser script call, instead of requiring separate element inspection loops.
+- Large page text is capped and marked with `text_truncated=true`, preventing full-page dumps into QQ/model context.
+- Link output is capped by `maxElements`, and `links_total` preserves count without emitting every link.
+- Login-wall and anti-bot pages are rejected with short reasons before they become reusable research evidence.
+- No LLM summarizer is used; the safe summary is deterministic cleanup, truncation, and metadata.
+
+Verification evidence:
+
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AgentBrowserProviderModelsTests"` passed: 5 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.Browser\Alife.Test.Browser.csproj --no-restore --filter "FullyQualifiedName~AgentBrowserRuntimeProvider|FullyQualifiedName~BrowserService_CanProvideAgentBrowserSnapshot"` passed: 5 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AgentBrowserProviderModelsTests|FullyQualifiedName~AgentBrowserSiteExperienceStoreTests|FullyQualifiedName~AgentWebAccessServiceTests|FullyQualifiedName~AgentWebAccessRouterTests|FullyQualifiedName~AgentWebResearchServiceTests"` passed: 56 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.Browser\Alife.Test.Browser.csproj --no-restore --filter "FullyQualifiedName~BrowserServiceAdapterTests"` passed: 10 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~SemanticBrowser|FullyQualifiedName~BrowserSnapshot|FullyQualifiedName~QChatDiagnosticsServiceTests|FullyQualifiedName~QChatInternetCapabilityPolicyTests|FullyQualifiedName~QChatPublicInternetCommandPolicyTests"` passed: 74 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 
 ## Priority 7: Engineering Cleanup And Upload Hygiene
 

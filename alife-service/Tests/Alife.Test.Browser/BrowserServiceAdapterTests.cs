@@ -130,6 +130,77 @@ public class BrowserServiceAdapterTests
     }
 
     [Fact]
+    public async Task AgentBrowserRuntimeProvider_ExtractsStructuredTitleBodyAndLinks()
+    {
+        FakeBrowserRuntime runtime = new()
+        {
+            ScriptResult = """
+                           {
+                             "title": "Structured Title",
+                             "bodyText": "Primary article body from DOM.",
+                             "links": [
+                               { "id": "link-1", "type": "link", "text": "Docs", "href": "https://example.com/docs" },
+                               { "id": "link-2", "type": "link", "text": "Repo", "href": "https://github.com/example/repo" }
+                             ]
+                           }
+                           """,
+            ObserveResult = "fallback observe text"
+        };
+        AgentBrowserRuntimeProvider provider = new(runtime);
+
+        AgentBrowserSnapshot snapshot = await provider.CaptureSnapshotAsync(new AgentBrowserSnapshotRequest(
+            Url: "https://example.com/structured",
+            MaxTextChars: 100,
+            MaxElements: 10));
+
+        Assert.True(snapshot.Success);
+        Assert.Equal("Structured Title", snapshot.Title);
+        Assert.Equal("Primary article body from DOM.", snapshot.Text);
+        Assert.Equal(2, snapshot.Elements.Count);
+        Assert.Equal("Docs", snapshot.Elements[0].Text);
+        Assert.Equal("https://example.com/docs", snapshot.Elements[0].Href);
+        Assert.Equal(2, snapshot.Diagnostics?.LinkCount);
+        Assert.Contains("querySelectorAll", runtime.ExecutedScripts.Single());
+    }
+
+    [Fact]
+    public async Task AgentBrowserRuntimeProvider_DetectsLoginWallAndAntiBotPages()
+    {
+        FakeBrowserRuntime loginRuntime = new()
+        {
+            ScriptResult = """
+                           {
+                             "title": "Sign in required",
+                             "bodyText": "Please sign in to continue.",
+                             "links": []
+                           }
+                           """
+        };
+        FakeBrowserRuntime antiBotRuntime = new()
+        {
+            ScriptResult = """
+                           {
+                             "title": "Just a moment...",
+                             "bodyText": "Checking your browser before accessing this site. Cloudflare captcha required.",
+                             "links": []
+                           }
+                           """
+        };
+
+        AgentBrowserSnapshot loginSnapshot = await new AgentBrowserRuntimeProvider(loginRuntime)
+            .CaptureSnapshotAsync(new AgentBrowserSnapshotRequest("https://example.com/private"));
+        AgentBrowserSnapshot antiBotSnapshot = await new AgentBrowserRuntimeProvider(antiBotRuntime)
+            .CaptureSnapshotAsync(new AgentBrowserSnapshotRequest("https://example.com/challenge"));
+
+        Assert.False(loginSnapshot.Success);
+        Assert.Equal("login_required", loginSnapshot.Reason);
+        Assert.True(loginSnapshot.Diagnostics?.LoginWallDetected);
+        Assert.False(antiBotSnapshot.Success);
+        Assert.Equal("anti_bot_challenge", antiBotSnapshot.Reason);
+        Assert.True(antiBotSnapshot.Diagnostics?.AntiBotDetected);
+    }
+
+    [Fact]
     public async Task BrowserService_CanProvideAgentBrowserSnapshot()
     {
         FakeBrowserRuntime runtime = new()
