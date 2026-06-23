@@ -51,4 +51,51 @@ public sealed class QChatBrowserAgentFormatterTests
 
         Assert.That(text, Is.EqualTo("That browser target is not a safe public URL."));
     }
+
+    [Test]
+    public void FormatMediaOutputs_ImageResult_ReturnsQqImageSegment()
+    {
+        AgentBrowserMediaOutputResult[] outputs =
+        [
+            new(
+                true,
+                "ok",
+                AgentBrowserMediaOutputKind.Image,
+                "https://example.com/cat.png",
+                @"D:\Alife\Runtime\BrowserAgentMedia\cat.png",
+                @"D:\Alife\Runtime\BrowserAgentMedia\cat.png")
+        ];
+
+        IReadOnlyList<string> messages = QChatBrowserAgentFormatter.FormatMediaOutputs(outputs);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(messages, Has.Count.EqualTo(1));
+            Assert.That(messages[0], Is.EqualTo("[CQ:image,file=D:/Alife/Runtime/BrowserAgentMedia/cat.png]"));
+        });
+    }
+
+    [Test]
+    public void FormatMediaOutputs_VideoResult_ReturnsTextLinkOnly()
+    {
+        AgentBrowserMediaOutputResult[] outputs =
+        [
+            new(
+                true,
+                "ok",
+                AgentBrowserMediaOutputKind.VideoLink,
+                "https://example.com/demo.mp4",
+                "https://example.com/demo.mp4",
+                null)
+        ];
+
+        IReadOnlyList<string> messages = QChatBrowserAgentFormatter.FormatMediaOutputs(outputs);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(messages, Has.Count.EqualTo(1));
+            Assert.That(messages[0], Is.EqualTo("Video: https://example.com/demo.mp4"));
+            Assert.That(messages[0], Does.Not.Contain("[CQ:"));
+        });
+    }
 }

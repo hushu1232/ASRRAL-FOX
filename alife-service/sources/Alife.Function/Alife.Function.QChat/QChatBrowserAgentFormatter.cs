@@ -27,6 +27,30 @@ public static class QChatBrowserAgentFormatter
         return Limit(string.Join(Environment.NewLine, lines), 760);
     }
 
+    public static IReadOnlyList<string> FormatMediaOutputs(IEnumerable<AgentBrowserMediaOutputResult> outputs)
+    {
+        ArgumentNullException.ThrowIfNull(outputs);
+
+        List<string> messages = [];
+        foreach (AgentBrowserMediaOutputResult output in outputs)
+        {
+            if (output.Success == false)
+                continue;
+
+            switch (output.Kind)
+            {
+                case AgentBrowserMediaOutputKind.Image when string.IsNullOrWhiteSpace(output.LocalPath) == false:
+                    messages.Add($"[CQ:image,file={output.LocalPath.Replace('\\', '/')}]");
+                    break;
+                case AgentBrowserMediaOutputKind.VideoLink when string.IsNullOrWhiteSpace(output.ReturnText) == false:
+                    messages.Add("Video: " + output.ReturnText.Trim());
+                    break;
+            }
+        }
+
+        return messages;
+    }
+
     static string FormatFailure(string reason) => reason switch
     {
         "browser_agent_owner_required" => "Browser automation is owner-only.",

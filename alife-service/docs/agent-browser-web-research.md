@@ -252,10 +252,12 @@ Blocked Phase 1 actions:
 - private-network, localhost, loopback, `file:`, `data:`, or `javascript:` targets;
 - browser automation for non-owner private users or group messages.
 
-Media rule:
+Media return rule:
 
-- Images may be fetched only from validated public URLs and stored under controlled D-drive cache roots before later QQ image return.
+- Images may be fetched only from validated public URLs and stored under controlled D-drive cache roots before QQ image return.
+- QChat sends validated images as `[CQ:image,file=...]` messages after the text browser summary.
 - Videos are never downloaded by the bot. A validated public video target is returned as a text link only.
+- QChat never uses QQ file upload or video upload for browser-agent video results.
 
 Diagnostics:
 
@@ -263,4 +265,4 @@ Diagnostics:
 /qchat web browser-agent
 ```
 
-Expected machine-readable markers include `browser-agent=phase1`, `owner-only`, `no-login`, `image-ok`, and `video-link-only`.
+Expected machine-readable markers include `browser-agent=phase1`, `owner-only`, `no-login`, `image-return=connected`, `image-ok`, `video-return=link-only`, and `video-link-only`.

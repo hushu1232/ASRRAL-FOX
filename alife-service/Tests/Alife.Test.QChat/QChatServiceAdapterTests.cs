@@ -12,6 +12,7 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using NUnit.Framework;
 using System.IO;
+using System.Net;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -2268,6 +2269,95 @@ public class QChatServiceAdapterTests
             Assert.That(dispatchCount, Is.Zero);
             Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("Conclusion:"));
             Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("https://example.com/docs"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerPrivateBrowserAgentImageUrlReturnsQqImageAfterTextReply()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeBrowserProvider browser = new(new AgentBrowserSnapshot(
+            true,
+            "ok",
+            "https://example.com/gallery",
+            "Gallery",
+            "Featured image https://example.com/cat.png",
+            []));
+        AgentBrowserMediaOutputService mediaOutput = new(
+            fetcher: (_, _, _) => Task.FromResult(new AgentBrowserMediaFetchResult(
+                true,
+                "ok",
+                "image/png",
+                MinimalPngBytes())),
+            resolveHostAsync: (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBrowserAgentAutomation = true,
+            EnableBalancedTextStreaming = false
+        }, browserProvider: browser, browserMediaOutputService: mediaOutput);
+        service.InboundChatDispatcher = _ => Task.CompletedTask;
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "browse https://example.com/gallery return the image"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("Conclusion:"));
+            Assert.That(runtime.PrivateMessages[1].Message, Does.StartWith("[CQ:image,file=D:/Alife/Runtime/BrowserAgentMedia/"));
+            Assert.That(runtime.PrivateMessages[1].Message, Does.EndWith(".png]"));
+            Assert.That(runtime.PrivateFiles, Is.Empty);
+            Assert.That(runtime.GroupFiles, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task OwnerPrivateBrowserAgentVideoUrlReturnsLinkOnly()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeBrowserProvider browser = new(new AgentBrowserSnapshot(
+            true,
+            "ok",
+            "https://example.com/videos",
+            "Videos",
+            "Watch https://example.com/demo.mp4",
+            []));
+        AgentBrowserMediaOutputService mediaOutput = new(
+            fetcher: (_, _, _) => throw new InvalidOperationException("video links must not fetch media"),
+            resolveHostAsync: (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBrowserAgentAutomation = true,
+            EnableBalancedTextStreaming = false
+        }, browserProvider: browser, browserMediaOutputService: mediaOutput);
+        service.InboundChatDispatcher = _ => Task.CompletedTask;
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "browse https://example.com/videos return the video"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("Conclusion:"));
+            Assert.That(runtime.PrivateMessages[1].Message, Is.EqualTo("Video: https://example.com/demo.mp4"));
+            Assert.That(runtime.PrivateMessages[1].Message, Does.Not.Contain("[CQ:image"));
+            Assert.That(runtime.PrivateMessages[1].Message, Does.Not.Contain("[CQ:video"));
+            Assert.That(runtime.PrivateFiles, Is.Empty);
+            Assert.That(runtime.GroupFiles, Is.Empty);
         });
     }
 
@@ -13426,7 +13516,8 @@ public class QChatServiceAdapterTests
         AgentPublicSearchService? publicSearchService = null,
         AgentExternalRagService? externalRagService = null,
         IAgentBrowserProvider? browserProvider = null,
-        AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null)
+        AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null,
+        AgentBrowserMediaOutputService? browserMediaOutputService = null)
     {
         riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
@@ -13456,7 +13547,8 @@ public class QChatServiceAdapterTests
             publicSearchService: publicSearchService,
             externalRagService: externalRagService,
             browserProvider: browserProvider,
-            browserSiteExperienceStore: browserSiteExperienceStore)
+            browserSiteExperienceStore: browserSiteExperienceStore,
+            browserMediaOutputService: browserMediaOutputService)
         {
             Configuration = config
         };
@@ -13468,6 +13560,19 @@ public class QChatServiceAdapterTests
     {
         return Path.Combine(Path.GetTempPath(), "alife-qchat-risk-service-tests", Guid.NewGuid().ToString("N"));
     }
+
+    static byte[] MinimalPngBytes() =>
+    [
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+        0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00,
+        0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+        0x42, 0x60, 0x82
+    ];
 
     static string CreateTempOwnerEventOutboxPath()
     {

@@ -95,6 +95,7 @@ public record QChatConfig
     public int BrowserAgentMaxLinksPerPage { get; set; } = 20;
     public int BrowserAgentMaxTextCharsPerPage { get; set; } = 4000;
     public int BrowserAgentMaxEvidenceItems { get; set; } = 3;
+    public int BrowserAgentMaxImageItems { get; set; } = 2;
     public bool EnableBalancedTextStreaming { get; set; } = true;
     public bool EnableConversationSettleWindow { get; set; }
     public int PrivateSettleMilliseconds { get; set; } = 700;
@@ -298,7 +299,8 @@ public partial class QChatService(
     AgentPublicSearchService? publicSearchService = null,
     AgentExternalRagService? externalRagService = null,
     IAgentBrowserProvider? browserProvider = null,
-    AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null) :
+    AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null,
+    AgentBrowserMediaOutputService? browserMediaOutputService = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -2277,6 +2279,9 @@ public partial class QChatService(
     readonly Queue<QChatRecentSentMessage> recentSentMessages = new();
     readonly object pokeCooldownGate = new();
     readonly Dictionary<string, DateTimeOffset> pokeCooldownTimes = new();
+    static readonly Regex BrowserMediaUrl = new(
+        @"https?://[^\s<>'""\])}]+",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
     static readonly TimeSpan RecentSentMessageRetention = TimeSpan.FromMinutes(5);
     static readonly TimeSpan PokeCooldown = TimeSpan.FromSeconds(60);
     const int MaxRecentSentMessages = 40;
@@ -4623,6 +4628,7 @@ public partial class QChatService(
         MaxLinksPerPage = config.BrowserAgentMaxLinksPerPage,
         MaxTextCharsPerPage = config.BrowserAgentMaxTextCharsPerPage,
         MaxEvidenceItems = config.BrowserAgentMaxEvidenceItems,
+        MaxImageItems = config.BrowserAgentMaxImageItems,
         MediaCacheRoot = @"D:\Alife\Runtime\BrowserAgentMedia"
     };
 
@@ -4682,14 +4688,109 @@ public partial class QChatService(
             EvidenceCount = result.Evidence.Count
         });
 
+        IReadOnlyList<AgentBrowserMediaOutputResult> mediaOutputs = result.Success
+            ? await PrepareBrowserMediaOutputsAsync(result, config)
+            : [];
+
         await SendCommandReplyAsync(
             messageEvent,
             senderRole,
             targetType,
             targetId,
             NeutralizePublicExternalQqMarkup(QChatBrowserAgentFormatter.Format(result)));
+        await SendBrowserMediaOutputsAsync(targetType, targetId, mediaOutputs);
         return true;
     }
+
+    async Task<IReadOnlyList<AgentBrowserMediaOutputResult>> PrepareBrowserMediaOutputsAsync(
+        AgentBrowserAutomationResult result,
+        QChatConfig config)
+    {
+        AgentBrowserMediaOutputService service = browserMediaOutputService ?? new AgentBrowserMediaOutputService();
+        AgentBrowserAutomationConfig automationConfig = CreateBrowserAutomationConfig(config);
+        List<AgentBrowserMediaOutputResult> outputs = [];
+        int imageCount = 0;
+
+        foreach ((AgentBrowserMediaOutputKind Kind, string Url) candidate in ExtractBrowserMediaCandidates(result))
+        {
+            if (candidate.Kind == AgentBrowserMediaOutputKind.Image)
+            {
+                if (imageCount >= Math.Max(automationConfig.MaxImageItems, 0))
+                    continue;
+                imageCount++;
+            }
+
+            AgentBrowserMediaOutputResult output = await service.PrepareAsync(new AgentBrowserMediaOutputRequest(
+                candidate.Kind,
+                candidate.Url,
+                automationConfig));
+            if (output.Success)
+                outputs.Add(output);
+        }
+
+        return outputs;
+    }
+
+    async Task SendBrowserMediaOutputsAsync(
+        OneBotMessageType targetType,
+        long targetId,
+        IReadOnlyList<AgentBrowserMediaOutputResult> mediaOutputs)
+    {
+        foreach (string message in QChatBrowserAgentFormatter.FormatMediaOutputs(mediaOutputs))
+            await SendSingleMessageAsync(targetType, targetId, message);
+    }
+
+    static IReadOnlyList<(AgentBrowserMediaOutputKind Kind, string Url)> ExtractBrowserMediaCandidates(
+        AgentBrowserAutomationResult result)
+    {
+        List<(AgentBrowserMediaOutputKind Kind, string Url)> candidates = [];
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        foreach (AgentBrowserEvidence evidence in result.Evidence)
+        {
+            AddMediaCandidate(evidence.Url, candidates, seen);
+            foreach (Match match in BrowserMediaUrl.Matches(evidence.Summary ?? ""))
+                AddMediaCandidate(match.Value, candidates, seen);
+        }
+
+        return candidates;
+    }
+
+    static void AddMediaCandidate(
+        string? value,
+        List<(AgentBrowserMediaOutputKind Kind, string Url)> candidates,
+        HashSet<string> seen)
+    {
+        string url = TrimBrowserMediaUrl(value);
+        if (string.IsNullOrWhiteSpace(url) || seen.Add(url) == false)
+            return;
+        if (Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) == false)
+            return;
+
+        string extension = Path.GetExtension(uri.AbsolutePath);
+        if (IsBrowserImageExtension(extension))
+            candidates.Add((AgentBrowserMediaOutputKind.Image, url));
+        else if (IsBrowserVideoExtension(extension))
+            candidates.Add((AgentBrowserMediaOutputKind.VideoLink, url));
+    }
+
+    static string TrimBrowserMediaUrl(string? value)
+    {
+        string candidate = (value ?? "").Trim().TrimEnd('.', ',', ';', '!', '?', ')', ']', '}');
+        return candidate;
+    }
+
+    static bool IsBrowserImageExtension(string extension) =>
+        extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".webp", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".gif", StringComparison.OrdinalIgnoreCase);
+
+    static bool IsBrowserVideoExtension(string extension) =>
+        extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".webm", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".mov", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".m4v", StringComparison.OrdinalIgnoreCase);
 
     static IAgentPublicSearchProvider CreateDefaultPublicSearchProvider()
     {

@@ -246,6 +246,9 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Text, Does.Contain("no-login"));
             Assert.That(result.Text, Does.Contain("image-ok"));
             Assert.That(result.Text, Does.Contain("video-link-only"));
+            Assert.That(result.Text, Does.Contain("image-return=connected"));
+            Assert.That(result.Text, Does.Contain("video-return=link-only"));
+            Assert.That(result.Text, Does.Contain(@"media-cache=D:\Alife\Runtime\BrowserAgentMedia"));
         });
     }
 

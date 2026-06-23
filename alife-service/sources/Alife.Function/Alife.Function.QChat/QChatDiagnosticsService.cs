@@ -250,6 +250,9 @@ public static class QChatDiagnosticsService
             "scope=owner-only private-chat",
             "allowed=search,navigate,snapshot,scroll,public-link,image-ok,video-link-only,back,stop",
             "blocked=no-login no-form-submit no-video-download no-local-upload no-js no-private-network",
+            @"media-cache=D:\Alife\Runtime\BrowserAgentMedia",
+            "image-return=connected",
+            "video-return=link-only",
             "media=image-ok video-link-only",
             "limits=steps:5 pages:3 evidence:3",
             "smoke.owner.private=browse https://github.com/vercel-labs/agent-browser");

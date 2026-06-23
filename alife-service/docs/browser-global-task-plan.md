@@ -287,3 +287,24 @@ Verification evidence:
 - `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "QChatBrowserAgentTriggerPolicyTests|QChatBrowserAgentFormatterTests|OwnerPrivateBrowserAgentRequestRunsAutomationWithoutModelDispatch|NonOwnerPrivateBrowserAgentRequestDoesNotRunAutomationOrModel|GroupBrowserAgentRequestDoesNotRunAutomation|QChatDiagnosticsServiceTests"` passed: 42 passed, 0 failed.
 - `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 - GitHub upload through `D:\FOXD` verified remote commit `9a380b9cc98ff4f5c3ce5b03205603d451104a96` on `refs/heads/master`.
+
+## Priority 9: Browser Agent Media Return Phase 1
+
+Status: completed on 2026-06-23.
+
+Goal: complete the browser-agent media return loop for owner private QChat.
+
+Completed behavior:
+
+- QChat extracts public image/video URL candidates from successful browser-agent evidence.
+- Public images pass through `AgentBrowserMediaOutputService` before QQ output.
+- Validated images are sent as `[CQ:image,file=...]` messages after the browser text summary.
+- Videos are returned as text links only.
+- Browser-agent videos are not downloaded, not sent as `[CQ:video]`, and not uploaded through QQ file APIs.
+- Media cache remains under `D:\Alife\Runtime\BrowserAgentMedia`.
+- Non-owner private and group browser automation remain blocked by the Phase 1 trigger policy.
+
+Verification evidence:
+
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter QChatBrowserAgentFormatterTests` passed: 5 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "OwnerPrivateBrowserAgentImageUrlReturnsQqImageAfterTextReply|OwnerPrivateBrowserAgentVideoUrlReturnsLinkOnly"` passed: 2 passed, 0 failed.
