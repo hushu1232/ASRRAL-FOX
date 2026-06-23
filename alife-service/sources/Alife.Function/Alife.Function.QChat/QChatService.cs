@@ -276,7 +276,8 @@ public partial class QChatService(
     AgentInternetService? internetService = null,
     IAgentPublicSearchProvider? publicSearchProvider = null,
     AgentPublicSearchService? publicSearchService = null,
-    AgentExternalRagService? externalRagService = null) :
+    AgentExternalRagService? externalRagService = null,
+    IAgentBrowserProvider? browserProvider = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -294,6 +295,7 @@ public partial class QChatService(
     readonly IAgentPublicSearchProvider? injectedPublicSearchProvider = publicSearchProvider;
     readonly AgentPublicSearchService? injectedPublicSearchService = publicSearchService;
     readonly AgentExternalRagService? injectedExternalRagService = externalRagService;
+    readonly IAgentBrowserProvider? injectedBrowserProvider = browserProvider;
     QChatImageRecognitionService? resolvedImageRecognitionService;
     IAgentPublicSearchProvider? resolvedPublicSearchProvider;
     QChatOwnerEventOutbox? resolvedOwnerEventOutbox;
@@ -4238,6 +4240,7 @@ public partial class QChatService(
             context => TryHandleOwnerEventsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerInternetCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerRagCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerBrowserSnapshotCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
@@ -4297,6 +4300,48 @@ public partial class QChatService(
             url,
             result.Success,
             result.Reason
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerBrowserSnapshotCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (TryParseBrowserSnapshotCommand(text, out string url) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        AgentWebAccessService webAccess = new(browserProvider: injectedBrowserProvider);
+        AgentWebAccessResponse response = await webAccess.ExecuteAsync(new AgentWebAccessRequest(
+            MapWebAccessActorRole(senderRole),
+            AgentWebAccessCapability.BrowserSnapshot,
+            url,
+            new AgentWebAccessConfig
+            {
+                EnableBrowserSnapshot = config.EnableInternetAccess,
+                MaxQueryChars = config.PublicInternetQueryMaxChars
+            }));
+
+        await SendCommandReplyAsync(
+            messageEvent,
+            senderRole,
+            targetType,
+            targetId,
+            NeutralizePublicExternalQqMarkup(response.FormattedContent));
+        WriteQChatDiagnostic("qchat-browser-snapshot-command-handled", "QChat browser snapshot command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            url,
+            response.Success,
+            response.Reason
         });
         return true;
     }
@@ -4461,6 +4506,30 @@ public partial class QChatService(
     static string NeutralizePublicExternalQqMarkup(string value)
     {
         return value.Replace("[CQ:", "[CQ :", StringComparison.Ordinal);
+    }
+
+    static AgentWebAccessActorRole MapWebAccessActorRole(QChatSenderRole senderRole)
+    {
+        return senderRole switch
+        {
+            QChatSenderRole.Owner => AgentWebAccessActorRole.Owner,
+            QChatSenderRole.GroupMember => AgentWebAccessActorRole.GroupMember,
+            QChatSenderRole.PrivateGuest => AgentWebAccessActorRole.PrivateGuest,
+            _ => AgentWebAccessActorRole.Unknown
+        };
+    }
+
+    static bool TryParseBrowserSnapshotCommand(string? text, out string url)
+    {
+        url = "";
+        string normalized = text?.Trim() ?? string.Empty;
+        const string prefix = "/qchat web snapshot ";
+        if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        url = normalized[prefix.Length..].Trim();
+        return Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+               && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
     }
 
     static bool TryParseInternetCommand(string? text, out string url)

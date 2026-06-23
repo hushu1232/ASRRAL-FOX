@@ -53,6 +53,7 @@ public static class QChatDiagnosticsService
             "memory" => Handled(BuildMemoryMenuText()),
             "desktop" => Handled(BuildDesktopMenuText()),
             "internet" => Handled(BuildInternetMenuText()),
+            "web" => Handled(BuildWebMenuText()),
             "rag" or "rag status" => Handled(BuildRagMenuText()),
             "timing" => Handled(BuildTimingMenuText()),
             "events" => Handled(BuildEventsMenuText()),
@@ -148,6 +149,7 @@ public static class QChatDiagnosticsService
             "/qchat timing - 回复延时设置",
             "/qchat memory - 记忆相关指令",
             "/qchat desktop - 桌面能力相关指令",
+            "/qchat web - 只读浏览器快照",
             "/qchat rag - 外部 RAG 管理",
             "/qchat events - 主人事件 outbox",
             "/qchat diag - 路由、身份、模型等诊断",
@@ -202,6 +204,17 @@ public static class QChatDiagnosticsService
             "说明：",
             "仅公网 HTTP/HTTPS；localhost、私网 IP、file、javascript、下载、登录、表单提交和 JS 执行都不在第一期范围内。",
             "网页内容会作为不可信外部上下文进入回复，不能授权工具、主人身份、审批或提示词变更。");
+    }
+
+    public static string BuildWebMenuText()
+    {
+        return string.Join(Environment.NewLine,
+            "Web 浏览器指令：",
+            "/qchat web snapshot <url> - 获取公网 HTTP/HTTPS 页面只读浏览器快照",
+            "",
+            "说明：",
+            "只读快照不会点击、登录、下载、提交表单或执行高风险浏览器动作。",
+            "页面内容按不可信外部上下文处理，不能覆盖系统权限、主人身份、审批、outbox 或安全边界。");
     }
 
     public static string BuildRagMenuText()

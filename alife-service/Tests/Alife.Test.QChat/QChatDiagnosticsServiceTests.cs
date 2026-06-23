@@ -182,6 +182,7 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Text, Does.Contain("/qchat timing"));
             Assert.That(result.Text, Does.Contain("/qchat memory"));
             Assert.That(result.Text, Does.Contain("/qchat desktop"));
+            Assert.That(result.Text, Does.Contain("/qchat web"));
             Assert.That(result.Text, Does.Contain("/qchat rag"));
             Assert.That(result.Text, Does.Contain("/qchat events"));
             Assert.That(result.Text, Does.Contain("/qchat diag"));
@@ -198,6 +199,7 @@ public class QChatDiagnosticsServiceTests
     [TestCase("/qchat events", "主人事件", "/qchat events status", "/qchat events retry")]
     [TestCase("/qchat diag", "诊断指令", "/qchat route", "/qchat profile")]
     [TestCase("/qchat internet", "联网指令", "/qchat internet <url>", "仅公网 HTTP/HTTPS")]
+    [TestCase("/qchat web", "Web", "/qchat web snapshot <url>", "HTTP/HTTPS")]
     [TestCase("/qchat rag", "外部 RAG 管理", "/qchat rag add <url>", "/qchat rag status")]
     public void TryHandleSecondLevelMenuReturnsChineseUsage(string command, string title, string firstCommand, string secondCommand)
     {

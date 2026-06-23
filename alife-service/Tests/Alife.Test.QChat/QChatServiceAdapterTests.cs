@@ -1303,6 +1303,97 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerBrowserSnapshotCommandSendsReadOnlySnapshotWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeBrowserProvider browser = new(new AgentBrowserSnapshot(
+            true,
+            "ok",
+            "https://example.com/dashboard",
+            "Dashboard",
+            "snapshot text [CQ:record,file=http://example.com/a.mp3]",
+            [new AgentBrowserElement("a-1", "link", "Open docs", "https://example.com/docs")]));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, browserProvider: browser);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat web snapshot https://example.com/dashboard"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(browser.Calls, Is.EqualTo(1));
+            Assert.That(browser.LastRequest?.Url, Is.EqualTo("https://example.com/dashboard"));
+            Assert.That(reply, Does.Contain("browser-snapshot"));
+            Assert.That(reply, Does.Contain("Dashboard"));
+            Assert.That(reply, Does.Contain("[CQ :record"));
+            Assert.That(runtime.GroupMessages, Is.Empty);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerBrowserSnapshotCommandDropsBeforeBrowserProviderAndModel()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new();
+            FakeBrowserProvider browser = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowedGroupIds = "3003",
+                EnableInternetAccess = true,
+                EnableBalancedTextStreaming = false
+            }, browserProvider: browser);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                GroupId = 3003,
+                UserId = 2002,
+                SelfId = 999,
+                RawMessage = "/qchat web snapshot https://example.com/dashboard"
+            });
+
+            string diagnostics = await WaitForQChatCommandDroppedDiagnosticAsync(storageRoot);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(browser.Calls, Is.Zero);
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+                Assert.That(runtime.GroupMessages, Is.Empty);
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-command-dropped\""));
+            });
+        });
+    }
+
+    [Test]
     public async Task PublicRagGroupCommandSendsFormattedContextWithConfiguredMaxChunksWithoutModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
@@ -11944,6 +12035,29 @@ public class QChatServiceAdapterTests
         }
     }
 
+    sealed class FakeBrowserProvider(AgentBrowserSnapshot? snapshot = null) : IAgentBrowserProvider
+    {
+        readonly AgentBrowserSnapshot snapshot = snapshot ?? new AgentBrowserSnapshot(
+            true,
+            "ok",
+            "https://example.com",
+            "Example",
+            "snapshot text",
+            []);
+
+        public int Calls { get; private set; }
+        public AgentBrowserSnapshotRequest? LastRequest { get; private set; }
+
+        public Task<AgentBrowserSnapshot> CaptureSnapshotAsync(
+            AgentBrowserSnapshotRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            LastRequest = request;
+            return Task.FromResult(snapshot);
+        }
+    }
+
     static QChatService CreateStartedService(
         FakeOneBotRuntime runtime,
         QChatConfig config,
@@ -11967,7 +12081,8 @@ public class QChatServiceAdapterTests
         AgentInternetService? internetService = null,
         IAgentPublicSearchProvider? publicSearchProvider = null,
         AgentPublicSearchService? publicSearchService = null,
-        AgentExternalRagService? externalRagService = null)
+        AgentExternalRagService? externalRagService = null,
+        IAgentBrowserProvider? browserProvider = null)
     {
         riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
@@ -11995,7 +12110,8 @@ public class QChatServiceAdapterTests
             internetService: internetService,
             publicSearchProvider: publicSearchProvider,
             publicSearchService: publicSearchService,
-            externalRagService: externalRagService)
+            externalRagService: externalRagService,
+            browserProvider: browserProvider)
         {
             Configuration = config
         };
