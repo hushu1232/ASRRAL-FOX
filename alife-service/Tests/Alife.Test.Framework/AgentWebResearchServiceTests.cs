@@ -544,6 +544,168 @@ public sealed class AgentWebResearchServiceTests
         });
     }
 
+    [Test]
+    public async Task ResearchAsync_ReusesCachedResultBeforeSearchingAgain()
+    {
+        AgentWebResearchControlState control = new();
+        FakePublicSearchService search = new([
+            new AgentPublicSearchResult("Cached Source", "https://example.com/cache", "cached search snippet")
+        ]);
+        AgentWebResearchService service = new(search, new AgentWebAccessService(), controlState: control);
+        AgentWebResearchRequest request = new(
+            "cache this topic",
+            AgentWebAccessActorRole.GroupMember,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                AllowGroupMemberPublicSearch = true,
+                WebResearchCacheSeconds = 120
+            },
+            MaxSources: 1,
+            ActorUserId: 2002,
+            GroupId: 3003);
+
+        AgentWebResearchResult first = await service.ResearchAsync(request);
+        AgentWebResearchResult second = await service.ResearchAsync(request);
+        AgentWebResearchMetricsSnapshot metrics = control.GetMetricsSnapshot();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.Success, Is.True);
+            Assert.That(second.Success, Is.True);
+            Assert.That(search.Calls, Is.EqualTo(1));
+            Assert.That(second.Answer, Is.EqualTo(first.Answer));
+            Assert.That(metrics.CacheHits, Is.EqualTo(1));
+            Assert.That(metrics.SearchCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task ResearchAsync_GroupMemberCooldownRejectsDifferentQueryBeforeSearch()
+    {
+        AgentWebResearchControlState control = new();
+        FakePublicSearchService search = new([
+            new AgentPublicSearchResult("First Source", "https://example.com/first", "first snippet")
+        ]);
+        AgentWebResearchService service = new(search, new AgentWebAccessService(), controlState: control);
+        AgentWebAccessConfig config = new()
+        {
+            EnablePublicSearch = true,
+            AllowGroupMemberPublicSearch = true,
+            WebResearchUserCooldownSeconds = 60,
+            WebResearchGroupCooldownSeconds = 60
+        };
+
+        AgentWebResearchResult first = await service.ResearchAsync(new AgentWebResearchRequest(
+            "first topic",
+            AgentWebAccessActorRole.GroupMember,
+            config,
+            MaxSources: 1,
+            ActorUserId: 2002,
+            GroupId: 3003));
+        AgentWebResearchResult second = await service.ResearchAsync(new AgentWebResearchRequest(
+            "second topic",
+            AgentWebAccessActorRole.GroupMember,
+            config,
+            MaxSources: 1,
+            ActorUserId: 2002,
+            GroupId: 3003));
+        AgentWebResearchMetricsSnapshot metrics = control.GetMetricsSnapshot();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.Success, Is.True);
+            Assert.That(second.Success, Is.False);
+            Assert.That(second.Reason, Is.EqualTo("web_research_cooldown"));
+            Assert.That(search.Calls, Is.EqualTo(1));
+            Assert.That(metrics.RateLimitedCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task ResearchAsync_ConcurrentCapRejectsExtraRequestWithoutSearch()
+    {
+        AgentWebResearchControlState control = new();
+        BlockingPublicSearchService search = new([
+            new AgentPublicSearchResult("Slow Source", "https://example.com/slow", "slow snippet")
+        ]);
+        AgentWebResearchService service = new(search, new AgentWebAccessService(), controlState: control);
+        AgentWebAccessConfig config = new()
+        {
+            EnablePublicSearch = true,
+            AllowGroupMemberPublicSearch = true,
+            WebResearchMaxConcurrent = 1
+        };
+
+        Task<AgentWebResearchResult> firstTask = service.ResearchAsync(new AgentWebResearchRequest(
+            "slow topic",
+            AgentWebAccessActorRole.GroupMember,
+            config,
+            MaxSources: 1,
+            ActorUserId: 2002,
+            GroupId: 3003));
+        await search.WaitForCallAsync();
+        AgentWebResearchResult rejected = await service.ResearchAsync(new AgentWebResearchRequest(
+            "other topic",
+            AgentWebAccessActorRole.GroupMember,
+            config,
+            MaxSources: 1,
+            ActorUserId: 2003,
+            GroupId: 3004));
+        search.Release();
+        AgentWebResearchResult first = await firstTask;
+        AgentWebResearchMetricsSnapshot metrics = control.GetMetricsSnapshot();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.Success, Is.True);
+            Assert.That(rejected.Success, Is.False);
+            Assert.That(rejected.Reason, Is.EqualTo("web_research_busy"));
+            Assert.That(search.Calls, Is.EqualTo(1));
+            Assert.That(metrics.ConcurrentRejectedCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task ResearchAsync_TracksSearchReadBytesLatencyAndApproximateSummaryCost()
+    {
+        AgentWebResearchControlState control = new();
+        FakePublicSearchService search = new([
+            new AgentPublicSearchResult("Metric Source", "https://example.com/metrics", "metric snippet")
+        ]);
+        FakeInternetService internet = new(new AgentInternetFetchResult(
+            true,
+            "ok",
+            "metric readable page content with enough detail"));
+        AgentWebResearchService service = new(
+            search,
+            new AgentWebAccessService(internetService: internet),
+            controlState: control);
+
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            "metric topic",
+            AgentWebAccessActorRole.Owner,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                EnableAutoRead = true,
+                EnablePublicFetch = true
+            },
+            MaxSources: 1,
+            ActorUserId: 1001));
+        AgentWebResearchMetricsSnapshot metrics = control.GetMetricsSnapshot();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(metrics.SearchCount, Is.EqualTo(1));
+            Assert.That(metrics.ReadCount, Is.EqualTo(1));
+            Assert.That(metrics.PageBytes, Is.GreaterThan(0));
+            Assert.That(metrics.TotalLatencyMilliseconds, Is.GreaterThanOrEqualTo(0));
+            Assert.That(metrics.ApproximateSummaryTokens, Is.GreaterThan(0));
+        });
+    }
+
     static string CreateTempRoot()
     {
         string root = Path.Combine(TestContext.CurrentContext.WorkDirectory, "agent-web-research", Path.GetRandomFileName());
@@ -598,6 +760,28 @@ public sealed class AgentWebResearchServiceTests
             Calls++;
             LastUrl = url;
             return Task.FromResult(result);
+        }
+    }
+
+    sealed class BlockingPublicSearchService(IReadOnlyList<AgentPublicSearchResult> results) : AgentPublicSearchService
+    {
+        readonly TaskCompletionSource called = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int Calls { get; private set; }
+
+        public Task WaitForCallAsync() => called.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        public void Release() => release.TrySetResult();
+
+        public override async Task<AgentPublicSearchResponse> SearchAsync(
+            string query,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            called.TrySetResult();
+            await release.Task.WaitAsync(cancellationToken);
+            return new AgentPublicSearchResponse(true, "ok", results, "formatted search");
         }
     }
 }

@@ -6,7 +6,9 @@ public sealed record AgentWebResearchRequest(
     string Query,
     AgentWebAccessActorRole ActorRole,
     AgentWebAccessConfig Config,
-    int MaxSources = 3);
+    int MaxSources = 3,
+    long? ActorUserId = null,
+    long? GroupId = null);
 
 public sealed record AgentWebResearchEvidence(
     string Title,
@@ -20,3 +22,13 @@ public sealed record AgentWebResearchResult(
     string Query,
     string Answer,
     IReadOnlyList<AgentWebResearchEvidence> Evidence);
+
+public sealed record AgentWebResearchMetricsSnapshot(
+    long SearchCount,
+    long ReadCount,
+    long PageBytes,
+    long TotalLatencyMilliseconds,
+    long ApproximateSummaryTokens,
+    long CacheHits,
+    long RateLimitedCount,
+    long ConcurrentRejectedCount);

@@ -134,6 +134,42 @@ Token-saving rules:
 - Add/list/delete management commands do not call the model and do not perform public search.
 - Non-owner `/qchat rag ...` management commands are dropped before the RAG service is called.
 
+## Rate Limit, Cache, And Cost Control
+
+QChat uses a shared in-memory `AgentWebResearchControlState` for live web research. It does not store page text on C drive and does not persist runtime cache across restart.
+
+Default QChat settings:
+
+- `PublicInternetUserCooldownSeconds = 15`
+- `PublicInternetGroupCooldownSeconds = 30`
+- `PublicInternetResultCacheSeconds = 120`
+- `PublicInternetMaxConcurrentResearch = 2`
+
+Behavior:
+
+- Repeating the same query inside the cache window returns the cached sourced answer before public search, page read, cooldown refusal, or model dispatch.
+- A group member sending a different search too quickly receives a compact `web_research_rate_limited: cooldown` reply.
+- When too many non-cached research jobs run at once, the service returns `web_research_busy: try again later` instead of queueing more network work.
+- Owner research and group research share the cache/concurrency controls, but only group members are subject to the per-user/per-group cooldown.
+
+Tracked metrics:
+
+- public search call count,
+- owner page read count,
+- UTF-8 page bytes read,
+- total research latency,
+- approximate summary tokens,
+- cache hits,
+- rate-limit hits,
+- concurrency rejections.
+
+Token-saving rules:
+
+- Cache lookup happens before cooldown and before provider calls.
+- Group cooldown happens before public search and before model dispatch.
+- Concurrency rejection happens before public search and page read.
+- Metrics are counters only; they do not store full public page text.
+
 ## Live Smoke Checklist
 
 Owner-only diagnostics expose the same checklist through:

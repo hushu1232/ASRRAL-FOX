@@ -34,6 +34,10 @@ public sealed class AgentWebAccessConfig
     public bool AllowGroupMemberExternalRagQuery { get; set; }
     public int MaxQueryChars { get; set; } = 160;
     public int MaxExternalRagChunks { get; set; } = 4;
+    public int WebResearchUserCooldownSeconds { get; set; }
+    public int WebResearchGroupCooldownSeconds { get; set; }
+    public int WebResearchCacheSeconds { get; set; }
+    public int WebResearchMaxConcurrent { get; set; }
 }
 
 public sealed record AgentWebAccessRequest(

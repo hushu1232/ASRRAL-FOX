@@ -1175,6 +1175,57 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task WebResearchGroupMentionCooldownDoesNotSearchOrDispatchModel()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchProvider provider = new(
+            new AgentPublicSearchResult("Group Result", "https://example.com/group", "group search snippet"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            AllowedGroupIds = "3003",
+            EnablePublicInternetSearch = true,
+            PublicInternetUserCooldownSeconds = 60,
+            PublicInternetGroupCooldownSeconds = 60,
+            EnableBalancedTextStreaming = false
+        }, publicSearchProvider: provider);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "[CQ:at,qq=999] 搜一下 agent-browser"
+        });
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "[CQ:at,qq=999] 搜一下 dotnet release"
+        });
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 2);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(provider.Calls, Is.EqualTo(1));
+            Assert.That(runtime.GroupMessages[1].Message, Does.Contain("web_research_rate_limited"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task PublicSearchGroupMentionWithoutSearchIntentFallsThroughToModel()
     {
         FakeOneBotRuntime runtime = new();

@@ -144,17 +144,40 @@ Verification evidence:
 
 ## Priority 5: Rate Limit, Cache, And Cost Control
 
-Status: pending.
+Status: completed on 2026-06-23.
 
 Goal: prevent group search abuse and make cost/latency observable.
 
 Tasks:
 
-- Add per-group and per-user cooldowns.
-- Add short-term query result cache.
-- Add concurrent web research cap.
-- Track search count, read count, page bytes, latency, and approximate summarization cost.
-- Add visible refusal or silence policy for over-limit group requests.
+- Add per-group and per-user cooldowns. Done: group-member web research uses `PublicInternetUserCooldownSeconds` and `PublicInternetGroupCooldownSeconds` before public search.
+- Add short-term query result cache. Done: successful research results can be reused through `PublicInternetResultCacheSeconds`; identical cached queries return before cooldown, search, read, or model dispatch.
+- Add concurrent web research cap. Done: `PublicInternetMaxConcurrentResearch` bounds non-cached research work and rejects excess requests with `web_research_busy`.
+- Track search count, read count, page bytes, latency, and approximate summarization cost. Done: `AgentWebResearchControlState` tracks searches, owner reads, UTF-8 page bytes, total latency, estimated summary tokens, cache hits, rate-limit hits, and concurrency rejections.
+- Add visible refusal or silence policy for over-limit group requests. Done: QChat sends a compact `web_research_rate_limited: cooldown` reply for over-limit group research and does not call search or the model.
+
+Default QChat controls:
+
+- `PublicInternetUserCooldownSeconds = 15`
+- `PublicInternetGroupCooldownSeconds = 30`
+- `PublicInternetResultCacheSeconds = 120`
+- `PublicInternetMaxConcurrentResearch = 2`
+
+Token saving effect:
+
+- Repeated identical queries hit the short-term cache before cooldown checks, public search, page reads, or model dispatch.
+- Different rapid group queries are rejected before provider calls, so group abuse does not consume search/read tokens or browser time.
+- The concurrency cap returns immediately when the research worker pool is full instead of queueing expensive network work.
+- Metrics let later diagnostics estimate cost from search count, read count, page bytes, latency, and approximate summary tokens without logging full page text.
+- Owner auto-read remains bounded by the same cache/concurrency controls, while group members remain snippet-only.
+
+Verification evidence:
+
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~ResearchAsync_ReusesCachedResultBeforeSearchingAgain|FullyQualifiedName~ResearchAsync_GroupMemberCooldownRejectsDifferentQueryBeforeSearch|FullyQualifiedName~ResearchAsync_ConcurrentCapRejectsExtraRequestWithoutSearch|FullyQualifiedName~ResearchAsync_TracksSearchReadBytesLatencyAndApproximateSummaryCost"` passed: 4 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~WebResearchGroupMentionCooldownDoesNotSearchOrDispatchModel"` passed: 1 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AgentWebResearchServiceTests|FullyQualifiedName~AgentBrowserSiteExperienceStoreTests|FullyQualifiedName~AgentWebAccessServiceTests|FullyQualifiedName~AgentWebAccessRouterTests|FullyQualifiedName~AgentPublicSearchServiceTests|FullyQualifiedName~AgentExternalRagServiceTests"` passed: 86 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~WebResearch|FullyQualifiedName~Rag|FullyQualifiedName~ExternalRag|FullyQualifiedName~QChatPublicInternetCommandPolicyTests|FullyQualifiedName~QChatInternetCapabilityPolicyTests|FullyQualifiedName~QChatDiagnosticsServiceTests"` passed: 81 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 
 ## Priority 6: Browser Snapshot Productization
 

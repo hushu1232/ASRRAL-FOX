@@ -75,6 +75,10 @@ public record QChatConfig
     public int PublicInternetSearchMaxResults { get; set; } = 3;
     public int PublicInternetQueryMaxChars { get; set; } = 160;
     public int PublicExternalRagMaxChunks { get; set; } = 4;
+    public int PublicInternetUserCooldownSeconds { get; set; } = 15;
+    public int PublicInternetGroupCooldownSeconds { get; set; } = 30;
+    public int PublicInternetResultCacheSeconds { get; set; } = 120;
+    public int PublicInternetMaxConcurrentResearch { get; set; } = 2;
     public bool EnableBalancedTextStreaming { get; set; } = true;
     public bool EnableConversationSettleWindow { get; set; }
     public int PrivateSettleMilliseconds { get; set; } = 700;
@@ -298,6 +302,7 @@ public partial class QChatService(
     readonly AgentExternalRagService? injectedExternalRagService = externalRagService;
     readonly IAgentBrowserProvider? injectedBrowserProvider = browserProvider;
     readonly AgentBrowserSiteExperienceStore? injectedBrowserSiteExperienceStore = browserSiteExperienceStore;
+    readonly AgentWebResearchControlState webResearchControlState = new();
     QChatImageRecognitionService? resolvedImageRecognitionService;
     IAgentPublicSearchProvider? resolvedPublicSearchProvider;
     AgentBrowserSiteExperienceStore? resolvedBrowserSiteExperienceStore;
@@ -4654,7 +4659,11 @@ public partial class QChatService(
                         browserSiteExperienceStore: BrowserSiteExperienceStore);
                 }
 
-                AgentWebResearchService researchService = new(publicSearchService, webAccessService, BrowserSiteExperienceStore);
+                AgentWebResearchService researchService = new(
+                    publicSearchService,
+                    webAccessService,
+                    BrowserSiteExperienceStore,
+                    webResearchControlState);
                 AgentWebResearchResult research = await researchService.ResearchAsync(new AgentWebResearchRequest(
                     command.Query,
                     MapWebAccessActorRole(senderRole),
@@ -4665,9 +4674,15 @@ public partial class QChatService(
                         EnableAutoRead = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess,
                         EnablePublicFetch = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess,
                         EnableBrowserSnapshot = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess,
-                        MaxQueryChars = config.PublicInternetQueryMaxChars
+                        MaxQueryChars = config.PublicInternetQueryMaxChars,
+                        WebResearchUserCooldownSeconds = config.PublicInternetUserCooldownSeconds,
+                        WebResearchGroupCooldownSeconds = config.PublicInternetGroupCooldownSeconds,
+                        WebResearchCacheSeconds = config.PublicInternetResultCacheSeconds,
+                        WebResearchMaxConcurrent = config.PublicInternetMaxConcurrentResearch
                     },
-                    config.PublicInternetSearchMaxResults));
+                    config.PublicInternetSearchMaxResults,
+                    messageEvent.UserId,
+                    messageEvent.GroupId));
                 await SendCommandReplyAsync(
                     messageEvent,
                     senderRole,

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -10,13 +11,56 @@ namespace Alife.Function.Agent;
 public sealed class AgentWebResearchService(
     AgentPublicSearchService? searchService = null,
     AgentWebAccessService? webAccessService = null,
-    AgentBrowserSiteExperienceStore? siteExperienceStore = null)
+    AgentBrowserSiteExperienceStore? siteExperienceStore = null,
+    AgentWebResearchControlState? controlState = null)
 {
     readonly AgentPublicSearchService? searchService = searchService;
     readonly AgentWebAccessService? webAccessService = webAccessService;
     readonly AgentBrowserSiteExperienceStore? siteExperienceStore = siteExperienceStore;
+    readonly AgentWebResearchControlState controlState = controlState ?? new AgentWebResearchControlState();
 
     public async Task<AgentWebResearchResult> ResearchAsync(
+        AgentWebResearchRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            string query = NormalizeQuery(request.Query);
+            if (query.Length == 0)
+                return Failure("empty_query", query, "娌℃煡鍒板彲闈犳潵婧愩€?");
+
+            int maxSources = Math.Clamp(request.MaxSources, 1, 5);
+            if (controlState.TryGetCachedResult(request, query, maxSources, out AgentWebResearchResult cached))
+                return cached;
+
+            if (controlState.TryEnterCooldown(request, out _) == false)
+                return Failure("web_research_cooldown", query, "web_research_rate_limited: cooldown");
+
+            if (controlState.TryAcquireConcurrency(request.Config.WebResearchMaxConcurrent, out IDisposable lease) == false)
+                return Failure("web_research_busy", query, "web_research_busy: try again later");
+
+            using (lease)
+            {
+                AgentWebResearchResult result = await ResearchCoreAsync(request, cancellationToken);
+                if (result.Success)
+                {
+                    controlState.RecordSummaryText(result.Answer);
+                    controlState.StoreCachedResult(request, query, maxSources, result);
+                }
+
+                return result;
+            }
+        }
+        finally
+        {
+            controlState.RecordLatency(stopwatch.Elapsed);
+        }
+    }
+
+    async Task<AgentWebResearchResult> ResearchCoreAsync(
         AgentWebResearchRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -29,7 +73,7 @@ public sealed class AgentWebResearchService(
         if (searchService == null)
             return Failure("public_search_not_configured", query, "搜索现在不可用。");
 
-        AgentPublicSearchResponse search = await searchService.SearchAsync(query, cancellationToken);
+        AgentPublicSearchResponse search = await SearchAsync(query, cancellationToken);
         if (search.Success == false)
             return Failure(search.Reason, query, "搜索失败，先不乱说。");
 
@@ -39,7 +83,7 @@ public sealed class AgentWebResearchService(
         {
             foreach (string expandedQuery in PlanOwnerExpandedQueries(query))
             {
-                AgentPublicSearchResponse expandedSearch = await searchService.SearchAsync(expandedQuery, cancellationToken);
+                AgentPublicSearchResponse expandedSearch = await SearchAsync(expandedQuery, cancellationToken);
                 if (expandedSearch.Success == false)
                     continue;
 
@@ -68,6 +112,14 @@ public sealed class AgentWebResearchService(
         return new AgentWebResearchResult(true, "ok", query, answer, evidence);
     }
 
+    async Task<AgentPublicSearchResponse> SearchAsync(
+        string query,
+        CancellationToken cancellationToken)
+    {
+        controlState.RecordSearch();
+        return await searchService!.SearchAsync(query, cancellationToken);
+    }
+
     async Task<AgentWebResearchEvidence?> TryReadOwnerEvidenceAsync(
         AgentPublicSearchResult result,
         AgentWebAccessConfig config,
@@ -86,6 +138,7 @@ public sealed class AgentWebResearchService(
             result.Url,
             config),
             cancellationToken);
+        controlState.RecordRead(response.FormattedContent);
         if (response.Success == false)
             return BuildSearchEvidence(result);
 

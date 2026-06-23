@@ -327,6 +327,63 @@ Verification on 2026-06-23:
 - QChat focused tests passed: 76 passed, 0 failed.
 - `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 
+### Task 9: Rate Limit, Cache, And Cost Control
+
+**Files:**
+- Create: `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchControlState.cs`
+- Modify: `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchModels.cs`
+- Modify: `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchService.cs`
+- Modify: `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebAccessRouter.cs`
+- Modify: `sources/Alife.Function/Alife.Function.QChat/QChatService.cs`
+- Modify: `Tests/Alife.Test.Framework/AgentWebResearchServiceTests.cs`
+- Modify: `Tests/Alife.Test.QChat/QChatServiceAdapterTests.cs`
+- Modify: `docs/agent-browser-web-research.md`
+- Modify: `docs/browser-global-task-plan.md`
+
+- [x] **Step 1: Add failing tests**
+
+Add tests proving:
+
+- identical queries reuse cached results and do not call public search twice,
+- rapid different group queries are rejected before public search,
+- the concurrent cap rejects an extra request without provider calls,
+- metrics count search, read, bytes, latency, and approximate summary tokens,
+- QChat group mention cooldown replies without entering search or model dispatch.
+
+- [x] **Step 2: Implement shared control state**
+
+`AgentWebResearchControlState` now owns:
+
+- short-term successful-result cache,
+- group-member per-user and per-group cooldown,
+- non-cached concurrent research cap,
+- counters for search/read/bytes/latency/estimated summary tokens/cache hits/rejections.
+
+- [x] **Step 3: Wire QChat defaults**
+
+`QChatConfig` now exposes:
+
+- `PublicInternetUserCooldownSeconds = 15`
+- `PublicInternetGroupCooldownSeconds = 30`
+- `PublicInternetResultCacheSeconds = 120`
+- `PublicInternetMaxConcurrentResearch = 2`
+
+`QChatService` passes QQ `UserId` and `GroupId` into `AgentWebResearchRequest`, and reuses one in-memory control state per service instance.
+
+- [x] **Step 4: Keep token cost bounded**
+
+The service checks cache before cooldown/search/read/model dispatch, rejects rapid group abuse before public search, and rejects concurrent overflow before starting network work. Metrics stay counter-only and do not retain full page text.
+
+- [x] **Step 5: Verify and upload**
+
+Run focused Framework/QChat web research tests and `dotnet build --no-restore`, then upload through the `D:\FOXD` workflow.
+
+Verification on 2026-06-23:
+
+- Framework focused tests passed: 86 passed, 0 failed.
+- QChat focused tests passed: 81 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
+
 ### Self-Review
 
 - Spec coverage: covers keyword trigger, public search, page read, evidence summary, QQ formatting, permissions, and docs.
