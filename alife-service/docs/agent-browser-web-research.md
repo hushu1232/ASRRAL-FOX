@@ -266,3 +266,24 @@ Diagnostics:
 ```
 
 Expected machine-readable markers include `browser-agent=phase1`, `owner-only`, `no-login`, `image-return=connected`, `image-ok`, `video-return=link-only`, and `video-link-only`.
+
+Browser-agent live smoke checklist:
+
+```text
+/qchat web browser-agent smoke
+```
+
+This command is a readiness checklist only. It does not run the browser, send QQ messages, or call the model by itself. It returns compact machine-readable markers for manual live QQ/NapCat verification:
+
+- `browser-agent-live-smoke`
+- `live-smoke=pending`
+- `owner-private-text`
+- `owner-private-image`
+- `owner-private-video`
+- `non-owner-denied`
+- `group-denied`
+- `image-return=connected`
+- `video-return=link-only`
+- `media-cache=D:\Alife\Runtime\BrowserAgentMedia`
+
+Do not mark browser-agent live QQ closure complete until the owner private text/image/video cases are observed in real QQ, and the non-owner private plus group cases are observed to stop before browser automation, provider calls, model fallback, and menu rendering.

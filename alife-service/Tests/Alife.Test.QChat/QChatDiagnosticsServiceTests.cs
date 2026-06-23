@@ -253,6 +253,32 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleWebBrowserAgentSmokeReturnsLiveChecklist()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat web browser-agent smoke",
+            CreateRoute(),
+            CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("browser-agent-live-smoke"));
+            Assert.That(result.Text, Does.Contain("status=manual"));
+            Assert.That(result.Text, Does.Contain("live-smoke=pending"));
+            Assert.That(result.Text, Does.Contain("owner-private-text"));
+            Assert.That(result.Text, Does.Contain("owner-private-image"));
+            Assert.That(result.Text, Does.Contain("owner-private-video"));
+            Assert.That(result.Text, Does.Contain("non-owner-denied"));
+            Assert.That(result.Text, Does.Contain("group-denied"));
+            Assert.That(result.Text, Does.Contain("image-return=connected"));
+            Assert.That(result.Text, Does.Contain("video-return=link-only"));
+            Assert.That(result.Text, Does.Contain(@"media-cache=D:\Alife\Runtime\BrowserAgentMedia"));
+            Assert.That(result.Text, Does.Contain("blocked=no-login no-form-submit no-video-download no-local-upload no-js no-private-network"));
+        });
+    }
+
+    [Test]
     public void TryHandleRagMenuReturnsOwnerManagementUsage()
     {
         QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat rag", CreateRoute(), CreateProfile());

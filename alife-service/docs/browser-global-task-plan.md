@@ -308,3 +308,54 @@ Verification evidence:
 
 - `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter QChatBrowserAgentFormatterTests` passed: 5 passed, 0 failed.
 - `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "OwnerPrivateBrowserAgentImageUrlReturnsQqImageAfterTextReply|OwnerPrivateBrowserAgentVideoUrlReturnsLinkOnly"` passed: 2 passed, 0 failed.
+
+## Priority 10: Browser Agent Live Smoke Readiness
+
+Status: completed on 2026-06-23 for deterministic checklist support. Real QQ/NapCat message-level smoke remains pending until the target bot session is healthy.
+
+Goal: make browser-agent live validation repeatable without guessing or triggering unsafe browser actions.
+
+Scope:
+
+- Add an owner diagnostics checklist command for browser-agent live smoke readiness.
+- Keep the checklist deterministic and compact; it must not run the browser, send QQ messages, call the model, or trigger provider chains by itself.
+- Include owner private text, owner private image, owner private video, non-owner denial, and group denial checks.
+- Keep images as validated QQ image return and videos as link-only.
+- Keep cache and temporary media paths on D drive.
+
+Command:
+
+```text
+/qchat web browser-agent smoke
+```
+
+Expected markers:
+
+- `browser-agent-live-smoke`
+- `status=manual`
+- `live-smoke=pending`
+- `owner-private-text`
+- `owner-private-image`
+- `owner-private-video`
+- `non-owner-denied`
+- `group-denied`
+- `image-return=connected`
+- `video-return=link-only`
+- `media-cache=D:\Alife\Runtime\BrowserAgentMedia`
+- `blocked=no-login no-form-submit no-video-download no-local-upload no-js no-private-network`
+
+Completion evidence required:
+
+- `QChatDiagnosticsServiceTests.TryHandleWebBrowserAgentSmokeReturnsLiveChecklist` passes.
+- Existing browser-agent diagnostics still include `browser-agent=phase1`, `owner-only`, `image-return=connected`, and `video-return=link-only`.
+- `dotnet build --no-restore` passes.
+- GitHub upload through `D:\FOXD` verifies the new snapshot.
+- Real QQ/NapCat smoke is recorded separately as pending or passed; do not claim live closure without a healthy OneBot session.
+
+Verification evidence:
+
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter TryHandleWebBrowserAgentSmokeReturnsLiveChecklist` passed: 1 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter QChatDiagnosticsServiceTests` passed: 31 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "QChatBrowserAgentFormatterTests|QChatBrowserAgentTriggerPolicyTests|OwnerPrivateBrowserAgentRequestRunsAutomationWithoutModelDispatch|OwnerPrivateBrowserAgentImageUrlReturnsQqImageAfterTextReply|OwnerPrivateBrowserAgentVideoUrlReturnsLinkOnly|NonOwnerPrivateBrowserAgentRequestDoesNotRunAutomationOrModel|GroupBrowserAgentRequestDoesNotRunAutomation|TryHandleWebBrowserAgentReturnsOwnerOnlyPhaseOneSummary|TryHandleWebBrowserAgentSmokeReturnsLiveChecklist"` passed: 18 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
+- Real QQ/NapCat browser-agent live smoke remains pending and is tracked in `docs/browser-live-validation-2026-06-23.md`.

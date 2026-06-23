@@ -55,6 +55,7 @@ public static class QChatDiagnosticsService
             "internet" => Handled(BuildInternetMenuText()),
             "web" => Handled(BuildWebMenuText() + Environment.NewLine + "/qchat web smoke - 查看 QQ 联网研究真实链路手测清单"),
             "web browser-agent" => Handled(BuildWebBrowserAgentText()),
+            "web browser-agent smoke" => Handled(BuildWebBrowserAgentSmokeText()),
             "web smoke" => Handled(BuildWebSmokeText()),
             "rag" or "rag status" => Handled(BuildRagMenuText()),
             "timing" => Handled(BuildTimingMenuText()),
@@ -255,7 +256,27 @@ public static class QChatDiagnosticsService
             "video-return=link-only",
             "media=image-ok video-link-only",
             "limits=steps:5 pages:3 evidence:3",
-            "smoke.owner.private=browse https://github.com/vercel-labs/agent-browser");
+            "smoke.owner.private=browse https://github.com/vercel-labs/agent-browser",
+            "smoke.command=/qchat web browser-agent smoke");
+    }
+
+    public static string BuildWebBrowserAgentSmokeText()
+    {
+        return string.Join(Environment.NewLine,
+            "browser-agent-live-smoke",
+            "status=manual",
+            "live-smoke=pending",
+            "owner-private-text=browse https://example.com/docs summarize",
+            "owner-private-image=browse https://example.com/gallery return image https://example.com/cat.png",
+            "owner-private-video=browse https://example.com/videos return video https://example.com/demo.mp4",
+            "non-owner-denied=non-owner private browse https://example.com/docs must produce no browser/model reply",
+            "group-denied=group @bot browse https://example.com/docs must not run browser automation",
+            "image-return=connected",
+            "video-return=link-only",
+            @"media-cache=D:\Alife\Runtime\BrowserAgentMedia",
+            "blocked=no-login no-form-submit no-video-download no-local-upload no-js no-private-network",
+            "blocked-extra=no-file-url no-data-url no-javascript-url",
+            "note=run only after Alife and NapCat target bot are healthy");
     }
 
     public static string BuildRagMenuText()
