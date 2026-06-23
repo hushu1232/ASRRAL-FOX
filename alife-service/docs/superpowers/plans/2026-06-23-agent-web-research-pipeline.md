@@ -1,0 +1,207 @@
+# Agent Web Research Pipeline Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build a QQ-friendly read-only web research pipeline that turns `@bot + keyword/question` into search, page selection, page reading, evidence extraction, and a short sourced answer.
+
+**Architecture:** Add `AgentWebResearchService` in the message-filter layer so it can compose existing public search, public/browser read routing, and site experience policy without giving QQ direct browser control. Add a small QChat formatter and semantic routing so owner and mentioned group members can trigger search by natural language while existing browser-only capabilities remain owner-only.
+
+**Tech Stack:** C#/.NET 9, existing `Alife.Function.MessageFilter` services, existing `Alife.Function.QChat` orchestrator and NUnit tests.
+
+---
+
+### Task 1: Research Service Models and Core Flow
+
+**Files:**
+- Create: `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchModels.cs`
+- Create: `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchService.cs`
+- Test: `Tests/Alife.Test.Framework/AgentWebResearchServiceTests.cs`
+
+- [ ] **Step 1: Write failing tests**
+
+Add tests that prove:
+
+```csharp
+AgentWebResearchService.SearchAndReadAsync("agent browser web access", actor, ct)
+```
+
+does the following:
+
+- calls public search with a cleaned query,
+- reads the top allowed result through `AgentWebAccessService`,
+- returns a `AgentWebResearchResult` with `Answer`, `Evidence`, and `Sources`,
+- returns a no-results response without fabricating when search has no results,
+- refuses private/local/file URLs through the existing web access service.
+
+- [ ] **Step 2: Run failing tests**
+
+Run:
+
+```powershell
+dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AgentWebResearchServiceTests"
+```
+
+Expected: compile failure because the service and models do not exist.
+
+- [ ] **Step 3: Implement models and service**
+
+Implement minimal records:
+
+```csharp
+public sealed record AgentWebResearchRequest(string Query, AgentWebAccessActor Actor, int MaxSources = 3);
+public sealed record AgentWebResearchEvidence(string Title, string Url, string Summary, string SourceType);
+public sealed record AgentWebResearchResult(bool Success, string Answer, IReadOnlyList<AgentWebResearchEvidence> Evidence, string? FailureReason = null);
+```
+
+Implement `AgentWebResearchService` to:
+
+- reject blank queries,
+- use existing `AgentPublicSearchService` / `AgentInternetService` public search flow,
+- read the first few search result URLs with `AgentWebAccessService`,
+- extract short evidence summaries from read results,
+- compose a deterministic answer without calling the LLM.
+
+- [ ] **Step 4: Verify tests pass**
+
+Run the same focused test command and confirm pass.
+
+### Task 2: QQ Semantic Trigger and Formatter
+
+**Files:**
+- Create or modify: `sources/Alife.Function/Alife.Function.QChat/QChatWebResearchFormatter.cs`
+- Modify: `sources/Alife.Function/Alife.Function.QChat/QChatIntentClassifier.cs`
+- Modify: `sources/Alife.Function/Alife.Function.QChat/QChatService.cs`
+- Test: `Tests/Alife.Test.QChat/QChatWebResearchSemanticTriggerTests.cs`
+
+- [ ] **Step 1: Write failing tests**
+
+Add tests that prove:
+
+- `@羽 查一下 agent browser` triggers research for mentioned group users,
+- `@羽 搜一下 xxx` triggers research,
+- unmentioned group chatter does not trigger research,
+- owner private natural language can trigger research,
+- group members do not receive owner-only browser snapshot capability,
+- formatted QQ answer starts with conclusion, includes up to three compact bullet lines, and includes sources.
+
+- [ ] **Step 2: Run failing tests**
+
+Run:
+
+```powershell
+dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~QChatWebResearchSemanticTriggerTests"
+```
+
+Expected: compile failure or behavior failure because semantic research routing is missing.
+
+- [ ] **Step 3: Implement semantic routing**
+
+Use existing QChat intent classification patterns. Add a research intent only for:
+
+- private owner messages,
+- group messages that explicitly mention the bot,
+- messages containing search semantics such as `查`, `搜`, `搜索`, `联网`, `资料`, `官方文档`, `对比`, or `是什么`.
+
+Strip the trigger words into a search query and pass the actor identity to `AgentWebResearchService`.
+
+- [ ] **Step 4: Implement QQ formatter**
+
+Format research output as:
+
+```text
+结论：...
+1. ...
+2. ...
+来源：title1 / title2
+```
+
+Keep it short and never expose provider names, policy labels, stack traces, or browser internal strategy.
+
+- [ ] **Step 5: Verify tests pass**
+
+Run the focused QChat test command and confirm pass.
+
+### Task 3: Docs and Full Verification
+
+**Files:**
+- Modify: `docs/qchat-capability-matrix.md`
+- Modify or create: `docs/agent-browser-web-research.md`
+
+- [ ] **Step 1: Document behavior**
+
+Document:
+
+- `@bot + keyword/question` triggers read-only web research,
+- group users can use public search research when mentioned,
+- owner keeps browser snapshot/read privileges,
+- browser interactions remain read-only and no login/click/download/form submission is allowed.
+
+- [ ] **Step 2: Run focused verification**
+
+Run:
+
+```powershell
+dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AgentWebResearchServiceTests|FullyQualifiedName~AgentPublicSearchServiceTests|FullyQualifiedName~AgentWebAccessServiceTests|FullyQualifiedName~AgentWebAccessRouterTests"
+dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~QChatWebResearchSemanticTriggerTests|FullyQualifiedName~QChatInternetCapabilityPolicyTests|FullyQualifiedName~QChatPublicInternetCommandPolicyTests|FullyQualifiedName~SemanticBrowser"
+dotnet build --no-restore
+```
+
+Expected: all commands pass with zero errors.
+
+### Task 4: Live QQ Smoke Diagnostics
+
+**Files:**
+- Modify: `sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs`
+- Modify: `Tests/Alife.Test.QChat/QChatDiagnosticsServiceTests.cs`
+- Modify: `docs/agent-browser-web-research.md`
+
+- [x] **Step 1: Add owner-only smoke checklist command**
+
+Add `/qchat web smoke` to the diagnostics service. It returns a concise manual live-test checklist for owner private search, mentioned group search, non-owner denial, and `/qchat web doctor`.
+
+- [x] **Step 2: Keep the command out of model execution**
+
+The command stays inside the owner diagnostics command path, so it does not enter the model or public web research chain.
+
+- [x] **Step 3: Verify with tests and build**
+
+Run:
+
+```powershell
+dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~QChatDiagnosticsServiceTests|FullyQualifiedName~QChatOwnerCommandServiceTests|FullyQualifiedName~QChatPublicInternetCommandPolicyTests|FullyQualifiedName~PublicSearch|FullyQualifiedName~SemanticBrowser|FullyQualifiedName~WebResearch|FullyQualifiedName~QChatInternetCapabilityPolicyTests"
+dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AgentWebResearchServiceTests|FullyQualifiedName~AgentPublicSearchServiceTests|FullyQualifiedName~AgentWebAccessServiceTests|FullyQualifiedName~AgentWebAccessRouterTests|FullyQualifiedName~AgentBrowserSiteExperienceStoreTests"
+dotnet build --no-restore
+```
+
+Expected: all commands pass with zero errors.
+
+### Task 5: Conservative Owner Query Expansion
+
+**Files:**
+- Modify: `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchService.cs`
+- Modify: `Tests/Alife.Test.Framework/AgentWebResearchServiceTests.cs`
+- Modify: `docs/agent-browser-web-research.md`
+
+- [x] **Step 1: Add failing tests**
+
+Add tests proving that owner research expands from `query` to `official docs query` when the original search only returns unsafe/private candidates, and that group-member research does not expand the query.
+
+- [x] **Step 2: Implement minimal planner**
+
+Keep the original query as the first search. Only when the original search has no usable public HTTP/HTTPS candidates and the actor is owner, try `official docs <query>`, `github <query>`, and `release notes <query>` in order.
+
+- [x] **Step 3: Verify focused behavior**
+
+Run:
+
+```powershell
+dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AgentWebResearchServiceTests|FullyQualifiedName~AgentPublicSearchServiceTests|FullyQualifiedName~AgentWebAccessServiceTests|FullyQualifiedName~AgentWebAccessRouterTests|FullyQualifiedName~AgentBrowserSiteExperienceStoreTests"
+```
+
+Expected: all focused web research tests pass.
+
+### Self-Review
+
+- Spec coverage: covers keyword trigger, public search, page read, evidence summary, QQ formatting, permissions, and docs.
+- Placeholder scan: no TBD/TODO placeholders.
+- Type consistency: service and model names use `AgentWebResearch*`; QChat formatter uses `QChatWebResearchFormatter`.

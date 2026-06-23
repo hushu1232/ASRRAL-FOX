@@ -5,6 +5,7 @@ using Alife.Function.Memory;
 using Alife.Function.FunctionCaller;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using System.Threading.Tasks;
 
@@ -15,7 +16,7 @@ public class Program
     public static async Task Main(string[] args)
     {
         // 0. 环境初始化
-        AlifePath.SetStorageFolderPath(@"C:\Users\13309\OneDrive\Alife.Client.Storage");
+        AlifePath.SetStorageFolderPath(Path.Combine(AlifePath.RootFolderPath, "Storage"));
 
         // 强制加载实现库，确保 ModuleSystem 能扫描到模块
         // 我们随便引用一个实现库里的类型即可

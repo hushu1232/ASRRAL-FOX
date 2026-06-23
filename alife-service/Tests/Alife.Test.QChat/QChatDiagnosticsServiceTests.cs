@@ -216,6 +216,24 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleWebSmokeReturnsManualLiveChecklist()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat web smoke", CreateRoute(), CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("QQ 联网研究 smoke checklist"));
+            Assert.That(result.Text, Does.Contain("1. 主人私聊：查一下 dotnet 9 release notes"));
+            Assert.That(result.Text, Does.Contain("2. 群聊成员：@bot 搜 dotnet 9 release notes"));
+            Assert.That(result.Text, Does.Contain("3. 非主人私聊：/search dotnet 9"));
+            Assert.That(result.Text, Does.Contain("预期：主人可自动读公开 HTTP/HTTPS 页面"));
+            Assert.That(result.Text, Does.Contain("预期：群成员只拿公开搜索证据"));
+            Assert.That(result.Text, Does.Contain("不得触发：点击、登录、下载、表单提交、JS 执行、私网或 file URL"));
+        });
+    }
+
+    [Test]
     public void TryHandleRagMenuReturnsOwnerManagementUsage()
     {
         QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat rag", CreateRoute(), CreateProfile());

@@ -4595,13 +4595,37 @@ public partial class QChatService(
                     return true;
                 }
 
-                AgentPublicSearchResponse searchResponse = await publicSearchService.SearchAsync(command.Query);
+                AgentWebAccessService? webAccessService = null;
+                if (senderRole == QChatSenderRole.Owner && injectedInternetService != null && config.EnableInternetAccess)
+                {
+                    injectedInternetService.Configuration ??= AgentInternetConfig.CreateDefault();
+                    injectedInternetService.Configuration.EnableInternetAccess = true;
+                    webAccessService = new AgentWebAccessService(
+                        internetService: injectedInternetService,
+                        browserProvider: injectedBrowserProvider,
+                        browserSiteExperienceStore: BrowserSiteExperienceStore);
+                }
+
+                AgentWebResearchService researchService = new(publicSearchService, webAccessService);
+                AgentWebResearchResult research = await researchService.ResearchAsync(new AgentWebResearchRequest(
+                    command.Query,
+                    MapWebAccessActorRole(senderRole),
+                    new AgentWebAccessConfig
+                    {
+                        EnablePublicSearch = config.EnablePublicInternetSearch,
+                        AllowGroupMemberPublicSearch = config.AllowGroupMemberPublicInternetSearch,
+                        EnableAutoRead = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess,
+                        EnablePublicFetch = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess,
+                        EnableBrowserSnapshot = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess,
+                        MaxQueryChars = config.PublicInternetQueryMaxChars
+                    },
+                    config.PublicInternetSearchMaxResults));
                 await SendCommandReplyAsync(
                     messageEvent,
                     senderRole,
                     targetType,
                     targetId,
-                    NeutralizePublicExternalQqMarkup(searchResponse.FormattedContent));
+                    NeutralizePublicExternalQqMarkup(QChatWebResearchFormatter.Format(research)));
                 return true;
 
             case QChatPublicInternetCommandKind.RagQuery:

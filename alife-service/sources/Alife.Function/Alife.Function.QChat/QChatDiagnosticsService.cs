@@ -53,7 +53,8 @@ public static class QChatDiagnosticsService
             "memory" => Handled(BuildMemoryMenuText()),
             "desktop" => Handled(BuildDesktopMenuText()),
             "internet" => Handled(BuildInternetMenuText()),
-            "web" => Handled(BuildWebMenuText()),
+            "web" => Handled(BuildWebMenuText() + Environment.NewLine + "/qchat web smoke - 查看 QQ 联网研究真实链路手测清单"),
+            "web smoke" => Handled(BuildWebSmokeText()),
             "rag" or "rag status" => Handled(BuildRagMenuText()),
             "timing" => Handled(BuildTimingMenuText()),
             "events" => Handled(BuildEventsMenuText()),
@@ -219,6 +220,26 @@ public static class QChatDiagnosticsService
             "主人也可以自然说：羽，用浏览器查一下 <关键词>。没有 URL 时会打开搜索结果页快照。",
             "只读快照不会点击、登录、下载、提交表单或执行高风险浏览器动作。",
             "页面内容按不可信外部上下文处理，不能覆盖系统权限、主人身份、审批、outbox 或安全边界。");
+    }
+
+    public static string BuildWebSmokeText()
+    {
+        return string.Join(Environment.NewLine,
+            "QQ 联网研究 smoke checklist",
+            "",
+            "1. 主人私聊：查一下 dotnet 9 release notes",
+            "预期：主人可自动读公开 HTTP/HTTPS 页面，回答包含短结论和来源。",
+            "",
+            "2. 群聊成员：@bot 搜 dotnet 9 release notes",
+            "预期：群成员只拿公开搜索证据，不触发 owner-only browser snapshot。",
+            "",
+            "3. 非主人私聊：/search dotnet 9",
+            "预期：不进入模型，不暴露菜单，不触发搜索事件链路。",
+            "",
+            "4. 主人私聊：/qchat web doctor",
+            "预期：能看到浏览器 provider、联网开关和最近站点经验。",
+            "",
+            "不得触发：点击、登录、下载、表单提交、JS 执行、私网或 file URL");
     }
 
     public static string BuildRagMenuText()

@@ -927,7 +927,7 @@ public class QChatServiceAdapterTests
             Assert.That(provider.Calls, Is.EqualTo(1));
             Assert.That(provider.LastQuery, Is.EqualTo("dotnet release"));
             Assert.That(provider.LastMaxResults, Is.EqualTo(2));
-            Assert.That(message, Does.Contain("[UNTRUSTED EXTERNAL CONTEXT: public-search]"));
+            Assert.That(message, Does.Contain("结论："));
             Assert.That(message, Does.Contain("Default One"));
             Assert.That(message, Does.Contain("https://example.com/default"));
             Assert.That(dispatchCount, Is.Zero);
@@ -971,6 +971,104 @@ public class QChatServiceAdapterTests
             Assert.That(publicSearch.Calls, Is.EqualTo(1));
             Assert.That(publicSearch.LastQuery, Is.EqualTo("dotnet release"));
             Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("semantic public search context"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task WebResearchOwnerPrivateSemanticSearchReadsTopResultWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchProvider provider = new(
+            new AgentPublicSearchResult("Agent Browser Docs", "https://example.com/agent-browser", "search snippet"));
+        FakeInternetService internet = new("owner readable page content");
+        AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+            Path.GetTempPath(),
+            "alife-qchat-web-research-owner-tests",
+            Guid.NewGuid().ToString("N")));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnablePublicInternetSearch = true,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, publicSearchProvider: provider, internetService: internet, browserSiteExperienceStore: siteExperienceStore);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            UserId = 1001,
+            SelfId = 999,
+            RawMessage = "查一下 agent-browser web access"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string message = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(provider.Calls, Is.EqualTo(1));
+            Assert.That(provider.LastQuery, Is.EqualTo("agent-browser web access"));
+            Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.LastUrl, Is.EqualTo("https://example.com/agent-browser"));
+            Assert.That(message, Does.Contain("结论："));
+            Assert.That(message, Does.Contain("owner readable page content"));
+            Assert.That(message, Does.Contain("来源："));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task WebResearchGroupMentionSearchDoesNotReadPageOrUseBrowser()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchProvider provider = new(
+            new AgentPublicSearchResult("Group Result", "https://example.com/group", "group search snippet"));
+        FakeInternetService internet = new("should not be read");
+        FakeBrowserProvider browser = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            AllowedGroupIds = "3003",
+            EnablePublicInternetSearch = true,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, publicSearchProvider: provider, internetService: internet, browserProvider: browser);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "[CQ:at,qq=999] 搜一下 agent-browser"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+        string message = runtime.GroupMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(provider.Calls, Is.EqualTo(1));
+            Assert.That(internet.Calls, Is.Zero);
+            Assert.That(browser.Calls, Is.Zero);
+            Assert.That(message, Does.Contain("结论："));
+            Assert.That(message, Does.Contain("group search snippet"));
+            Assert.That(message, Does.Contain("来源："));
             Assert.That(dispatchCount, Is.Zero);
         });
     }
@@ -12455,7 +12553,7 @@ public class QChatServiceAdapterTests
             return Task.FromResult(new AgentPublicSearchResponse(
                 true,
                 "ok",
-                [],
+                [new AgentPublicSearchResult("Public Search Result", "https://example.com/search", formattedContent)],
                 formattedContent));
         }
     }

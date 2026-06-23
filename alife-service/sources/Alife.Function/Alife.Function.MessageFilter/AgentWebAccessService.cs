@@ -100,6 +100,10 @@ public sealed class AgentWebAccessService(
             return Denied(request.Capability, "internet_service_not_configured");
 
         AgentInternetFetchResult response = await internetService.FetchPublicPageAsync(request.Query, cancellationToken);
+        browserSiteExperienceStore?.RecordSnapshotResult(
+            request.Query,
+            response.Success,
+            response.Reason);
         return new AgentWebAccessResponse(
             response.Success,
             response.Reason,

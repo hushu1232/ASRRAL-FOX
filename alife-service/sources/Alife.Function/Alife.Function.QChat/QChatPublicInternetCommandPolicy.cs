@@ -57,14 +57,17 @@ public static class QChatPublicInternetCommandPolicy
         if (explicitCommand.Kind != QChatPublicInternetCommandKind.None)
             return explicitCommand;
 
-        if (messageType != OneBotMessageType.Group || botId <= 0)
+        if (messageType != OneBotMessageType.Group && messageType != OneBotMessageType.Private)
             return QChatPublicInternetCommand.None;
 
         string raw = rawMessage ?? string.Empty;
-        if (IsMentioned(raw, botId) == false)
+        if (messageType == OneBotMessageType.Group && (botId <= 0 || IsMentioned(raw, botId) == false))
             return QChatPublicInternetCommand.None;
 
         string plain = OneBotSegment.GetPlainText(raw);
+        if (plain.Contains("浏览器", StringComparison.OrdinalIgnoreCase))
+            return QChatPublicInternetCommand.None;
+
         string query = ExtractSearchQuery(plain);
         return query.Length > 0
             ? new QChatPublicInternetCommand(QChatPublicInternetCommandKind.Search, query)
@@ -138,6 +141,10 @@ public static class QChatPublicInternetCommandPolicy
         if (normalized.Length == 0)
             return "";
 
+        string simpleQuery = ExtractSimpleSearchQuery(normalized);
+        if (simpleQuery.Length > 0)
+            return simpleQuery;
+
         string[] patterns =
         [
             @"^(?:请|麻烦|帮我|帮忙|可以)?\s*(?:联网)?(?:搜一下|搜索一下|搜搜|搜索|搜|查一下|查查|查询一下|查询|找一下|找找)\s*(?<query>.+)$",
@@ -156,6 +163,36 @@ public static class QChatPublicInternetCommandPolicy
                 continue;
 
             return CleanQuery(match.Groups["query"].Value);
+        }
+
+        return "";
+    }
+
+    static string ExtractSimpleSearchQuery(string normalized)
+    {
+        string[] markers =
+        [
+            "帮我搜一下",
+            "帮我搜索",
+            "搜一下",
+            "搜索",
+            "查一下",
+            "查一查",
+            "查询一下",
+            "联网看看",
+            "联网查一下",
+            "找一下",
+            "最新"
+        ];
+
+        foreach (string marker in markers)
+        {
+            int index = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+                continue;
+
+            string query = normalized[(index + marker.Length)..].Trim();
+            return CleanQuery(query);
         }
 
         return "";

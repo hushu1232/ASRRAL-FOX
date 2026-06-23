@@ -1,4 +1,5 @@
 using System.Text;
+using System.IO;
 using Alife.Platform;
 using Alife.Framework;
 using Alife.Function.FunctionCaller;
@@ -22,7 +23,7 @@ public class Program
 
         // 1. 初始化系统环境
         AlifeTerminal.LogInfo("正在初始化系统环境...");
-        AlifePath.SetStorageFolderPath(@"C:\Users\13309\OneDrive\Alife.Client.Storage");
+        AlifePath.SetStorageFolderPath(Path.Combine(AlifePath.RootFolderPath, "Storage"));
         StorageSystem storage = new();
         ConfigurationSystem config = new(storage);
         using ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());

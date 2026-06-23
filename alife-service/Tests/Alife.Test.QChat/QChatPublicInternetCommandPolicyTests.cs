@@ -73,7 +73,7 @@ public sealed class QChatPublicInternetCommandPolicyTests
     }
 
     [Test]
-    public void ParseMessage_PrivateSearchIntentDoesNotTriggerSemanticPublicSearch()
+    public void ParseMessage_PrivateSearchIntentReturnsSearch()
     {
         QChatPublicInternetCommand command = QChatPublicInternetCommandPolicy.ParseMessage(
             OneBotMessageType.Private,
@@ -81,7 +81,11 @@ public sealed class QChatPublicInternetCommandPolicyTests
             "[CQ:at,qq=999] 帮我搜一下 dotnet release news",
             "帮我搜一下 dotnet release news");
 
-        Assert.That(command.Kind, Is.EqualTo(QChatPublicInternetCommandKind.None));
+        Assert.Multiple(() =>
+        {
+            Assert.That(command.Kind, Is.EqualTo(QChatPublicInternetCommandKind.Search));
+            Assert.That(command.Query, Is.EqualTo("dotnet release news"));
+        });
     }
 
     [TestCase(QChatSenderRole.Owner)]
