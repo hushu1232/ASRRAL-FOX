@@ -38,6 +38,56 @@ public class QChatOutboundPlannerTests
     }
 
     [Test]
+    public void PlanTextRemovesStageDirectionPrefixButKeepsNaturalReply()
+    {
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner()
+            .PlanText("\uFF08\u51B7\u51B7\u770B\u7740\u4F60\uFF09\u5C11\u88C5\u719F\u3002");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Items, Has.Count.EqualTo(1));
+            Assert.That(plan.Items[0].Text, Is.EqualTo("\u5C11\u88C5\u719F\u3002"));
+        });
+    }
+
+    [Test]
+    public void PlanTextRemovesPersonaFrameButKeepsNaturalReply()
+    {
+        string text = "[qchat persona frame]\nspeaker_role=owner\nrecommended_stance=tender\n[/qchat persona frame]\n\u672F\u672F\uFF0C\u6211\u5728\u3002";
+
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(text);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Items, Has.Count.EqualTo(1));
+            Assert.That(plan.Items[0].Text, Is.EqualTo("\u672F\u672F\uFF0C\u6211\u5728\u3002"));
+        });
+    }
+
+    [Test]
+    public void PlanTextDropsPureInternalState()
+    {
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner()
+            .PlanText("\u5FC3\u7406\u72B6\u6001\uFF1A\u5AC9\u5992");
+
+        Assert.That(plan.Items, Is.Empty);
+    }
+
+    [Test]
+    public void PlanTextPreservesQqImageCqCode()
+    {
+        string text = "[CQ:image,file=D:/Alife/Runtime/BrowserAgentMedia/a.png]";
+
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(text);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Items, Has.Count.EqualTo(1));
+            Assert.That(plan.Items[0].Text, Is.EqualTo(text));
+        });
+    }
+
+    [Test]
     public void EmptyTextProducesNoSendItems()
     {
         QChatOutboundPlanner planner = new();

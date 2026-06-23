@@ -83,7 +83,7 @@ public sealed class QChatVisibleReplyPolicy
         bool shouldReply)
     {
         string selected = SelectConversationSection(modelText ?? string.Empty, conversationKind);
-        string sanitized = SanitizeVisibleText(selected);
+        string sanitized = QChatVisibleTextPolicy.SanitizeVisibleText(selected);
 
         if (shouldReply == false && conversationKind == QChatConversationKind.Group)
         {
