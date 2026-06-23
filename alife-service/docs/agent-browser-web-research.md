@@ -226,7 +226,7 @@ The smoke run must not trigger clicking, login, downloads, form submission, Java
 
 ## Browser Agent Automation Phase 1
 
-Status: implementation in progress until final focused verification and GitHub upload pass.
+Status: completed on 2026-06-23 for Phase 1 bounded automation.
 
 Phase 1 adds a bounded owner-only browser Agent for private QQ chat. It is separate from group-member public search/RAG. Group members may use the public web research path when enabled, but they cannot trigger the browser automation provider, menu chain, or model fallback through browser-agent wording.
 

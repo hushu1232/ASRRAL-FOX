@@ -238,7 +238,7 @@ Remaining follow-up outside the browser roadmap:
 
 ## Priority 8: Browser Agent Automation Phase 1
 
-Status: in progress on 2026-06-23.
+Status: completed on 2026-06-23.
 
 Goal: add owner-only bounded browser automation over public pages while keeping group-member web access on the lighter public search/RAG path.
 
@@ -280,3 +280,10 @@ Completion evidence required:
 - `/qchat web browser-agent` diagnostics text exists and contains `browser-agent=phase1`, `owner-only`, `no-login`, `image-ok`, and `video-link-only`.
 - Focused build/test verification passes.
 - GitHub upload through `D:\FOXD` uses the full `D:\Alife` source root.
+
+Verification evidence:
+
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --filter "AgentBrowserActionPolicyTests|AgentBrowserTaskPlannerTests|AgentBrowserAutomationServiceTests|AgentBrowserMediaOutputServiceTests|AgentWebAccessRouterTests|AgentBrowserProviderModelsTests"` passed: 100 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "QChatBrowserAgentTriggerPolicyTests|QChatBrowserAgentFormatterTests|OwnerPrivateBrowserAgentRequestRunsAutomationWithoutModelDispatch|NonOwnerPrivateBrowserAgentRequestDoesNotRunAutomationOrModel|GroupBrowserAgentRequestDoesNotRunAutomation|QChatDiagnosticsServiceTests"` passed: 42 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
+- GitHub upload through `D:\FOXD` verified remote commit `9a380b9cc98ff4f5c3ce5b03205603d451104a96` on `refs/heads/master`.
