@@ -428,6 +428,56 @@ Verification on 2026-06-23:
 - QChat focused browser/diagnostics/policy tests passed: 74 passed, 0 failed.
 - `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 
+### Task 11: Engineering Cleanup And Upload Hygiene
+
+**Files:**
+- Modify: `docs/browser-global-task-plan.md`
+- Track: `docs/d-drive-storage.md`
+
+- [x] **Step 1: Audit tracked browser roadmap files**
+
+Confirmed representative browser/web research source, test, and documentation files are tracked by `git ls-files`, including:
+
+- `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchControlState.cs`
+- `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchService.cs`
+- `sources/Alife.Function/Alife.Function.Browser/AgentBrowserRuntimeProvider.cs`
+- `Tests/Alife.Test.Framework/AgentWebResearchServiceTests.cs`
+- `Tests/Alife.Test.Browser/BrowserServiceAdapterTests.cs`
+- `docs/d-drive-storage.md`
+
+- [x] **Step 2: Audit generated/runtime exclusions**
+
+Confirmed these root-level generated/runtime directories are not tracked:
+
+- `Outputs`
+- `Runtime`
+- `Storage`
+- `Models`
+- `bin`
+- `obj`
+- `.tmp`
+- `.codegraph`
+- `.worktrees`
+
+- [x] **Step 3: Preserve D-drive storage preference**
+
+`docs/d-drive-storage.md` documents D-drive project paths and optional environment variables for NuGet, dotnet, temp, and Playwright caches.
+
+- [x] **Step 4: Keep encoding cleanup separate**
+
+Historical garbled Chinese text remains a separate cleanup task. It was not changed during browser roadmap work to avoid noisy diffs and accidental behavior changes.
+
+- [x] **Step 5: Verify and upload**
+
+Run focused documentation/upload-hygiene audits, `dotnet build --no-restore`, then upload through the `D:\FOXD` workflow.
+
+Verification on 2026-06-23:
+
+- Representative browser/web research files were listed by `git ls-files`.
+- Root-level generated/runtime directories were absent from `git ls-files`.
+- `git ls-files --others --exclude-standard` returned no untracked paths, only the existing user-level ignore permission warning.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
+
 ### Self-Review
 
 - Spec coverage: covers keyword trigger, public search, page read, evidence summary, QQ formatting, permissions, and docs.

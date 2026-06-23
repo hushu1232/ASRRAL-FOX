@@ -212,14 +212,26 @@ Verification evidence:
 
 ## Priority 7: Engineering Cleanup And Upload Hygiene
 
-Status: pending.
+Status: completed on 2026-06-23.
 
 Goal: keep browser work maintainable and uploadable.
 
 Tasks:
 
-- Ensure all new web research files are tracked by git before upload.
-- Keep generated/runtime data out of upload snapshots.
-- Clean up historical garbled Chinese docs/tests in a separate task.
-- Keep D-drive storage preference for runtime/cache/temp data.
-- Use `D:\FOXD` upload workflow after each completed priority.
+- Ensure all new web research files are tracked by git before upload. Done: audited representative browser/web research source, test, and doc files with `git ls-files`; added `docs/d-drive-storage.md` to the tracked snapshot.
+- Keep generated/runtime data out of upload snapshots. Done: root-level `Outputs`, `Runtime`, `Storage`, `Models`, `bin`, `obj`, `.tmp`, `.codegraph`, and `.worktrees` were checked and are not tracked.
+- Clean up historical garbled Chinese docs/tests in a separate task. Done: left existing mojibake untouched during browser work and recorded it as a separate cleanup task, not part of the browser capability changes.
+- Keep D-drive storage preference for runtime/cache/temp data. Done: `docs/d-drive-storage.md` documents project-owned D-drive paths and optional user environment variables for NuGet, dotnet, temp, and Playwright cache relocation.
+- Use `D:\FOXD` upload workflow after each completed priority. Done for Priorities 1 through 6; this priority also uses the same workflow after verification.
+
+Upload hygiene evidence:
+
+- `git ls-files docs/d-drive-storage.md sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchControlState.cs sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchService.cs sources/Alife.Function/Alife.Function.Browser/AgentBrowserRuntimeProvider.cs Tests/Alife.Test.Framework/AgentWebResearchServiceTests.cs Tests/Alife.Test.Browser/BrowserServiceAdapterTests.cs` listed every requested file.
+- `git ls-files Outputs Runtime Storage Models bin obj .tmp .codegraph .worktrees` returned no tracked files.
+- `git ls-files | Select-String -Pattern "^(Outputs|Runtime|Storage|Models|bin|obj|\.tmp|\.codegraph|\.worktrees)(/|$)"` returned no root-level generated/runtime tracked files.
+- `git ls-files --others --exclude-standard` returned no untracked file paths; it only emitted the existing user-level warning about `C:\Users\hu shu/.config/git/ignore` permission.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
+
+Remaining follow-up outside the browser roadmap:
+
+- Historical garbled Chinese text still exists in some docs/tests/source comments. Clean it in a separate encoding-focused pass with narrow tests, because broad text cleanup during browser feature work would create noisy diffs and higher regression risk.
