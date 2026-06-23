@@ -181,9 +181,127 @@ public sealed class AgentWebResearchService(
 
     static IEnumerable<string> PlanOwnerExpandedQueries(string query)
     {
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase) { query };
+        foreach (string plannedQuery in PlanIntentAwareQueries(query)
+                     .Concat(PlanGenericFallbackQueries(query)))
+        {
+            string normalized = NormalizeQuery(plannedQuery);
+            if (normalized.Length == 0 || seen.Add(normalized) == false)
+                continue;
+
+            yield return normalized;
+        }
+    }
+
+    static IEnumerable<string> PlanIntentAwareQueries(string query)
+    {
+        string? exactErrorQuery = TryBuildExactErrorQuery(query);
+        if (exactErrorQuery != null)
+            yield return exactErrorQuery;
+
+        if (IsFreshnessQuery(query))
+            yield return $"{query} latest release notes";
+
+        string? englishTechnicalQuery = TryBuildEnglishTechnicalQuery(query);
+        if (englishTechnicalQuery != null)
+            yield return englishTechnicalQuery;
+    }
+
+    static IEnumerable<string> PlanGenericFallbackQueries(string query)
+    {
         yield return $"official docs {query}";
         yield return $"github {query}";
         yield return $"release notes {query}";
+    }
+
+    static string? TryBuildExactErrorQuery(string query)
+    {
+        Match httpStatus = Regex.Match(
+            query,
+            @"\bHTTP\s+\d{3}\s+[A-Za-z]+(?:\s+[A-Za-z]+){0,2}\b",
+            RegexOptions.IgnoreCase);
+        if (httpStatus.Success)
+        {
+            List<string> parts = [$"\"{httpStatus.Value}\""];
+            foreach (Match token in Regex.Matches(query, @"\b[A-Za-z]+(?:-[A-Za-z0-9]+)+\b"))
+            {
+                string value = token.Value;
+                if (httpStatus.Value.Contains(value, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                parts.Add(value);
+            }
+
+            return string.Join(" ", parts);
+        }
+
+        Match exception = Regex.Match(
+            query,
+            @"\b[A-Za-z][A-Za-z0-9_.]+(?:Exception|Error)\b",
+            RegexOptions.IgnoreCase);
+        return exception.Success ? $"\"{exception.Value}\"" : null;
+    }
+
+    static bool IsFreshnessQuery(string query)
+    {
+        return ContainsAny(
+            query,
+            "最新",
+            "发布日期",
+            "发布",
+            "版本",
+            "新闻",
+            "更新",
+            "latest",
+            "current",
+            "release",
+            "released",
+            "version",
+            "news",
+            "changelog");
+    }
+
+    static string? TryBuildEnglishTechnicalQuery(string query)
+    {
+        Dictionary<string, string> map = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["浏览器"] = "browser",
+            ["网页"] = "web",
+            ["联网"] = "web",
+            ["搜索"] = "search",
+            ["自动读取"] = "auto read",
+            ["读取"] = "read",
+            ["反爬"] = "anti bot",
+            ["验证码"] = "captcha",
+            ["登录墙"] = "login wall",
+            ["知识库"] = "knowledge base",
+            ["外部知识库"] = "external knowledge base",
+            ["截图"] = "snapshot",
+            ["摘要"] = "summary",
+            ["来源"] = "source",
+            ["令牌"] = "token",
+            ["节省"] = "saving"
+        };
+
+        List<string> terms = [];
+        foreach ((string chinese, string english) in map)
+        {
+            if (chinese == "读取" && query.Contains("自动读取", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (query.Contains(chinese, StringComparison.OrdinalIgnoreCase))
+                terms.Add(english);
+        }
+
+        if (terms.Count == 0)
+            return null;
+
+        return string.Join(" ", terms.Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    static bool ContainsAny(string value, params string[] terms)
+    {
+        return terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 
     static string Compact(string? value)

@@ -166,6 +166,138 @@ public sealed class AgentWebResearchServiceTests
     }
 
     [Test]
+    public async Task ResearchAsync_OwnerUsesFreshnessAwareExpansionForLatestRequests()
+    {
+        FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>
+        {
+            ["dotnet 10 最新发布日期"] =
+            [
+                new AgentPublicSearchResult("Local", "http://127.0.0.1:8080/private", "unsafe local result")
+            ],
+            ["dotnet 10 最新发布日期 latest release notes"] =
+            [
+                new AgentPublicSearchResult("Microsoft Release Notes", "https://learn.microsoft.com/dotnet/core/whats-new/dotnet-10", "fresh official release notes")
+            ],
+            ["official docs dotnet 10 最新发布日期"] =
+            [
+                new AgentPublicSearchResult("Should Not Need Generic Docs", "https://docs.example.com/extra", "extra search would waste tokens")
+            ]
+        });
+        FakeInternetService internet = new(new AgentInternetFetchResult(true, "ok", "fresh release note content"));
+        AgentWebResearchService service = new(search, new AgentWebAccessService(internetService: internet));
+
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            "dotnet 10 最新发布日期",
+            AgentWebAccessActorRole.Owner,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                EnableAutoRead = true,
+                EnablePublicFetch = true
+            },
+            MaxSources: 1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(search.Queries, Is.EqualTo(new[]
+            {
+                "dotnet 10 最新发布日期",
+                "dotnet 10 最新发布日期 latest release notes"
+            }));
+            Assert.That(result.Evidence.Single().Title, Is.EqualTo("Microsoft Release Notes"));
+        });
+    }
+
+    [Test]
+    public async Task ResearchAsync_OwnerUsesExactErrorExpansionBeforeGenericFallback()
+    {
+        FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>
+        {
+            ["报错 HTTP 429 Too Many Requests retry-after"] =
+            [
+                new AgentPublicSearchResult("Local", "http://127.0.0.1:8080/error", "unsafe local result")
+            ],
+            ["\"HTTP 429 Too Many Requests\" retry-after"] =
+            [
+                new AgentPublicSearchResult("MDN 429", "https://developer.mozilla.org/docs/Web/HTTP/Status/429", "exact error result")
+            ],
+            ["official docs 报错 HTTP 429 Too Many Requests retry-after"] =
+            [
+                new AgentPublicSearchResult("Should Not Need Generic Docs", "https://docs.example.com/extra", "extra search would waste tokens")
+            ]
+        });
+        FakeInternetService internet = new(new AgentInternetFetchResult(true, "ok", "exact error page content"));
+        AgentWebResearchService service = new(search, new AgentWebAccessService(internetService: internet));
+
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            "报错 HTTP 429 Too Many Requests retry-after",
+            AgentWebAccessActorRole.Owner,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                EnableAutoRead = true,
+                EnablePublicFetch = true
+            },
+            MaxSources: 1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(search.Queries, Is.EqualTo(new[]
+            {
+                "报错 HTTP 429 Too Many Requests retry-after",
+                "\"HTTP 429 Too Many Requests\" retry-after"
+            }));
+            Assert.That(result.Evidence.Single().Title, Is.EqualTo("MDN 429"));
+        });
+    }
+
+    [Test]
+    public async Task ResearchAsync_OwnerUsesEnglishTechnicalExpansionForChineseBrowserTerms()
+    {
+        FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>
+        {
+            ["浏览器 自动读取 反爬"] =
+            [
+                new AgentPublicSearchResult("Local", "http://127.0.0.1:8080/browser", "unsafe local result")
+            ],
+            ["browser auto read anti bot"] =
+            [
+                new AgentPublicSearchResult("Browser Strategy", "https://docs.example.com/browser-strategy", "english technical result")
+            ],
+            ["official docs 浏览器 自动读取 反爬"] =
+            [
+                new AgentPublicSearchResult("Should Not Need Generic Docs", "https://docs.example.com/extra", "extra search would waste tokens")
+            ]
+        });
+        FakeInternetService internet = new(new AgentInternetFetchResult(true, "ok", "english technical page content"));
+        AgentWebResearchService service = new(search, new AgentWebAccessService(internetService: internet));
+
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            "浏览器 自动读取 反爬",
+            AgentWebAccessActorRole.Owner,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                EnableAutoRead = true,
+                EnablePublicFetch = true
+            },
+            MaxSources: 1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(search.Queries, Is.EqualTo(new[]
+            {
+                "浏览器 自动读取 反爬",
+                "browser auto read anti bot"
+            }));
+            Assert.That(result.Evidence.Single().Title, Is.EqualTo("Browser Strategy"));
+        });
+    }
+
+    [Test]
     public async Task ResearchAsync_GroupMemberDoesNotExpandQueryWhenOriginalHasNoUsablePublicResults()
     {
         FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>
@@ -196,6 +328,40 @@ public sealed class AgentWebResearchServiceTests
             Assert.That(result.Success, Is.False);
             Assert.That(result.Reason, Is.EqualTo("no_results"));
             Assert.That(search.Queries, Is.EqualTo(new[] { "dotnet 9" }));
+        });
+    }
+
+    [Test]
+    public async Task ResearchAsync_GroupMemberDoesNotUseIntentExpansionForLatestRequests()
+    {
+        FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>
+        {
+            ["dotnet 10 最新发布日期"] =
+            [
+                new AgentPublicSearchResult("Local", "http://127.0.0.1:8080/private", "unsafe local result")
+            ],
+            ["dotnet 10 最新发布日期 latest release notes"] =
+            [
+                new AgentPublicSearchResult("Microsoft Release Notes", "https://learn.microsoft.com/dotnet/core/whats-new/dotnet-10", "fresh official release notes")
+            ]
+        });
+        AgentWebResearchService service = new(search, new AgentWebAccessService());
+
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            "dotnet 10 最新发布日期",
+            AgentWebAccessActorRole.GroupMember,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                AllowGroupMemberPublicSearch = true
+            },
+            MaxSources: 1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Reason, Is.EqualTo("no_results"));
+            Assert.That(search.Queries, Is.EqualTo(new[] { "dotnet 10 最新发布日期" }));
         });
     }
 

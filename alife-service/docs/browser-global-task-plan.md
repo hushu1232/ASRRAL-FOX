@@ -83,17 +83,33 @@ Verification evidence:
 
 ## Priority 3: Search Intelligence
 
-Status: pending.
+Status: completed on 2026-06-23.
 
 Goal: make search planning smarter without loosening safety boundaries.
 
 Tasks:
 
-- Expand owner queries based on intent, not only fixed fallback templates.
-- Add freshness-aware query planning for latest/news/version asks.
-- Add exact-error query handling for bug reports.
-- Add Chinese-to-English technical keyword expansion where useful.
-- Keep group-member search conservative unless explicitly allowed later.
+- Expand owner queries based on intent, not only fixed fallback templates. Done: owner-only fallback now tries high-signal intent queries before generic `official docs`, `github`, and `release notes` fallbacks.
+- Add freshness-aware query planning for latest/news/version asks. Done: latest/version/news style requests add a focused `latest release notes` query.
+- Add exact-error query handling for bug reports. Done: HTTP status and exception/error terms are quoted before generic fallback.
+- Add Chinese-to-English technical keyword expansion where useful. Done: browser/search/read/anti-bot/login-wall/RAG style Chinese terms can produce compact English technical queries.
+- Keep group-member search conservative unless explicitly allowed later. Done: group members still use only the original query and never run owner query expansion.
+
+Token saving effect:
+
+- Intent expansions run only after the original owner search has no usable public HTTP/HTTPS candidate.
+- The planner stops as soon as one expansion produces usable candidates, so successful intent plans avoid generic fallback searches.
+- Latest/version questions use one focused `latest release notes` expansion instead of broad news-style browsing.
+- Error questions quote the exact status/exception phrase, reducing irrelevant result pages and wasted page reads.
+- Chinese technical questions use compact English terms only when matching known technical vocabulary, avoiding LLM-based query rewriting.
+- Group members do not receive expansion, auto-read, or browser evidence, keeping group-triggered token and network cost bounded.
+
+Verification evidence:
+
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~ResearchAsync_OwnerUsesFreshnessAwareExpansionForLatestRequests|FullyQualifiedName~ResearchAsync_OwnerUsesExactErrorExpansionBeforeGenericFallback|FullyQualifiedName~ResearchAsync_OwnerUsesEnglishTechnicalExpansionForChineseBrowserTerms|FullyQualifiedName~ResearchAsync_GroupMemberDoesNotUseIntentExpansionForLatestRequests"` passed: 4 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AgentWebResearchServiceTests|FullyQualifiedName~AgentBrowserSiteExperienceStoreTests|FullyQualifiedName~AgentWebAccessServiceTests|FullyQualifiedName~AgentWebAccessRouterTests|FullyQualifiedName~AgentPublicSearchServiceTests"` passed: 61 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~WebResearch|FullyQualifiedName~QChatPublicInternetCommandPolicyTests|FullyQualifiedName~QChatInternetCapabilityPolicyTests|FullyQualifiedName~QChatDiagnosticsServiceTests"` passed: 71 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 
 ## Priority 4: External RAG Closure
 

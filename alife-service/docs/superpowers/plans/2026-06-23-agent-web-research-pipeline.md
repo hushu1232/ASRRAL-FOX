@@ -247,6 +247,41 @@ Verification on 2026-06-23:
 - QChat focused tests passed: 71 passed, 0 failed.
 - `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 
+### Task 7: Token-Saving Search Intelligence
+
+**Files:**
+- Modify: `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchService.cs`
+- Modify: `Tests/Alife.Test.Framework/AgentWebResearchServiceTests.cs`
+- Modify: `docs/agent-browser-web-research.md`
+- Modify: `docs/browser-global-task-plan.md`
+
+- [x] **Step 1: Add failing tests**
+
+Add tests proving:
+
+- latest/version owner requests use a focused `latest release notes` fallback,
+- exact HTTP status/error requests quote the error before generic fallback,
+- known Chinese technical terms can become compact English technical queries,
+- group members never get owner query expansion.
+
+- [x] **Step 2: Implement deterministic query planning**
+
+Owner expansion now runs only when the original search produces no usable public candidates. The planner tries intent-aware queries before generic fallbacks and de-duplicates planned queries.
+
+- [x] **Step 3: Keep token cost bounded**
+
+Each behavior saves tokens by replacing broad fallback with one high-signal query and stopping as soon as usable candidates are found. No LLM-based query rewrite is used. Group member searches stay single-query and snippet-only.
+
+- [x] **Step 4: Verify and upload**
+
+Run focused Framework/QChat web research tests and `dotnet build --no-restore`, then upload through the `D:\FOXD` workflow.
+
+Verification on 2026-06-23:
+
+- Framework focused tests passed: 61 passed, 0 failed.
+- QChat focused tests passed: 71 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
+
 ### Self-Review
 
 - Spec coverage: covers keyword trigger, public search, page read, evidence summary, QQ formatting, permissions, and docs.

@@ -86,11 +86,23 @@ This avoids changing `/search` semantics while still making owner auto-read pref
 
 Owner research keeps the original query as the first search. If that search produces no usable public HTTP/HTTPS candidate, the service tries a short fallback plan:
 
-1. `official docs <query>`
-2. `github <query>`
-3. `release notes <query>`
+1. Intent-aware high-signal expansions, when applicable:
+   - latest/version/news requests: `<query> latest release notes`
+   - exact HTTP status or exception requests: quoted exact error phrase
+   - known Chinese technical terms: compact English technical query
+2. Generic fallback expansions:
+   - `official docs <query>`
+   - `github <query>`
+   - `release notes <query>`
 
-This is intentionally conservative. It only applies to owner research after the original result set is unusable. Group members stay on the original public-search query and do not get expanded owner search behavior.
+This is intentionally conservative. It only applies to owner research after the original result set is unusable. The service stops after the first expansion that produces usable candidates, so intent matches reduce broad fallback searches rather than adding unlimited queries. Group members stay on the original public-search query and do not get expanded owner search behavior.
+
+Token-saving rules:
+
+- No expansion is attempted while the original query has a usable public candidate.
+- No LLM is used for query rewriting.
+- Expansion candidates are deterministic and de-duplicated.
+- Group member searches do not expand or auto-read pages.
 
 ## Output Shape
 
