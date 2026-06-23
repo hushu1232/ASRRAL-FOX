@@ -1,8 +1,10 @@
 using System;
 using System.ComponentModel;
+using System.Threading;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
+using Alife.Function.Agent;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 
@@ -19,7 +21,7 @@ public class BrowserService(
     XmlFunctionCaller functionService,
     IBrowserRuntime? browserRuntime = null,
     ILifeEventPublisher? lifeEventPublisher = null)
-    : InteractiveModule<BrowserService>, IDisposable, IEmbodiedCapability, IModuleHealthReporter
+    : InteractiveModule<BrowserService>, IDisposable, IEmbodiedCapability, IModuleHealthReporter, IAgentBrowserProvider
 {
     [XmlFunction(FunctionMode.OneShot)]
     [Description("打开网页。")]
@@ -71,6 +73,13 @@ public class BrowserService(
     }
 
     readonly IBrowserRuntime browser = browserRuntime ?? new BrowserEngine();
+
+    public Task<AgentBrowserSnapshot> CaptureSnapshotAsync(
+        AgentBrowserSnapshotRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return new AgentBrowserRuntimeProvider(browser).CaptureSnapshotAsync(request, cancellationToken);
+    }
 
     public static string FormatObservedPageResult(int page, string result)
     {

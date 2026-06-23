@@ -130,6 +130,28 @@ public class BrowserServiceAdapterTests
     }
 
     [Fact]
+    public async Task BrowserService_CanProvideAgentBrowserSnapshot()
+    {
+        FakeBrowserRuntime runtime = new()
+        {
+            ScriptResult = "\"Service Title\"",
+            ObserveResult = "Service observed page"
+        };
+        IAgentBrowserProvider provider = new BrowserService(null!, runtime);
+
+        AgentBrowserSnapshot snapshot = await provider.CaptureSnapshotAsync(new AgentBrowserSnapshotRequest(
+            Url: "https://example.com/service",
+            Page: 3));
+
+        Assert.True(snapshot.Success);
+        Assert.Equal("Service Title", snapshot.Title);
+        Assert.Equal("Service observed page", snapshot.Text);
+        Assert.Equal(["https://example.com/service"], runtime.NavigatedUrls);
+        Assert.Equal([3], runtime.ObservedPages);
+        Assert.Contains("document.title", runtime.ExecutedScripts.Single());
+    }
+
+    [Fact]
     public async Task AgentBrowserRuntimeProvider_WhenRuntimeFails_ReturnsFailedSnapshot()
     {
         SlowBrowserRuntime runtime = new();
