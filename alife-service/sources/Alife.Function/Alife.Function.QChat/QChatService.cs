@@ -4646,6 +4646,17 @@ public partial class QChatService(
                 config.AllowGroupMemberPublicInternetSearch,
                 config.AllowGroupMemberPublicExternalRagQuery));
 
+        WriteQChatDiagnostic("qchat-public-web-research-command", "Public web research command evaluated.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            command.Kind,
+            command.Query,
+            decision.Allowed,
+            decision.Reason
+        });
+
         if (decision.Allowed == false)
         {
             await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, decision.Reason);
@@ -4658,12 +4669,19 @@ public partial class QChatService(
                 AgentPublicSearchService? publicSearchService = ResolvePublicSearchService(config);
                 if (publicSearchService == null)
                 {
+                    WriteQChatDiagnostic("qchat-public-web-research-result", "Public web research result.", new {
+                        Success = false,
+                        Reason = "public_search_not_configured",
+                        EvidenceCount = 0,
+                        OwnerPageReadEnabled = false
+                    });
                     await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "public_search=not_configured");
                     return true;
                 }
 
+                bool ownerPageReadEnabled = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess;
                 AgentWebAccessService? webAccessService = null;
-                if (senderRole == QChatSenderRole.Owner && injectedInternetService != null && config.EnableInternetAccess)
+                if (ownerPageReadEnabled && injectedInternetService != null)
                 {
                     injectedInternetService.Configuration ??= AgentInternetConfig.CreateDefault();
                     injectedInternetService.Configuration.EnableInternetAccess = true;
@@ -4685,9 +4703,9 @@ public partial class QChatService(
                     {
                         EnablePublicSearch = config.EnablePublicInternetSearch,
                         AllowGroupMemberPublicSearch = config.AllowGroupMemberPublicInternetSearch,
-                        EnableAutoRead = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess,
-                        EnablePublicFetch = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess,
-                        EnableBrowserSnapshot = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess,
+                        EnableAutoRead = ownerPageReadEnabled,
+                        EnablePublicFetch = ownerPageReadEnabled,
+                        EnableBrowserSnapshot = ownerPageReadEnabled,
                         MaxQueryChars = config.PublicInternetQueryMaxChars,
                         WebResearchUserCooldownSeconds = config.PublicInternetUserCooldownSeconds,
                         WebResearchGroupCooldownSeconds = config.PublicInternetGroupCooldownSeconds,
@@ -4697,12 +4715,20 @@ public partial class QChatService(
                     config.PublicInternetSearchMaxResults,
                     messageEvent.UserId,
                     messageEvent.GroupId));
+                WriteQChatDiagnostic("qchat-public-web-research-result", "Public web research result.", new {
+                    research.Success,
+                    research.Reason,
+                    EvidenceCount = research.Evidence.Count,
+                    OwnerPageReadEnabled = ownerPageReadEnabled
+                });
                 await SendCommandReplyAsync(
                     messageEvent,
                     senderRole,
                     targetType,
                     targetId,
-                    NeutralizePublicExternalQqMarkup(QChatWebResearchFormatter.Format(research)));
+                    NeutralizePublicExternalQqMarkup(QChatWebResearchFormatter.Format(
+                        research,
+                        new QChatWebResearchFormatContext(senderRole, messageEvent.MessageType))));
                 return true;
 
             case QChatPublicInternetCommandKind.RagQuery:

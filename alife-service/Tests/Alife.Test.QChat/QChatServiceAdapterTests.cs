@@ -976,6 +976,116 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task PublicSearchGroupMentionSemanticTriggerSearchesAndDoesNotDispatchModel()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new();
+            FakePublicSearchProvider provider = new(
+                new AgentPublicSearchResult("Semantic Search Result", "https://example.com/semantic", "semantic public search context"));
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowGroupMemberMentions = true,
+                AllowedGroupIds = "3003",
+                EnablePublicInternetSearch = true,
+                EnableBalancedTextStreaming = false
+            }, publicSearchProvider: provider);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                GroupId = 3003,
+                UserId = 2002,
+                SelfId = 999,
+                RawMessage = "[CQ:at,qq=999] \u641c\u4e00\u4e0b dotnet release"
+            });
+
+            await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+            string diagnostics = await WaitForQChatPublicWebResearchDiagnosticsAsync(storageRoot);
+            string message = runtime.GroupMessages.Single().Message;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(provider.Calls, Is.EqualTo(1));
+                Assert.That(provider.LastQuery, Is.EqualTo("dotnet release"));
+                Assert.That(message, Does.Contain("\u7ed3\u8bba\uff1a"));
+                Assert.That(message, Does.Contain("semantic public search context"));
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-public-web-research-command\""));
+                Assert.That(diagnostics, Does.Contain("\"MessageType\":\"Group\""));
+                Assert.That(diagnostics, Does.Contain("\"UserId\":2002"));
+                Assert.That(diagnostics, Does.Contain("\"GroupId\":3003"));
+                Assert.That(diagnostics, Does.Contain("\"senderRole\":"));
+                Assert.That(diagnostics, Does.Contain("\"Kind\":"));
+                Assert.That(diagnostics, Does.Contain("\"Query\":\"dotnet release\""));
+                Assert.That(diagnostics, Does.Contain("\"Allowed\":true"));
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-public-web-research-result\""));
+                Assert.That(diagnostics, Does.Contain("\"Success\":true"));
+                Assert.That(diagnostics, Does.Contain("\"EvidenceCount\":1"));
+                Assert.That(diagnostics, Does.Contain("\"OwnerPageReadEnabled\":false"));
+                Assert.That(diagnostics, Does.Not.Contain("api_key"));
+                Assert.That(diagnostics, Does.Not.Contain("tokens"));
+            });
+        });
+    }
+
+    [Test]
+    public async Task PublicSearchGroupNoMentionDoesNotSearch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchProvider provider = new(
+            new AgentPublicSearchResult("No Mention Result", "https://example.com/no-mention", "should not be searched"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            AllowProactiveGroupChat = true,
+            ProactiveChatProbability = 1.0f,
+            MaxBufferMessages = 0,
+            FlushInterval = 0,
+            AllowedGroupIds = "3003",
+            EnablePublicInternetSearch = true,
+            EnableBalancedTextStreaming = false
+        }, publicSearchProvider: provider);
+        int dispatchCount = 0;
+        TaskCompletionSource dispatchAttempted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.InboundChatDispatcher = _ =>
+        {
+            Interlocked.Increment(ref dispatchCount);
+            dispatchAttempted.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "\u641c\u4e00\u4e0b dotnet release"
+        });
+
+        await dispatchAttempted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(provider.Calls, Is.Zero);
+            Assert.That(runtime.GroupMessages, Is.Empty);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(dispatchCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
     public async Task WebResearchOwnerPrivateSemanticSearchReadsTopResultWithoutModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
@@ -1220,7 +1330,7 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(provider.Calls, Is.EqualTo(1));
-            Assert.That(runtime.GroupMessages[1].Message, Does.Contain("web_research_rate_limited"));
+            Assert.That(runtime.GroupMessages[1].Message, Does.Contain("\u641c\u592a\u5feb\u4e86"));
             Assert.That(dispatchCount, Is.Zero);
         });
     }
@@ -13260,6 +13370,17 @@ public class QChatServiceAdapterTests
         await WaitUntilAsync(() =>
             File.Exists(diagnosticsPath) &&
             ReadAllTextWithSharing(diagnosticsPath).Contains("\"eventName\":\"qchat-command-dropped\"", StringComparison.Ordinal));
+
+        return ReadAllTextWithSharing(diagnosticsPath);
+    }
+
+    static async Task<string> WaitForQChatPublicWebResearchDiagnosticsAsync(string storageRoot)
+    {
+        string diagnosticsPath = Path.Combine(storageRoot, "AgentWorkspace", "qchat-diagnostics.jsonl");
+        await WaitUntilAsync(() =>
+            File.Exists(diagnosticsPath) &&
+            ReadAllTextWithSharing(diagnosticsPath).Contains("\"eventName\":\"qchat-public-web-research-command\"", StringComparison.Ordinal) &&
+            ReadAllTextWithSharing(diagnosticsPath).Contains("\"eventName\":\"qchat-public-web-research-result\"", StringComparison.Ordinal));
 
         return ReadAllTextWithSharing(diagnosticsPath);
     }

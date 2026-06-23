@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text.RegularExpressions;
 using Alife.Function.Agent;
 
@@ -65,7 +65,7 @@ public static class QChatPublicInternetCommandPolicy
             return QChatPublicInternetCommand.None;
 
         string plain = OneBotSegment.GetPlainText(raw);
-        if (plain.Contains("浏览器", StringComparison.OrdinalIgnoreCase))
+        if (plain.Contains("\u6d4f\u89c8\u5668", StringComparison.OrdinalIgnoreCase))
             return QChatPublicInternetCommand.None;
 
         string query = ExtractSearchQuery(plain);
@@ -141,67 +141,59 @@ public static class QChatPublicInternetCommandPolicy
         if (normalized.Length == 0)
             return "";
 
-        string simpleQuery = ExtractSimpleSearchQuery(normalized);
-        if (simpleQuery.Length > 0)
-            return simpleQuery;
-
-        string[] patterns =
-        [
-            @"^(?:请|麻烦|帮我|帮忙|可以)?\s*(?:联网)?(?:搜一下|搜索一下|搜搜|搜索|搜|查一下|查查|查询一下|查询|找一下|找找)\s*(?<query>.+)$",
-            @"^(?:请|麻烦|帮我|帮忙|可以)?\s*联网(?:看看|看一下|查一下|查询|搜一下|搜索)?\s*(?<query>.+)$",
-            @"^(?:请|麻烦|帮我|帮忙|可以)?\s*(?:看看|看一下)?\s*(?:最新|实时)\s*(?<query>.+)$",
-            @"^(?:请|麻烦|帮我|帮忙|可以)?\s*(?:看看|看一下)?\s*(?:今天|现在)\s*(?<query>.*(?:天气|新闻|价格|版本|发布|情况|状态|更新).*)$"
-        ];
-
-        foreach (string pattern in patterns)
-        {
-            Match match = Regex.Match(
-                normalized,
-                pattern,
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            if (match.Success == false)
-                continue;
-
-            return CleanQuery(match.Groups["query"].Value);
-        }
-
-        return "";
+        return ExtractSimpleSearchQuery(normalized);
     }
 
     static string ExtractSimpleSearchQuery(string normalized)
     {
-        string[] markers =
+        string[] triggers =
         [
-            "帮我搜一下",
-            "帮我搜索",
-            "搜一下",
-            "搜索",
-            "查一下",
-            "查一查",
-            "查询一下",
-            "联网看看",
-            "联网查一下",
-            "找一下",
-            "最新"
+            "\u5e2e\u6211\u641c\u4e00\u4e0b",
+            "\u5e2e\u6211\u641c\u7d22\u4e00\u4e0b",
+            "\u641c\u7d22\u4e00\u4e0b",
+            "\u641c\u4e00\u4e0b",
+            "\u67e5\u4e00\u4e0b",
+            "\u5e2e\u6211\u67e5",
+            "\u5e2e\u6211\u627e",
+            "\u8054\u7f51\u67e5",
+            "\u67e5\u6700\u65b0",
+            "\u627e\u8d44\u6599",
+            "\u6709\u6ca1\u6709\u516c\u5f00\u4fe1\u606f"
         ];
 
-        foreach (string marker in markers)
+        foreach (string trigger in triggers)
         {
-            int index = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-            if (index < 0)
+            if (normalized.StartsWith(trigger, StringComparison.OrdinalIgnoreCase) == false)
                 continue;
 
-            string query = normalized[(index + marker.Length)..].Trim();
-            return CleanQuery(query);
+            return CleanQuery(normalized[trigger.Length..]);
         }
 
-        return "";
+        if (TryParseEnglishSearchTrigger(normalized, "search", out string searchQuery))
+            return searchQuery;
+
+        return TryParseEnglishSearchTrigger(normalized, "look up", out string lookUpQuery)
+            ? lookUpQuery
+            : "";
+    }
+
+    static bool TryParseEnglishSearchTrigger(string normalized, string trigger, out string query)
+    {
+        query = "";
+        if (normalized.StartsWith(trigger, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        if (normalized.Length > trigger.Length && char.IsWhiteSpace(normalized[trigger.Length]) == false)
+            return false;
+
+        query = CleanQuery(normalized[trigger.Length..]);
+        return query.Length > 0;
     }
 
     static string CleanQuery(string query)
     {
-        string cleaned = Regex.Replace(query.Trim(), @"^(?:一下|看看|看一下)\s*", "");
+        string cleaned = Regex.Replace(query.Trim(), @"^(?:\u4e00\u4e0b|\u770b\u770b|\u770b\u4e00\u4e0b)\s*", "");
         cleaned = Regex.Replace(cleaned, @"\s+", " ");
-        return cleaned.Trim(' ', '，', ',', '。', '？', '?', '！', '!');
+        return cleaned.Trim(' ', '：', ':', ',', '，', '。', '?', '？', '!', '！');
     }
 }
