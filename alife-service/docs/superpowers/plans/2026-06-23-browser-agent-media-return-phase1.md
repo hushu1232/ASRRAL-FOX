@@ -45,13 +45,14 @@
 - [x] Implement QChat browser media preparation and sending.
 - [x] Update diagnostics/docs to mark media return as connected.
 - [x] Run focused QChat/browser tests and `dotnet build --no-restore`.
-- [ ] Upload through `D:\FOXD` after verification.
+- [x] Upload through `D:\FOXD` after verification.
 
 ## Verification Evidence
 
 - `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --filter AgentBrowserMediaOutputServiceTests` passed: 13 passed, 0 failed.
 - `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "QChatBrowserAgentFormatterTests|QChatBrowserAgentTriggerPolicyTests|OwnerPrivateBrowserAgentRequestRunsAutomationWithoutModelDispatch|OwnerPrivateBrowserAgentImageUrlReturnsQqImageAfterTextReply|OwnerPrivateBrowserAgentVideoUrlReturnsLinkOnly|NonOwnerPrivateBrowserAgentRequestDoesNotRunAutomationOrModel|GroupBrowserAgentRequestDoesNotRunAutomation|TryHandleWebBrowserAgentReturnsOwnerOnlyPhaseOneSummary"` passed: 17 passed, 0 failed.
 - `dotnet build --no-restore` passed with 0 warnings and 0 errors.
+- GitHub upload through `D:\FOXD` verified remote commit `25802be220086d6fa55151e47339df017e7098d0` on `refs/heads/master`.
 
 ## Boundaries
 
