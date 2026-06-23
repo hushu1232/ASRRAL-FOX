@@ -34,6 +34,16 @@ public record QChatConfig
     public long BotId { get; set; }
     public long OwnerId { get; set; }
     public bool OwnerPriorityMode { get; set; } = true;
+    public bool EnableOwnerTrustedFastPath { get; set; } = true;
+    public bool OwnerFastPathAllowsQuietMode { get; set; } = true;
+    public bool OwnerFastPathAllowsRecall { get; set; } = true;
+    public bool OwnerFastPathAllowsAllowlist { get; set; } = true;
+    public bool OwnerFastPathAllowsCommandControls { get; set; }
+    public bool OwnerFastPathAllowsInternetControls { get; set; }
+    public bool OwnerFastPathAllowsImageRecognitionControls { get; set; }
+    public bool OwnerFastPathAllowsVoiceControls { get; set; }
+    public bool OwnerFastPathAllowsFileUploadIntent { get; set; } = true;
+    public bool OwnerFastPathAllowsMemoryPurge { get; set; }
     public QChatPersonaIntensityConfig PersonaIntensity { get; set; } = new();
     public bool AllowGroupMemberChat { get; set; } = true;
     public bool AllowGroupMemberMentions { get; set; } = true;
@@ -1697,6 +1707,10 @@ public partial class QChatService(
         EnsureTargetAllowed(Configuration.AllowedGroupIds, groupId, "QQ group");
 
         string normalizedFile = NormalizeExistingLocalFile(file);
+        DesktopFileAccessDecision readDecision = DesktopFileAccessPolicy.CreateDefault().CanRead(normalizedFile);
+        if (readDecision.Allowed == false)
+            throw new UnauthorizedAccessException($"QQ group file upload denied by file read policy: {readDecision.Reason}");
+
         string fileName = NormalizeUploadName(normalizedFile, name);
 
         try
@@ -5567,6 +5581,11 @@ public partial class QChatService(
             RawMessage: messageEvent.RawMessage,
             HasReply: messageEvent.GetReplyId().HasValue,
             ReplyMessageId: messageEvent.GetReplyId()));
+        decision = QChatOwnerTrustedFastPathPolicy.Apply(
+            decision,
+            senderRole,
+            QChatOwnerTrustedFastPathAction.QuietMode,
+            Configuration ?? new QChatConfig());
         if (decision.IsCandidate)
         {
             WriteQChatDiagnostic("qchat-intent-decision", "QChat quiet-mode intent was evaluated.", new {
@@ -5790,6 +5809,11 @@ public partial class QChatService(
             HasReply: replyId.HasValue,
             ReplyMessageId: replyId),
             currentGroupId);
+        decision = QChatOwnerTrustedFastPathPolicy.Apply(
+            decision,
+            senderRole,
+            QChatOwnerTrustedFastPathAction.Allowlist,
+            Configuration ?? new QChatConfig());
         if (decision.IsCandidate)
         {
             WriteQChatDiagnostic("qchat-intent-decision", "QChat allowlist intent was evaluated.", new {
@@ -5872,6 +5896,11 @@ public partial class QChatService(
             RawMessage: messageEvent.RawMessage,
             HasReply: replyId.HasValue,
             ReplyMessageId: replyId));
+        decision = QChatOwnerTrustedFastPathPolicy.Apply(
+            decision,
+            senderRole,
+            QChatOwnerTrustedFastPathAction.Recall,
+            Configuration ?? new QChatConfig());
         WriteQChatDiagnostic("qchat-intent-decision", "QChat recall intent was evaluated.", new {
             messageEvent.MessageType,
             messageEvent.UserId,
@@ -6304,6 +6333,12 @@ public partial class QChatService(
             RawMessage: messageEvent.RawMessage,
             HasReply: replyId.HasValue,
             ReplyMessageId: replyId));
+        decision = QChatOwnerTrustedFastPathPolicy.Apply(
+            decision,
+            senderRole,
+            QChatOwnerTrustedFastPathAction.GroupFileUpload,
+            Configuration ?? new QChatConfig(),
+            text);
         WriteQChatDiagnostic("qchat-intent-decision", "QChat group file upload intent was evaluated.", new {
             messageEvent.GroupId,
             messageEvent.UserId,

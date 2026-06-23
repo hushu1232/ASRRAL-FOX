@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -30,7 +30,7 @@ public sealed class AgentWebResearchService(
         {
             string query = NormalizeQuery(request.Query);
             if (query.Length == 0)
-                return Failure("empty_query", query, "娌℃煡鍒板彲闈犳潵婧愩€?");
+                return Failure("empty_query", query, "没查到可靠来源。");
 
             int maxSources = Math.Clamp(request.MaxSources, 1, 5);
             if (controlState.TryGetCachedResult(request, query, maxSources, out AgentWebResearchResult cached))
@@ -68,7 +68,7 @@ public sealed class AgentWebResearchService(
 
         string query = NormalizeQuery(request.Query);
         if (query.Length == 0)
-            return Failure("empty_query", query, "没查到可靠来源。");
+                return Failure("empty_query", query, "没查到可靠来源。");
 
         if (searchService == null)
             return Failure("public_search_not_configured", query, "搜索现在不可用。");
@@ -299,12 +299,12 @@ public sealed class AgentWebResearchService(
     {
         return ContainsAny(
             query,
-            "最新",
-            "发布日期",
-            "发布",
-            "版本",
-            "新闻",
-            "更新",
+            "\u6700\u65b0",
+            "\u53d1\u5e03\u65e5\u671f",
+            "\u53d1\u5e03",
+            "\u7248\u672c",
+            "\u65b0\u95fb",
+            "\u66f4\u65b0",
             "latest",
             "current",
             "release",
@@ -318,28 +318,28 @@ public sealed class AgentWebResearchService(
     {
         Dictionary<string, string> map = new(StringComparer.OrdinalIgnoreCase)
         {
-            ["浏览器"] = "browser",
-            ["网页"] = "web",
-            ["联网"] = "web",
-            ["搜索"] = "search",
-            ["自动读取"] = "auto read",
-            ["读取"] = "read",
-            ["反爬"] = "anti bot",
-            ["验证码"] = "captcha",
-            ["登录墙"] = "login wall",
-            ["知识库"] = "knowledge base",
-            ["外部知识库"] = "external knowledge base",
-            ["截图"] = "snapshot",
-            ["摘要"] = "summary",
-            ["来源"] = "source",
-            ["令牌"] = "token",
-            ["节省"] = "saving"
+            ["\u6d4f\u89c8\u5668"] = "browser",
+            ["\u7f51\u9875"] = "web",
+            ["\u8054\u7f51"] = "web",
+            ["\u641c\u7d22"] = "search",
+            ["\u81ea\u52a8\u8bfb\u53d6"] = "auto read",
+            ["\u8bfb\u53d6"] = "read",
+            ["\u53cd\u722c"] = "anti bot",
+            ["\u9a8c\u8bc1\u7801"] = "captcha",
+            ["\u767b\u5f55\u5899"] = "login wall",
+            ["\u77e5\u8bc6\u5e93"] = "knowledge base",
+            ["\u5916\u90e8\u77e5\u8bc6\u5e93"] = "external knowledge base",
+            ["\u622a\u56fe"] = "snapshot",
+            ["\u6458\u8981"] = "summary",
+            ["\u6765\u6e90"] = "source",
+            ["\u4ee4\u724c"] = "token",
+            ["\u8282\u7701"] = "saving"
         };
 
         List<string> terms = [];
         foreach ((string chinese, string english) in map)
         {
-            if (chinese == "读取" && query.Contains("自动读取", StringComparison.OrdinalIgnoreCase))
+            if (chinese == "\u8bfb\u53d6" && query.Contains("\u81ea\u52a8\u8bfb\u53d6", StringComparison.OrdinalIgnoreCase))
                 continue;
 
             if (query.Contains(chinese, StringComparison.OrdinalIgnoreCase))
@@ -370,7 +370,7 @@ public sealed class AgentWebResearchService(
     static string CleanOneLine(string? value)
     {
         string text = Regex.Replace((value ?? "").Trim(), @"\s+", " ");
-        return text.Length == 0 ? "未命名来源" : text;
+        return text.Length == 0 ? "\u672a\u547d\u540d\u6765\u6e90" : text;
     }
 
     static string InferSourceType(string url)

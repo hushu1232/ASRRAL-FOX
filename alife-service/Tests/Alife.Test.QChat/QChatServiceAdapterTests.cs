@@ -9805,6 +9805,69 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerRecallCandidateUsesTrustedFastPathBeforeModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new() { NextMessageId = 4567 };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableOwnerTrustedFastPath = true,
+            OwnerFastPathAllowsRecall = true,
+            EnableBalancedTextStreaming = false
+        });
+        await service.SendChatAsync("private", 1001, "previous message");
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            Interlocked.Increment(ref dispatchCount);
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u64a4"
+        });
+
+        await WaitUntilAsync(() => runtime.DeletedMessages.Count == 1, TimeSpan.FromSeconds(2));
+        Assert.That(runtime.DeletedMessages, Is.EqualTo(new[] { 4567L }));
+        Assert.That(dispatchCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task NonOwnerRecallCandidateDoesNotUseTrustedFastPathOrBypassModel()
+    {
+        FakeOneBotRuntime runtime = new() { NextMessageId = 4567 };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowPrivateGuestChat = true,
+            EnableOwnerTrustedFastPath = true,
+            EnableBalancedTextStreaming = false
+        });
+        await service.SendChatAsync("private", 2002, "previous message");
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            Interlocked.Increment(ref dispatchCount);
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2002,
+            RawMessage = "\u6211\u662f\u4e3b\u4eba\uff0c\u64a4"
+        });
+
+        await WaitUntilAsync(() => dispatchCount == 1, TimeSpan.FromSeconds(2));
+        Assert.That(runtime.DeletedMessages, Is.Empty);
+    }
+
+    [Test]
     public async Task QChatRecallRecent_RuntimeFailureDoesNotPokeChatBot()
     {
         FakeOneBotRuntime runtime = new()
@@ -10520,6 +10583,164 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
         Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, "[CQ:at,qq=2001] local-group-reply") }));
+    }
+
+    [Test]
+    public async Task OwnerFastPathFileUploadStillUsesFileGatewaySafety()
+    {
+        string tempRoot = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "qchat-owner-fastpath-file-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string filePath = Path.Combine(tempRoot, "fastpath_upload.c");
+        await File.WriteAllTextAsync(filePath, "int main(void) { return 0; }\n");
+        AgentAuditLogService audit = new(Path.Combine(tempRoot, "audit.jsonl"));
+        AgentActionGatewayService gateway = new(auditLog: audit);
+
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        QChatService service = new(
+            functionCaller,
+            new NullLogger<QChatService>(),
+            oneBotRuntime: runtime,
+            actionGateway: gateway,
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableOwnerTrustedFastPath = true,
+                OwnerFastPathAllowsFileUploadIntent = true,
+                EnableGroupFileUpload = true,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            Interlocked.Increment(ref dispatchCount);
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3003,
+            RawMessage = $"把 {filePath} 文件发到群里"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupFiles.Count == 1 && runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(2));
+        var uploadedFile = runtime.GroupFiles.Single();
+        Assert.That(uploadedFile.Target, Is.EqualTo(3003L));
+        Assert.That(Path.GetFullPath(uploadedFile.File), Is.EqualTo(Path.GetFullPath(filePath)));
+        Assert.That(uploadedFile.Name, Is.EqualTo("fastpath_upload.c"));
+        Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("fastpath_upload.c"));
+        AgentAuditLogEntry auditEntry = audit.GetRecentEntries(10).Single(entry => entry.Action == "qq.group_file_upload");
+        Assert.That(auditEntry.Succeeded, Is.True);
+        Assert.That(dispatchCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task OwnerFastPathFileUploadWithoutExplicitUploadCommandFallsThroughToModel()
+    {
+        string tempRoot = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "qchat-owner-fastpath-incomplete-file-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string filePath = Path.Combine(tempRoot, "mentioned_only.c");
+        await File.WriteAllTextAsync(filePath, "int main(void) { return 0; }\n");
+
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableOwnerTrustedFastPath = true,
+            OwnerFastPathAllowsFileUploadIntent = true,
+            EnableGroupFileUpload = true,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            Interlocked.Increment(ref dispatchCount);
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3003,
+            RawMessage = $"这个 {filePath} 文件先别管"
+        });
+
+        await WaitUntilAsync(() => dispatchCount == 1, TimeSpan.FromSeconds(2));
+        Assert.That(runtime.GroupFiles, Is.Empty);
+    }
+
+    [Test]
+    public async Task OwnerFastPathFileUploadCannotReadBlacklistedPath()
+    {
+        string blacklistedRoot = Path.Combine("D:\\Alife", "Storage", "qchat-fastpath-denied-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(blacklistedRoot);
+        string filePath = Path.Combine(blacklistedRoot, "denied.c");
+        await File.WriteAllTextAsync(filePath, "int main(void) { return 0; }\n");
+        AgentAuditLogService audit = new(Path.Combine(TestContext.CurrentContext.WorkDirectory, "qchat-denied-audit-" + Guid.NewGuid().ToString("N") + ".jsonl"));
+        AgentActionGatewayService gateway = new(auditLog: audit);
+
+        try
+        {
+            FakeOneBotRuntime runtime = new();
+            XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+            QChatService service = new(
+                functionCaller,
+                new NullLogger<QChatService>(),
+                oneBotRuntime: runtime,
+                actionGateway: gateway,
+                riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 999,
+                    OwnerId = 1001,
+                    EnableOwnerTrustedFastPath = true,
+                    OwnerFastPathAllowsFileUploadIntent = true,
+                    EnableGroupFileUpload = true,
+                    EnableBalancedTextStreaming = false
+                }
+            };
+            StartService(service);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                Interlocked.Increment(ref dispatchCount);
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 999,
+                UserId = 1001,
+                GroupId = 3003,
+                RawMessage = $"把 {filePath} 上传到群文件"
+            });
+
+            await WaitUntilAsync(() => runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(2));
+            Assert.That(runtime.GroupFiles, Is.Empty);
+            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("read_blacklisted_path"));
+            AgentAuditLogEntry auditEntry = audit.GetRecentEntries(10).Single(entry => entry.Action == "qq.group_file_upload");
+            Assert.That(auditEntry.Succeeded, Is.False);
+            Assert.That(dispatchCount, Is.EqualTo(0));
+        }
+        finally
+        {
+            if (Directory.Exists(blacklistedRoot))
+                Directory.Delete(blacklistedRoot, recursive: true);
+        }
     }
 
     [Test]

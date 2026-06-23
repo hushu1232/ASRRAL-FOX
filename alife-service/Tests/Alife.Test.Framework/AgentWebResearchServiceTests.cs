@@ -1,4 +1,4 @@
-using Alife.Function.Agent;
+﻿using Alife.Function.Agent;
 using NUnit.Framework;
 using System.IO;
 
@@ -7,6 +7,25 @@ namespace Alife.Test.Framework;
 [TestFixture]
 public sealed class AgentWebResearchServiceTests
 {
+    [Test]
+    public async Task ResearchAsync_WhenQueryIsEmpty_ReturnsReadableFallbackWithoutMojibake()
+    {
+        AgentWebResearchService service = new();
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            "   ",
+            AgentWebAccessActorRole.Owner,
+            new AgentWebAccessConfig()));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Reason, Is.EqualTo("empty_query"));
+            Assert.That(result.Answer, Is.EqualTo("\u6ca1\u67e5\u5230\u53ef\u9760\u6765\u6e90\u3002"));
+            Assert.That(result.Answer, Does.Not.Contain("\u6fde"));
+            Assert.That(result.Answer, Does.Not.Contain("\u951f"));
+        });
+    }
+
     [Test]
     public async Task ResearchAsync_OwnerSearchesAndReadsTopResult()
     {
@@ -42,7 +61,7 @@ public sealed class AgentWebResearchServiceTests
             Assert.That(result.Evidence, Has.Count.EqualTo(1));
             Assert.That(result.Evidence[0].Summary, Does.Contain("Agent browser read content"));
             Assert.That(result.Answer, Does.Contain("Agent Browser"));
-            Assert.That(result.Answer, Does.Contain("来源"));
+            Assert.That(result.Answer, Does.Contain("\u6765\u6e90"));
         });
     }
 
@@ -94,7 +113,7 @@ public sealed class AgentWebResearchServiceTests
             Assert.That(result.Success, Is.False);
             Assert.That(result.Reason, Is.EqualTo("no_results"));
             Assert.That(result.Evidence, Is.Empty);
-            Assert.That(result.Answer, Does.Contain("没查到"));
+            Assert.That(result.Answer, Does.Contain("\u6ca1\u67e5\u5230"));
         });
     }
 
@@ -170,15 +189,15 @@ public sealed class AgentWebResearchServiceTests
     {
         FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>
         {
-            ["dotnet 10 最新发布日期"] =
+            ["dotnet 10 \u6700\u65b0\u53d1\u5e03\u65e5\u671f"] =
             [
                 new AgentPublicSearchResult("Local", "http://127.0.0.1:8080/private", "unsafe local result")
             ],
-            ["dotnet 10 最新发布日期 latest release notes"] =
+            ["dotnet 10 \u6700\u65b0\u53d1\u5e03\u65e5\u671f latest release notes"] =
             [
                 new AgentPublicSearchResult("Microsoft Release Notes", "https://learn.microsoft.com/dotnet/core/whats-new/dotnet-10", "fresh official release notes")
             ],
-            ["official docs dotnet 10 最新发布日期"] =
+            ["official docs dotnet 10 \u6700\u65b0\u53d1\u5e03\u65e5\u671f"] =
             [
                 new AgentPublicSearchResult("Should Not Need Generic Docs", "https://docs.example.com/extra", "extra search would waste tokens")
             ]
@@ -187,7 +206,7 @@ public sealed class AgentWebResearchServiceTests
         AgentWebResearchService service = new(search, new AgentWebAccessService(internetService: internet));
 
         AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
-            "dotnet 10 最新发布日期",
+            "dotnet 10 \u6700\u65b0\u53d1\u5e03\u65e5\u671f",
             AgentWebAccessActorRole.Owner,
             new AgentWebAccessConfig
             {
@@ -202,8 +221,8 @@ public sealed class AgentWebResearchServiceTests
             Assert.That(result.Success, Is.True);
             Assert.That(search.Queries, Is.EqualTo(new[]
             {
-                "dotnet 10 最新发布日期",
-                "dotnet 10 最新发布日期 latest release notes"
+                "dotnet 10 \u6700\u65b0\u53d1\u5e03\u65e5\u671f",
+                "dotnet 10 \u6700\u65b0\u53d1\u5e03\u65e5\u671f latest release notes"
             }));
             Assert.That(result.Evidence.Single().Title, Is.EqualTo("Microsoft Release Notes"));
         });
@@ -214,7 +233,7 @@ public sealed class AgentWebResearchServiceTests
     {
         FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>
         {
-            ["报错 HTTP 429 Too Many Requests retry-after"] =
+            ["鎶ラ敊 HTTP 429 Too Many Requests retry-after"] =
             [
                 new AgentPublicSearchResult("Local", "http://127.0.0.1:8080/error", "unsafe local result")
             ],
@@ -222,7 +241,7 @@ public sealed class AgentWebResearchServiceTests
             [
                 new AgentPublicSearchResult("MDN 429", "https://developer.mozilla.org/docs/Web/HTTP/Status/429", "exact error result")
             ],
-            ["official docs 报错 HTTP 429 Too Many Requests retry-after"] =
+            ["official docs 鎶ラ敊 HTTP 429 Too Many Requests retry-after"] =
             [
                 new AgentPublicSearchResult("Should Not Need Generic Docs", "https://docs.example.com/extra", "extra search would waste tokens")
             ]
@@ -231,7 +250,7 @@ public sealed class AgentWebResearchServiceTests
         AgentWebResearchService service = new(search, new AgentWebAccessService(internetService: internet));
 
         AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
-            "报错 HTTP 429 Too Many Requests retry-after",
+            "鎶ラ敊 HTTP 429 Too Many Requests retry-after",
             AgentWebAccessActorRole.Owner,
             new AgentWebAccessConfig
             {
@@ -246,7 +265,7 @@ public sealed class AgentWebResearchServiceTests
             Assert.That(result.Success, Is.True);
             Assert.That(search.Queries, Is.EqualTo(new[]
             {
-                "报错 HTTP 429 Too Many Requests retry-after",
+                "鎶ラ敊 HTTP 429 Too Many Requests retry-after",
                 "\"HTTP 429 Too Many Requests\" retry-after"
             }));
             Assert.That(result.Evidence.Single().Title, Is.EqualTo("MDN 429"));
@@ -258,7 +277,7 @@ public sealed class AgentWebResearchServiceTests
     {
         FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>
         {
-            ["浏览器 自动读取 反爬"] =
+            ["\u6d4f\u89c8\u5668 \u81ea\u52a8\u8bfb\u53d6 \u53cd\u722c"] =
             [
                 new AgentPublicSearchResult("Local", "http://127.0.0.1:8080/browser", "unsafe local result")
             ],
@@ -266,7 +285,7 @@ public sealed class AgentWebResearchServiceTests
             [
                 new AgentPublicSearchResult("Browser Strategy", "https://docs.example.com/browser-strategy", "english technical result")
             ],
-            ["official docs 浏览器 自动读取 反爬"] =
+            ["official docs \u6d4f\u89c8\u5668 \u81ea\u52a8\u8bfb\u53d6 \u53cd\u722c"] =
             [
                 new AgentPublicSearchResult("Should Not Need Generic Docs", "https://docs.example.com/extra", "extra search would waste tokens")
             ]
@@ -275,7 +294,7 @@ public sealed class AgentWebResearchServiceTests
         AgentWebResearchService service = new(search, new AgentWebAccessService(internetService: internet));
 
         AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
-            "浏览器 自动读取 反爬",
+            "\u6d4f\u89c8\u5668 \u81ea\u52a8\u8bfb\u53d6 \u53cd\u722c",
             AgentWebAccessActorRole.Owner,
             new AgentWebAccessConfig
             {
@@ -290,7 +309,7 @@ public sealed class AgentWebResearchServiceTests
             Assert.That(result.Success, Is.True);
             Assert.That(search.Queries, Is.EqualTo(new[]
             {
-                "浏览器 自动读取 反爬",
+                "\u6d4f\u89c8\u5668 \u81ea\u52a8\u8bfb\u53d6 \u53cd\u722c",
                 "browser auto read anti bot"
             }));
             Assert.That(result.Evidence.Single().Title, Is.EqualTo("Browser Strategy"));
@@ -336,11 +355,11 @@ public sealed class AgentWebResearchServiceTests
     {
         FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>
         {
-            ["dotnet 10 最新发布日期"] =
+            ["dotnet 10 \u6700\u65b0\u53d1\u5e03\u65e5\u671f"] =
             [
                 new AgentPublicSearchResult("Local", "http://127.0.0.1:8080/private", "unsafe local result")
             ],
-            ["dotnet 10 最新发布日期 latest release notes"] =
+            ["dotnet 10 \u6700\u65b0\u53d1\u5e03\u65e5\u671f latest release notes"] =
             [
                 new AgentPublicSearchResult("Microsoft Release Notes", "https://learn.microsoft.com/dotnet/core/whats-new/dotnet-10", "fresh official release notes")
             ]
@@ -348,7 +367,7 @@ public sealed class AgentWebResearchServiceTests
         AgentWebResearchService service = new(search, new AgentWebAccessService());
 
         AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
-            "dotnet 10 最新发布日期",
+            "dotnet 10 \u6700\u65b0\u53d1\u5e03\u65e5\u671f",
             AgentWebAccessActorRole.GroupMember,
             new AgentWebAccessConfig
             {
@@ -361,7 +380,7 @@ public sealed class AgentWebResearchServiceTests
         {
             Assert.That(result.Success, Is.False);
             Assert.That(result.Reason, Is.EqualTo("no_results"));
-            Assert.That(search.Queries, Is.EqualTo(new[] { "dotnet 10 最新发布日期" }));
+            Assert.That(search.Queries, Is.EqualTo(new[] { "dotnet 10 \u6700\u65b0\u53d1\u5e03\u65e5\u671f" }));
         });
     }
 
