@@ -889,6 +889,174 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task PublicSearchGroupCommandBuildsDefaultSearchServiceFromProvider()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchProvider provider = new(
+            new AgentPublicSearchResult("Default One", "https://example.com/default", "default snippet"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowedGroupIds = "3003",
+            EnablePublicInternetSearch = true,
+            PublicInternetSearchMaxResults = 2,
+            EnableBalancedTextStreaming = false
+        }, publicSearchProvider: provider);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "/search dotnet release"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+        string message = runtime.GroupMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(provider.Calls, Is.EqualTo(1));
+            Assert.That(provider.LastQuery, Is.EqualTo("dotnet release"));
+            Assert.That(provider.LastMaxResults, Is.EqualTo(2));
+            Assert.That(message, Does.Contain("[UNTRUSTED EXTERNAL CONTEXT: public-search]"));
+            Assert.That(message, Does.Contain("Default One"));
+            Assert.That(message, Does.Contain("https://example.com/default"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task PublicSearchGroupMentionWithSearchIntentSendsSearchWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchService publicSearch = new("semantic public search context");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            AllowedGroupIds = "3003",
+            EnablePublicInternetSearch = true,
+            EnableBalancedTextStreaming = false
+        }, publicSearchService: publicSearch);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "[CQ:at,qq=999] 帮我搜一下 dotnet release"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(publicSearch.Calls, Is.EqualTo(1));
+            Assert.That(publicSearch.LastQuery, Is.EqualTo("dotnet release"));
+            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("semantic public search context"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task PublicSearchGroupMentionWithoutSearchIntentFallsThroughToModel()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchService publicSearch = new("semantic public search context");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            AllowedGroupIds = "3003",
+            EnablePublicInternetSearch = true,
+            EnableBalancedTextStreaming = false
+        }, publicSearchService: publicSearch);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "[CQ:at,qq=999] 你在吗"
+        });
+
+        await WaitUntilAsync(() => dispatchCount == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(publicSearch.Calls, Is.Zero);
+            Assert.That(runtime.GroupMessages, Is.Empty);
+            Assert.That(dispatchCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task PublicSearchGroupMentionDeniedWhenGroupMemberSearchDisabled()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchService publicSearch = new("semantic public search context");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            AllowedGroupIds = "3003",
+            EnablePublicInternetSearch = true,
+            AllowGroupMemberPublicInternetSearch = false,
+            EnableBalancedTextStreaming = false
+        }, publicSearchService: publicSearch);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            GroupId = 3003,
+            UserId = 2002,
+            SelfId = 999,
+            RawMessage = "[CQ:at,qq=999] 帮我搜一下 dotnet release"
+        });
+
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(publicSearch.Calls, Is.Zero);
+            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("group_member_public_search_disabled"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task PublicSearchGroupCommandNeutralizesCqMarkupFromExternalContent()
     {
         FakeOneBotRuntime runtime = new();
@@ -11714,6 +11882,26 @@ public class QChatServiceAdapterTests
         }
     }
 
+    sealed class FakePublicSearchProvider(params AgentPublicSearchResult[] results) : IAgentPublicSearchProvider
+    {
+        readonly AgentPublicSearchResult[] results = results;
+
+        public int Calls { get; private set; }
+        public string? LastQuery { get; private set; }
+        public int? LastMaxResults { get; private set; }
+
+        public Task<IReadOnlyList<AgentPublicSearchResult>> SearchAsync(
+            string query,
+            int maxResults,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            LastQuery = query;
+            LastMaxResults = maxResults;
+            return Task.FromResult<IReadOnlyList<AgentPublicSearchResult>>(results);
+        }
+    }
+
     sealed class FakeExternalRagService(string formattedContext) : AgentExternalRagService(
         new AgentExternalRagStore(Path.Combine(Path.GetTempPath(), "alife-qchat-test-rag-" + Guid.NewGuid().ToString("N"))),
         new FakeInternetService("unused"))
@@ -11777,6 +11965,7 @@ public class QChatServiceAdapterTests
         ISpeechModel? speechModel = null,
         QChatImageRecognitionService? imageRecognitionService = null,
         AgentInternetService? internetService = null,
+        IAgentPublicSearchProvider? publicSearchProvider = null,
         AgentPublicSearchService? publicSearchService = null,
         AgentExternalRagService? externalRagService = null)
     {
@@ -11804,6 +11993,7 @@ public class QChatServiceAdapterTests
             ownerEventPublisher: ownerEventPublisher,
             imageRecognitionService: imageRecognitionService,
             internetService: internetService,
+            publicSearchProvider: publicSearchProvider,
             publicSearchService: publicSearchService,
             externalRagService: externalRagService)
         {

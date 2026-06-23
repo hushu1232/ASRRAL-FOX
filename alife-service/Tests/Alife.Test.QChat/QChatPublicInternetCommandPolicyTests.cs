@@ -35,6 +35,55 @@ public sealed class QChatPublicInternetCommandPolicyTests
         Assert.That(command.Kind, Is.EqualTo(QChatPublicInternetCommandKind.None));
     }
 
+    [TestCase("[CQ:at,qq=999] 帮我搜一下 dotnet release news", "dotnet release news")]
+    [TestCase("[CQ:at,qq=999] 查一下 GPT-SoVITS 声音克隆", "GPT-SoVITS 声音克隆")]
+    [TestCase("[CQ:at,qq=999] 联网看看 agent-browser 是什么", "agent-browser 是什么")]
+    [TestCase("[CQ:at,qq=999] 找一下 Moss TTS 资料", "Moss TTS 资料")]
+    [TestCase("[CQ:at,qq=999] 最新 .NET 发布情况", ".NET 发布情况")]
+    public void ParseMessage_GroupMentionWithSearchIntentReturnsSearch(string rawMessage, string query)
+    {
+        QChatPublicInternetCommand command = QChatPublicInternetCommandPolicy.ParseMessage(
+            OneBotMessageType.Group,
+            botId: 999,
+            rawMessage,
+            OneBotSegment.GetPlainText(rawMessage));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(command.Kind, Is.EqualTo(QChatPublicInternetCommandKind.Search));
+            Assert.That(command.Query, Is.EqualTo(query));
+        });
+    }
+
+    [TestCase("[CQ:at,qq=999] 你在吗")]
+    [TestCase("[CQ:at,qq=999] 今天好累")]
+    [TestCase("[CQ:at,qq=999] 你怎么看这个问题")]
+    [TestCase("[CQ:at,qq=999] 查看白名单状态")]
+    [TestCase("帮我搜一下 dotnet release news")]
+    [TestCase("[CQ:at,qq=1000] 帮我搜一下 dotnet release news")]
+    public void ParseMessage_DoesNotTreatOrdinaryOrUnmentionedTextAsSearch(string rawMessage)
+    {
+        QChatPublicInternetCommand command = QChatPublicInternetCommandPolicy.ParseMessage(
+            OneBotMessageType.Group,
+            botId: 999,
+            rawMessage,
+            OneBotSegment.GetPlainText(rawMessage));
+
+        Assert.That(command.Kind, Is.EqualTo(QChatPublicInternetCommandKind.None));
+    }
+
+    [Test]
+    public void ParseMessage_PrivateSearchIntentDoesNotTriggerSemanticPublicSearch()
+    {
+        QChatPublicInternetCommand command = QChatPublicInternetCommandPolicy.ParseMessage(
+            OneBotMessageType.Private,
+            botId: 999,
+            "[CQ:at,qq=999] 帮我搜一下 dotnet release news",
+            "帮我搜一下 dotnet release news");
+
+        Assert.That(command.Kind, Is.EqualTo(QChatPublicInternetCommandKind.None));
+    }
+
     [TestCase(QChatSenderRole.Owner)]
     [TestCase(QChatSenderRole.GroupMember)]
     public void Evaluate_AllowsEnabledSearchForAuthorizedSenderRoles(QChatSenderRole senderRole)
@@ -117,6 +166,27 @@ public sealed class QChatPublicInternetCommandPolicyTests
         {
             Assert.That(decision.Allowed, Is.False);
             Assert.That(decision.Reason, Is.EqualTo("public_rag_disabled"));
+        });
+    }
+
+    [Test]
+    public void Evaluate_DeniesGroupMemberSearchWhenGroupMemberPublicSearchIsDisabledInRouter()
+    {
+        QChatPublicInternetCommandDecision decision = QChatPublicInternetCommandPolicy.Evaluate(
+            new QChatPublicInternetCommandContext(
+                QChatSenderRole.GroupMember,
+                QChatPublicInternetCommandKind.Search,
+                "query",
+                100,
+                EnablePublicSearch: true,
+                EnablePublicRagQuery: true,
+                AllowGroupMemberPublicSearch: false,
+                AllowGroupMemberExternalRagQuery: true));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Allowed, Is.False);
+            Assert.That(decision.Reason, Is.EqualTo("group_member_public_search_disabled"));
         });
     }
 

@@ -70,6 +70,8 @@ public record QChatConfig
     public string InternetAllowedAgentIds { get; set; } = "xiayu";
     public bool EnablePublicInternetSearch { get; set; } = false;
     public bool EnablePublicExternalRagQuery { get; set; } = false;
+    public bool AllowGroupMemberPublicInternetSearch { get; set; } = true;
+    public bool AllowGroupMemberPublicExternalRagQuery { get; set; } = true;
     public int PublicInternetSearchMaxResults { get; set; } = 3;
     public int PublicInternetQueryMaxChars { get; set; } = 160;
     public int PublicExternalRagMaxChunks { get; set; } = 4;
@@ -272,6 +274,7 @@ public partial class QChatService(
     IQChatOwnerEventPublisher? ownerEventPublisher = null,
     QChatImageRecognitionService? imageRecognitionService = null,
     AgentInternetService? internetService = null,
+    IAgentPublicSearchProvider? publicSearchProvider = null,
     AgentPublicSearchService? publicSearchService = null,
     AgentExternalRagService? externalRagService = null) :
     InteractiveModule<QChatService>,
@@ -288,9 +291,11 @@ public partial class QChatService(
     readonly DesktopActionGateway? injectedDesktopActionGateway = desktopActionGateway;
     readonly QChatImageRecognitionService? injectedImageRecognitionService = imageRecognitionService;
     readonly AgentInternetService? injectedInternetService = internetService;
+    readonly IAgentPublicSearchProvider? injectedPublicSearchProvider = publicSearchProvider;
     readonly AgentPublicSearchService? injectedPublicSearchService = publicSearchService;
     readonly AgentExternalRagService? injectedExternalRagService = externalRagService;
     QChatImageRecognitionService? resolvedImageRecognitionService;
+    IAgentPublicSearchProvider? resolvedPublicSearchProvider;
     QChatOwnerEventOutbox? resolvedOwnerEventOutbox;
     QChatOwnerEventDispatcher? resolvedOwnerEventDispatcher;
     IQChatOwnerEventPublisher? resolvedOwnerEventPublisher;
@@ -4345,12 +4350,44 @@ public partial class QChatService(
         return true;
     }
 
+    AgentPublicSearchService? ResolvePublicSearchService(QChatConfig config)
+    {
+        if (injectedPublicSearchService != null)
+            return injectedPublicSearchService;
+
+        if (config.EnablePublicInternetSearch == false)
+            return null;
+
+        IAgentPublicSearchProvider provider = injectedPublicSearchProvider
+                                              ?? (resolvedPublicSearchProvider ??= CreateDefaultPublicSearchProvider());
+        return new AgentPublicSearchService(
+            new AgentPublicSearchConfig
+            {
+                EnablePublicSearch = true,
+                MaxResults = config.PublicInternetSearchMaxResults,
+                MaxQueryChars = config.PublicInternetQueryMaxChars
+            },
+            provider,
+            auditLog);
+    }
+
+    static IAgentPublicSearchProvider CreateDefaultPublicSearchProvider()
+    {
+        return new FallbackPublicSearchProvider(
+            new DuckDuckGoHtmlSearchProvider(new HttpClient { Timeout = TimeSpan.FromSeconds(8) }),
+            new BingHtmlSearchProvider(new HttpClient { Timeout = TimeSpan.FromSeconds(8) }));
+    }
+
     async Task<bool> TryHandlePublicInternetCommandAsync(
         OneBotMessageEvent messageEvent,
         QChatSenderRole senderRole,
         string readable)
     {
-        QChatPublicInternetCommand command = QChatPublicInternetCommandPolicy.Parse(readable);
+        QChatPublicInternetCommand command = QChatPublicInternetCommandPolicy.ParseMessage(
+            messageEvent.MessageType,
+            ResolveCurrentBotId(Configuration ?? new QChatConfig(), messageEvent),
+            messageEvent.RawMessage,
+            readable);
         if (command.Kind == QChatPublicInternetCommandKind.None)
             return false;
 
@@ -4369,7 +4406,9 @@ public partial class QChatService(
                 command.Query,
                 config.PublicInternetQueryMaxChars,
                 config.EnablePublicInternetSearch,
-                config.EnablePublicExternalRagQuery));
+                config.EnablePublicExternalRagQuery,
+                config.AllowGroupMemberPublicInternetSearch,
+                config.AllowGroupMemberPublicExternalRagQuery));
 
         if (decision.Allowed == false)
         {
@@ -4380,13 +4419,14 @@ public partial class QChatService(
         switch (command.Kind)
         {
             case QChatPublicInternetCommandKind.Search:
-                if (injectedPublicSearchService == null)
+                AgentPublicSearchService? publicSearchService = ResolvePublicSearchService(config);
+                if (publicSearchService == null)
                 {
                     await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "public_search=not_configured");
                     return true;
                 }
 
-                AgentPublicSearchResponse searchResponse = await injectedPublicSearchService.SearchAsync(command.Query);
+                AgentPublicSearchResponse searchResponse = await publicSearchService.SearchAsync(command.Query);
                 await SendCommandReplyAsync(
                     messageEvent,
                     senderRole,

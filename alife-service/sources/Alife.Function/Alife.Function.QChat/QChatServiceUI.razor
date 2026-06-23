@@ -163,11 +163,19 @@
                                 </FormItem>
                                 <FormItem Label="公开联网搜索">
                                     <Switch @bind-Value="@Configuration.EnablePublicInternetSearch" />
-                                    <div class="quiet-hint">开启后群成员可使用 /search &lt;query&gt; 临时搜索；不会开放 /qchat、浏览器、登录、下载、本地文件或持久化摄入。</div>
+                                    <div class="quiet-hint">开启后群成员可 &#64;机器人 并使用搜索语义临时联网搜索；/search &lt;query&gt; 仅保留兼容。不会开放 /qchat、浏览器、登录、下载、本地文件或持久化摄入。</div>
+                                </FormItem>
+                                <FormItem Label="群成员可用公开搜索">
+                                    <Switch @bind-Value="@Configuration.AllowGroupMemberPublicInternetSearch" />
+                                    <div class="quiet-hint">关闭后，只有主人可触发公开搜索；群成员 &#64;搜索会在模型前被拒绝。</div>
                                 </FormItem>
                                 <FormItem Label="公开外部 RAG 查询">
                                     <Switch @bind-Value="@Configuration.EnablePublicExternalRagQuery" />
                                     <div class="quiet-hint">开启后群成员可使用 /rag &lt;question&gt; 查询主人批准的外部 RAG；不能新增、删除、刷新或配置来源。</div>
+                                </FormItem>
+                                <FormItem Label="群成员可用外部 RAG">
+                                    <Switch @bind-Value="@Configuration.AllowGroupMemberPublicExternalRagQuery" />
+                                    <div class="quiet-hint">关闭后，群成员不能查询主人批准的外部 RAG；管理和写入仍然始终只允许主人。</div>
                                 </FormItem>
                                 <FormItem Label="公开搜索最大结果数">
                                     <AntDesign.InputNumber @bind-Value="@Configuration.PublicInternetSearchMaxResults"

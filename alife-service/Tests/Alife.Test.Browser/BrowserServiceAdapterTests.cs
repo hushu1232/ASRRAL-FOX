@@ -1,4 +1,5 @@
 using Alife.Framework;
+using Alife.Function.Agent;
 using Alife.Function.Browser;
 using Alife.Function.Interpreter;
 using Microsoft.SemanticKernel;
@@ -102,12 +103,55 @@ public class BrowserServiceAdapterTests
         Assert.Null(BrowserWindowContent.NormalizeUserUrl(""));
     }
 
+    [Fact]
+    public async Task AgentBrowserRuntimeProvider_CapturesReadOnlySnapshotFromRuntime()
+    {
+        FakeBrowserRuntime runtime = new()
+        {
+            ScriptResult = "\"Example Title\"",
+            ObserveResult = "Observed page content"
+        };
+        AgentBrowserRuntimeProvider provider = new(runtime);
+
+        AgentBrowserSnapshot snapshot = await provider.CaptureSnapshotAsync(new AgentBrowserSnapshotRequest(
+            Url: "https://example.com",
+            Page: 2,
+            MaxTextChars: 100,
+            MaxElements: 10));
+
+        Assert.True(snapshot.Success);
+        Assert.Equal("ok", snapshot.Reason);
+        Assert.Equal("https://example.com", snapshot.Url);
+        Assert.Equal("Example Title", snapshot.Title);
+        Assert.Equal("Observed page content", snapshot.Text);
+        Assert.Equal(["https://example.com"], runtime.NavigatedUrls);
+        Assert.Equal([2], runtime.ObservedPages);
+        Assert.Contains("document.title", runtime.ExecutedScripts.Single());
+    }
+
+    [Fact]
+    public async Task AgentBrowserRuntimeProvider_WhenRuntimeFails_ReturnsFailedSnapshot()
+    {
+        SlowBrowserRuntime runtime = new();
+        AgentBrowserRuntimeProvider provider = new(runtime);
+
+        AgentBrowserSnapshot snapshot = await provider.CaptureSnapshotAsync(new AgentBrowserSnapshotRequest(
+            Url: "https://example.com"));
+
+        Assert.False(snapshot.Success);
+        Assert.Equal("browser_snapshot_failed", snapshot.Reason);
+        Assert.Equal("https://example.com", snapshot.Url);
+        Assert.Empty(snapshot.Text);
+    }
+
     sealed class FakeBrowserRuntime : IBrowserRuntime
     {
         public List<string> NavigatedUrls { get; } = new();
         public List<int> ObservedPages { get; } = new();
         public List<int> ElementInfoIds { get; } = new();
         public List<string> ExecutedScripts { get; } = new();
+        public string ObserveResult { get; set; } = "observed";
+        public string ScriptResult { get; set; } = "executed";
         public bool IsReady { get; private set; }
 
         public Task WaitToLoadedAsync(TimeSpan timeout)
@@ -125,7 +169,7 @@ public class BrowserServiceAdapterTests
         public Task<string> ObserveAsync(int page)
         {
             ObservedPages.Add(page);
-            return Task.FromResult("observed");
+            return Task.FromResult(ObserveResult);
         }
 
         public Task<string> GetElementInfoAsync(int id)
@@ -137,7 +181,7 @@ public class BrowserServiceAdapterTests
         public Task<string> ExecuteScriptAsync(string code)
         {
             ExecutedScripts.Add(code);
-            return Task.FromResult("executed");
+            return Task.FromResult(ScriptResult);
         }
 
         public void Dispose() {}

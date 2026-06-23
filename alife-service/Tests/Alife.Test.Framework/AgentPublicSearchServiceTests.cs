@@ -1,3 +1,4 @@
+using System.Net;
 using Alife.Function.Agent;
 using NUnit.Framework;
 
@@ -182,6 +183,125 @@ public sealed class AgentPublicSearchServiceTests
         });
     }
 
+    [Test]
+    public async Task DuckDuckGoHtmlSearchProvider_ParsesResultLinksSnippetsAndRedirectUrls()
+    {
+        const string html = """
+                            <html>
+                              <body>
+                                <div class="result">
+                                  <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Falpha%3Fx%3D1&amp;rut=ignored">Alpha &amp; One</a>
+                                  <a class="result__snippet">First <b>snippet</b> &amp; detail.</a>
+                                </div>
+                                <div class="result">
+                                  <a class="result__a" href="https://example.org/beta">Beta</a>
+                                  <div class="result__snippet">Second snippet.</div>
+                                </div>
+                              </body>
+                            </html>
+                            """;
+        FakeHttpMessageHandler handler = new(html);
+        DuckDuckGoHtmlSearchProvider provider = new(new HttpClient(handler));
+
+        IReadOnlyList<AgentPublicSearchResult> results = await provider.SearchAsync("xiayu bot", 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handler.LastRequestUri?.Host, Is.EqualTo("duckduckgo.com"));
+            Assert.That(handler.LastRequestUri?.Query, Does.Contain("q=xiayu%20bot"));
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title, Is.EqualTo("Alpha & One"));
+            Assert.That(results[0].Url, Is.EqualTo("https://example.com/alpha?x=1"));
+            Assert.That(results[0].Snippet, Is.EqualTo("First snippet & detail."));
+        });
+    }
+
+    [Test]
+    public async Task DuckDuckGoHtmlSearchProvider_ParsesRelativeRedirectUrls()
+    {
+        const string html = """
+                            <html>
+                              <body>
+                                <a class="result__a" href="/l/?uddg=https%3A%2F%2Fexample.net%2Frelative">Relative result</a>
+                              </body>
+                            </html>
+                            """;
+        DuckDuckGoHtmlSearchProvider provider = new(new HttpClient(new FakeHttpMessageHandler(html)));
+
+        IReadOnlyList<AgentPublicSearchResult> results = await provider.SearchAsync("relative", 3);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Url, Is.EqualTo("https://example.net/relative"));
+        });
+    }
+
+    [Test]
+    public async Task BingHtmlSearchProvider_ParsesBingResultBlocks()
+    {
+        const string html = """
+                            <html>
+                              <body>
+                                <li class="b_algo">
+                                  <h2><a href="https://example.com/bing">Bing &amp; One</a></h2>
+                                  <div class="b_caption"><p class="b_lineclamp2">Bing <strong>snippet</strong> &amp; detail.</p></div>
+                                </li>
+                                <li class="b_algo">
+                                  <h2><a href="https://example.org/second">Second</a></h2>
+                                  <p>Second snippet.</p>
+                                </li>
+                              </body>
+                            </html>
+                            """;
+        FakeHttpMessageHandler handler = new(html);
+        BingHtmlSearchProvider provider = new(new HttpClient(handler));
+
+        IReadOnlyList<AgentPublicSearchResult> results = await provider.SearchAsync("xiayu bot", 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handler.LastRequestUri?.Host, Is.EqualTo("www.bing.com"));
+            Assert.That(handler.LastRequestUri?.Query, Does.Contain("q=xiayu%20bot"));
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title, Is.EqualTo("Bing & One"));
+            Assert.That(results[0].Url, Is.EqualTo("https://example.com/bing"));
+            Assert.That(results[0].Snippet, Is.EqualTo("Bing snippet & detail."));
+        });
+    }
+
+    [Test]
+    public async Task FallbackPublicSearchProvider_UsesNextProviderWhenPrimaryFails()
+    {
+        ThrowingPublicSearchProvider primary = new();
+        FakePublicSearchProvider secondary = new(
+            new AgentPublicSearchResult("Fallback", "https://example.com/fallback", "fallback snippet"));
+        FallbackPublicSearchProvider provider = new(primary, secondary);
+
+        IReadOnlyList<AgentPublicSearchResult> results = await provider.SearchAsync("fallback query", 3);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(primary.Calls, Is.EqualTo(1));
+            Assert.That(secondary.Calls, Is.EqualTo(1));
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title, Is.EqualTo("Fallback"));
+        });
+    }
+
+    [Test]
+    public void FallbackPublicSearchProvider_WhenAllProvidersFail_RethrowsLastFailure()
+    {
+        FallbackPublicSearchProvider provider = new(
+            new ThrowingPublicSearchProvider(),
+            new ThrowingPublicSearchProvider());
+
+        InvalidOperationException ex = Assert.ThrowsAsync<InvalidOperationException>(() =>
+            provider.SearchAsync("fallback query", 3))!;
+
+        Assert.That(ex.Message, Is.EqualTo("primary failed"));
+    }
+
     static string CreateAuditPath() => Path.Combine(
         TestContext.CurrentContext.WorkDirectory,
         "agent-public-search-audit",
@@ -219,6 +339,34 @@ public sealed class AgentPublicSearchServiceTests
                 throw exception;
 
             return Task.FromResult<IReadOnlyList<AgentPublicSearchResult>>(results.ToArray());
+        }
+    }
+
+    sealed class ThrowingPublicSearchProvider : IAgentPublicSearchProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<AgentPublicSearchResult>> SearchAsync(
+            string query,
+            int maxResults,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            throw new InvalidOperationException("primary failed");
+        }
+    }
+
+    sealed class FakeHttpMessageHandler(string body, HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler
+    {
+        public Uri? LastRequestUri { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastRequestUri = request.RequestUri;
+            return Task.FromResult(new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(body)
+            });
         }
     }
 }
