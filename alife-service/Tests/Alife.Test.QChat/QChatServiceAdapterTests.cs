@@ -1350,6 +1350,122 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerSemanticBrowserSearchBuildsExpandedSearchSnapshotWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeBrowserProvider browser = new(new AgentBrowserSnapshot(
+            true,
+            "ok",
+            "https://www.bing.com/search?q=agent-browser",
+            "Search",
+            "search snapshot",
+            []));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, browserProvider: browser);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "羽，帮我用浏览器查一下 agent-browser web-access"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string requestUrl = browser.LastRequest?.Url ?? "";
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(browser.Calls, Is.EqualTo(1));
+            Assert.That(requestUrl, Does.StartWith("https://www.bing.com/search?q="));
+            Assert.That(Uri.UnescapeDataString(requestUrl), Does.Contain("agent-browser"));
+            Assert.That(Uri.UnescapeDataString(requestUrl), Does.Contain("web-access"));
+            Assert.That(Uri.UnescapeDataString(requestUrl), Does.Contain("official"));
+            Assert.That(Uri.UnescapeDataString(requestUrl), Does.Contain("GitHub"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("browser-snapshot"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task OwnerSemanticBrowserUrlUsesSnapshotUrlDirectly()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeBrowserProvider browser = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, browserProvider: browser);
+        service.InboundChatDispatcher = _ => Task.CompletedTask;
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "羽，用浏览器看看 https://example.com/docs"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(browser.Calls, Is.EqualTo(1));
+            Assert.That(browser.LastRequest?.Url, Is.EqualTo("https://example.com/docs"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerSemanticBrowserRequestDropsBeforeBrowserProviderAndModel()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeBrowserProvider browser = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowPrivateGuestChat = true,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, browserProvider: browser);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2002,
+            RawMessage = "用浏览器查一下 agent-browser"
+        });
+
+        await Task.Delay(200);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(browser.Calls, Is.Zero);
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(runtime.GroupMessages, Is.Empty);
+        });
+    }
+
+    [Test]
     public async Task NonOwnerBrowserSnapshotCommandDropsBeforeBrowserProviderAndModel()
     {
         await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>

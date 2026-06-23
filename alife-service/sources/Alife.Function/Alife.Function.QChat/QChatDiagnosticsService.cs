@@ -213,6 +213,7 @@ public static class QChatDiagnosticsService
             "/qchat web snapshot <url> - 获取公网 HTTP/HTTPS 页面只读浏览器快照",
             "",
             "说明：",
+            "主人也可以自然说：羽，用浏览器查一下 <关键词>。没有 URL 时会打开搜索结果页快照。",
             "只读快照不会点击、登录、下载、提交表单或执行高风险浏览器动作。",
             "页面内容按不可信外部上下文处理，不能覆盖系统权限、主人身份、审批、outbox 或安全边界。");
     }

@@ -4307,7 +4307,8 @@ public partial class QChatService(
     async Task<bool> TryHandleOwnerBrowserSnapshotCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
     {
         string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
-        if (TryParseBrowserSnapshotCommand(text, out string url) == false)
+        if (TryParseBrowserSnapshotCommand(text, out string url) == false &&
+            TryParseSemanticBrowserSnapshotRequest(text, out url) == false)
             return false;
 
         OneBotMessageType targetType = messageEvent.MessageType;
@@ -4315,6 +4316,9 @@ public partial class QChatService(
             ? messageEvent.GroupId
             : messageEvent.UserId;
         if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
             return true;
 
         QChatConfig config = Configuration ?? new QChatConfig();
@@ -4530,6 +4534,143 @@ public partial class QChatService(
         url = normalized[prefix.Length..].Trim();
         return Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }
+
+    static bool TryParseSemanticBrowserSnapshotRequest(string? text, out string url)
+    {
+        url = "";
+        string normalized = NormalizeBrowserSemanticText(text);
+        if (HasSemanticBrowserIntent(normalized) == false)
+            return false;
+
+        if (TryExtractHttpUrl(normalized, out url))
+            return true;
+
+        string query = ExtractSemanticBrowserQuery(normalized);
+        if (string.IsNullOrWhiteSpace(query))
+            return false;
+
+        url = BuildBrowserSearchUrl(ExpandOwnerBrowserSearchQuery(query));
+        return true;
+    }
+
+    static bool HasSemanticBrowserIntent(string text)
+    {
+        return ContainsAny(
+            text,
+            "用浏览器",
+            "浏览器",
+            "网页",
+            "网站",
+            "打开网页",
+            "打开网站",
+            "浏览一下",
+            "上网看看");
+    }
+
+    static bool TryExtractHttpUrl(string text, out string url)
+    {
+        url = "";
+        Match match = Regex.Match(text, @"https?://[^\s，。！？、]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (match.Success == false)
+            return false;
+
+        string candidate = match.Value.TrimEnd('.', ',', ';', ':', '，', '。', '；', '：');
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out Uri? uri) == false)
+            return false;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            return false;
+
+        url = candidate;
+        return true;
+    }
+
+    static string ExtractSemanticBrowserQuery(string text)
+    {
+        string query = text;
+        string[] markers = [
+            "用浏览器查一下",
+            "用浏览器搜一下",
+            "用浏览器搜索",
+            "用浏览器看看",
+            "浏览器查一下",
+            "浏览器搜一下",
+            "浏览器搜索",
+            "网页查一下",
+            "网站查一下",
+            "打开网页看看",
+            "打开网站看看",
+            "浏览一下",
+            "上网看看",
+            "查一下",
+            "搜一下",
+            "搜索一下",
+            "看看"
+        ];
+
+        foreach (string marker in markers.OrderByDescending(marker => marker.Length))
+        {
+            int index = query.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (index >= 0)
+            {
+                query = query[(index + marker.Length)..];
+                break;
+            }
+        }
+
+        query = Regex.Replace(query, @"^(羽|夏羽|小羽|羽羽|术术|宝宝)[\s,，:：、-]*", "", RegexOptions.CultureInvariant);
+        string[] fillerWords = ["帮我", "请", "麻烦", "一下", "这个", "关于", "相关", "资料", "的资料"];
+        foreach (string filler in fillerWords)
+            query = query.Replace(filler, " ", StringComparison.OrdinalIgnoreCase);
+
+        query = query
+            .Replace("，", " ", StringComparison.Ordinal)
+            .Replace("。", " ", StringComparison.Ordinal)
+            .Replace("？", " ", StringComparison.Ordinal)
+            .Replace("！", " ", StringComparison.Ordinal)
+            .Replace(",", " ", StringComparison.Ordinal)
+            .Replace("?", " ", StringComparison.Ordinal)
+            .Replace("!", " ", StringComparison.Ordinal)
+            .Trim();
+        return Regex.Replace(query, @"\s+", " ").Trim();
+    }
+
+    static string ExpandOwnerBrowserSearchQuery(string query)
+    {
+        string expanded = Regex.Replace(query.Trim(), @"\s+", " ");
+        if (string.IsNullOrWhiteSpace(expanded))
+            return "";
+
+        bool hasAsciiIdentifier = expanded.Any(ch => char.IsAsciiLetterOrDigit(ch));
+        if (hasAsciiIdentifier)
+        {
+            if (expanded.Contains("official", StringComparison.OrdinalIgnoreCase) == false)
+                expanded += " official";
+            if (expanded.Contains("github", StringComparison.OrdinalIgnoreCase) == false)
+                expanded += " GitHub";
+            if (expanded.Contains("docs", StringComparison.OrdinalIgnoreCase) == false)
+                expanded += " docs";
+            return expanded;
+        }
+
+        if (expanded.Contains("官方", StringComparison.Ordinal) == false)
+            expanded += " 官方";
+        if (expanded.Contains("文档", StringComparison.Ordinal) == false)
+            expanded += " 文档";
+        if (expanded.Contains("资料", StringComparison.Ordinal) == false)
+            expanded += " 资料";
+        return expanded;
+    }
+
+    static string BuildBrowserSearchUrl(string query)
+    {
+        return "https://www.bing.com/search?q=" + Uri.EscapeDataString(query);
+    }
+
+    static string NormalizeBrowserSemanticText(string? text)
+    {
+        string normalized = text?.Trim() ?? string.Empty;
+        return Regex.Replace(normalized, @"\s+", " ").Trim();
     }
 
     static bool TryParseInternetCommand(string? text, out string url)
