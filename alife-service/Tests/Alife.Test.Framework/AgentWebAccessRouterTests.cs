@@ -81,6 +81,63 @@ public sealed class AgentWebAccessRouterTests
     }
 
     [Test]
+    public void Evaluate_AllowsOwnerAutoReadWhenEnabled()
+    {
+        AgentWebAccessDecision decision = AgentWebAccessRouter.Evaluate(new AgentWebAccessRequest(
+            AgentWebAccessActorRole.Owner,
+            AgentWebAccessCapability.AutoRead,
+            "https://example.com",
+            new AgentWebAccessConfig
+            {
+                EnableAutoRead = true
+            }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Allowed, Is.True);
+            Assert.That(decision.Reason, Is.EqualTo("allowed"));
+        });
+    }
+
+    [Test]
+    public void Evaluate_DeniesAutoReadWhenDisabled()
+    {
+        AgentWebAccessDecision decision = AgentWebAccessRouter.Evaluate(new AgentWebAccessRequest(
+            AgentWebAccessActorRole.Owner,
+            AgentWebAccessCapability.AutoRead,
+            "https://example.com",
+            new AgentWebAccessConfig
+            {
+                EnableAutoRead = false
+            }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Allowed, Is.False);
+            Assert.That(decision.Reason, Is.EqualTo("auto_read_disabled"));
+        });
+    }
+
+    [Test]
+    public void Evaluate_DeniesGroupMemberAutoReadEvenWhenEnabled()
+    {
+        AgentWebAccessDecision decision = AgentWebAccessRouter.Evaluate(new AgentWebAccessRequest(
+            AgentWebAccessActorRole.GroupMember,
+            AgentWebAccessCapability.AutoRead,
+            "https://example.com",
+            new AgentWebAccessConfig
+            {
+                EnableAutoRead = true
+            }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Allowed, Is.False);
+            Assert.That(decision.Reason, Is.EqualTo("owner_required"));
+        });
+    }
+
+    [Test]
     public void Evaluate_AllowsGroupMemberExternalRagQueryWhenEnabled()
     {
         AgentWebAccessDecision decision = AgentWebAccessRouter.Evaluate(new AgentWebAccessRequest(

@@ -13,12 +13,14 @@ public sealed class AgentWebAccessService(
     AgentPublicSearchService? searchService = null,
     AgentInternetService? internetService = null,
     AgentExternalRagService? externalRagService = null,
-    IAgentBrowserProvider? browserProvider = null)
+    IAgentBrowserProvider? browserProvider = null,
+    AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null)
 {
     readonly AgentPublicSearchService? searchService = searchService;
     readonly AgentInternetService? internetService = internetService;
     readonly AgentExternalRagService? externalRagService = externalRagService;
     readonly IAgentBrowserProvider? browserProvider = browserProvider;
+    readonly AgentBrowserSiteExperienceStore? browserSiteExperienceStore = browserSiteExperienceStore;
 
     public async Task<AgentWebAccessResponse> ExecuteAsync(
         AgentWebAccessRequest request,
@@ -31,6 +33,7 @@ public sealed class AgentWebAccessService(
         return request.Capability switch
         {
             AgentWebAccessCapability.PublicSearch => await ExecutePublicSearchAsync(request, cancellationToken),
+            AgentWebAccessCapability.AutoRead => await ExecuteAutoReadAsync(request, cancellationToken),
             AgentWebAccessCapability.PublicFetch => await ExecutePublicFetchAsync(request, cancellationToken),
             AgentWebAccessCapability.ExternalRagQuery => ExecuteExternalRagQuery(request),
             AgentWebAccessCapability.BrowserSnapshot => await ExecuteBrowserSnapshotAsync(request, cancellationToken),
@@ -38,6 +41,40 @@ public sealed class AgentWebAccessService(
             AgentWebAccessCapability.ExternalRagMutation => Denied(request.Capability, "external_rag_mutation_not_implemented"),
             _ => Denied(request.Capability, "unknown_capability")
         };
+    }
+
+    async Task<AgentWebAccessResponse> ExecuteAutoReadAsync(
+        AgentWebAccessRequest request,
+        CancellationToken cancellationToken)
+    {
+        AgentWebStrategyDecision strategy = AgentWebStrategyRouter.Evaluate(
+            request.Query,
+            browserSiteExperienceStore);
+        if (strategy.Allowed == false || strategy.Capability == null)
+            return Denied(request.Capability, strategy.Reason);
+
+        AgentWebAccessConfig config = request.Config ?? new AgentWebAccessConfig();
+        AgentWebAccessConfig delegatedConfig = new()
+        {
+            EnablePublicSearch = config.EnablePublicSearch,
+            EnableAutoRead = config.EnableAutoRead,
+            EnablePublicFetch = config.EnablePublicFetch,
+            EnableBrowserSnapshot = config.EnableBrowserSnapshot,
+            EnableBrowserInteract = false,
+            EnableExternalRagQuery = config.EnableExternalRagQuery,
+            EnableExternalRagMutation = false,
+            AllowGroupMemberPublicSearch = config.AllowGroupMemberPublicSearch,
+            AllowGroupMemberExternalRagQuery = config.AllowGroupMemberExternalRagQuery,
+            MaxQueryChars = config.MaxQueryChars,
+            MaxExternalRagChunks = config.MaxExternalRagChunks
+        };
+
+        AgentWebAccessRequest delegatedRequest = new(
+            request.ActorRole,
+            strategy.Capability.Value,
+            request.Query,
+            delegatedConfig);
+        return await ExecuteAsync(delegatedRequest, cancellationToken);
     }
 
     async Task<AgentWebAccessResponse> ExecutePublicSearchAsync(
@@ -95,6 +132,10 @@ public sealed class AgentWebAccessService(
         AgentBrowserSnapshot snapshot = await browserProvider.CaptureSnapshotAsync(
             new AgentBrowserSnapshotRequest(request.Query),
             cancellationToken);
+        browserSiteExperienceStore?.RecordSnapshotResult(
+            string.IsNullOrWhiteSpace(snapshot.Url) ? request.Query : snapshot.Url,
+            snapshot.Success,
+            snapshot.Reason);
         return new AgentWebAccessResponse(
             snapshot.Success,
             snapshot.Reason,

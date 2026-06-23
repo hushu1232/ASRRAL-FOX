@@ -1350,6 +1350,279 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerBrowserSnapshotCommandRecordsSiteExperience()
+    {
+        FakeOneBotRuntime runtime = new();
+        AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+            Path.GetTempPath(),
+            "alife-qchat-browser-site-experience-tests",
+            Guid.NewGuid().ToString("N")));
+        FakeBrowserProvider browser = new(new AgentBrowserSnapshot(
+            true,
+            "ok",
+            "https://example.com/dashboard",
+            "Dashboard",
+            "snapshot text",
+            []));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, browserProvider: browser, browserSiteExperienceStore: siteExperienceStore);
+        service.InboundChatDispatcher = _ => Task.CompletedTask;
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat web snapshot https://example.com/dashboard"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        AgentBrowserSiteExperience? experience = siteExperienceStore.Get("example.com");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(browser.Calls, Is.EqualTo(1));
+            Assert.That(experience, Is.Not.Null);
+            Assert.That(experience!.PreferredStrategy, Is.EqualTo(AgentBrowserSiteStrategy.BrowserSnapshot));
+            Assert.That(experience.LastSuccess, Is.True);
+            Assert.That(experience.LastReason, Is.EqualTo("ok"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerWebStatusCommandShowsSiteExperienceWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+            Path.GetTempPath(),
+            "alife-qchat-browser-site-status-tests",
+            Guid.NewGuid().ToString("N")));
+        siteExperienceStore.RecordSnapshotResult(
+            "https://example.com/dashboard",
+            success: true,
+            reason: "ok",
+            now: new DateTimeOffset(2026, 6, 23, 12, 0, 0, TimeSpan.Zero));
+        FakeBrowserProvider browser = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, browserProvider: browser, browserSiteExperienceStore: siteExperienceStore);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat web status"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(reply, Does.Contain("browser_site_experience recent=1"));
+            Assert.That(reply, Does.Contain("host=example.com"));
+            Assert.That(reply, Does.Contain("strategy=BrowserSnapshot"));
+            Assert.That(browser.Calls, Is.Zero);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task OwnerWebDoctorCommandShowsProviderAndStrategyStateWithoutBrowserOrModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+            Path.GetTempPath(),
+            "alife-qchat-browser-site-doctor-tests",
+            Guid.NewGuid().ToString("N")));
+        siteExperienceStore.RecordSnapshotResult(
+            "https://example.com/dashboard",
+            success: true,
+            reason: "ok",
+            now: new DateTimeOffset(2026, 6, 23, 12, 0, 0, TimeSpan.Zero));
+        FakeBrowserProvider browser = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, browserProvider: browser, browserSiteExperienceStore: siteExperienceStore);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat web doctor"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(reply, Does.Contain("web_doctor browser_provider=configured internet=enabled"));
+            Assert.That(reply, Does.Contain("recent_sites=1"));
+            Assert.That(reply, Does.Contain("host=example.com"));
+            Assert.That(reply, Does.Contain("strategy=BrowserSnapshot"));
+            Assert.That(browser.Calls, Is.Zero);
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task OwnerWebReadCommandUsesAutoReadPublicFetchWithoutBrowserOrModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeInternetService internet = new("public page content [CQ:record,file=http://example.com/a.mp3]");
+        FakeBrowserProvider browser = new();
+        AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+            Path.GetTempPath(),
+            "alife-qchat-web-read-public-fetch-tests",
+            Guid.NewGuid().ToString("N")));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, internetService: internet, browserProvider: browser, browserSiteExperienceStore: siteExperienceStore);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat web read https://example.com/docs"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.LastUrl, Is.EqualTo("https://example.com/docs"));
+            Assert.That(browser.Calls, Is.Zero);
+            Assert.That(reply, Does.Contain("public page content"));
+            Assert.That(reply, Does.Contain("[CQ :record"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task OwnerSemanticWebReadUsesAutoReadPublicFetchWithoutBrowserOrModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeInternetService internet = new("semantic page content");
+        FakeBrowserProvider browser = new();
+        AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+            Path.GetTempPath(),
+            "alife-qchat-semantic-web-read-public-fetch-tests",
+            Guid.NewGuid().ToString("N")));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, internetService: internet, browserProvider: browser, browserSiteExperienceStore: siteExperienceStore);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "羽，读一下 https://example.com/docs"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.LastUrl, Is.EqualTo("https://example.com/docs"));
+            Assert.That(browser.Calls, Is.Zero);
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("semantic page content"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task OwnerWebReadCommandUsesBrowserSnapshotWhenSiteExperiencePrefersBrowser()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeInternetService internet = new("public page content");
+        FakeBrowserProvider browser = new(new AgentBrowserSnapshot(
+            true,
+            "ok",
+            "https://example.com/dashboard",
+            "Dashboard",
+            "browser page content",
+            []));
+        AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+            Path.GetTempPath(),
+            "alife-qchat-browser-auto-read-tests",
+            Guid.NewGuid().ToString("N")));
+        siteExperienceStore.RecordSnapshotResult("https://example.com/dashboard", true, "ok");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, internetService: internet, browserProvider: browser, browserSiteExperienceStore: siteExperienceStore);
+        service.InboundChatDispatcher = _ => Task.CompletedTask;
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat web read https://www.example.com/dashboard"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(internet.Calls, Is.Zero);
+            Assert.That(browser.Calls, Is.EqualTo(1));
+            Assert.That(browser.LastRequest?.Url, Is.EqualTo("https://www.example.com/dashboard"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("browser page content"));
+        });
+    }
+
+    [Test]
     public async Task OwnerSemanticBrowserSearchBuildsExpandedSearchSnapshotWithoutModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
@@ -1494,6 +1767,104 @@ public class QChatServiceAdapterTests
                 UserId = 2002,
                 SelfId = 999,
                 RawMessage = "/qchat web snapshot https://example.com/dashboard"
+            });
+
+            string diagnostics = await WaitForQChatCommandDroppedDiagnosticAsync(storageRoot);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(browser.Calls, Is.Zero);
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+                Assert.That(runtime.GroupMessages, Is.Empty);
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-command-dropped\""));
+            });
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerWebStatusCommandDropsBeforeStoreBrowserProviderAndModel()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new();
+            AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+                storageRoot,
+                "AgentWorkspace",
+                "browser-site-experience-test"));
+            siteExperienceStore.RecordSnapshotResult("https://example.com", true, "ok");
+            FakeBrowserProvider browser = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowedGroupIds = "3003",
+                EnableInternetAccess = true,
+                EnableBalancedTextStreaming = false
+            }, browserProvider: browser, browserSiteExperienceStore: siteExperienceStore);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                GroupId = 3003,
+                UserId = 2002,
+                SelfId = 999,
+                RawMessage = "/qchat web status"
+            });
+
+            string diagnostics = await WaitForQChatCommandDroppedDiagnosticAsync(storageRoot);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(browser.Calls, Is.Zero);
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+                Assert.That(runtime.GroupMessages, Is.Empty);
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-command-dropped\""));
+            });
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerWebDoctorCommandDropsBeforeStoreBrowserProviderAndModel()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new();
+            AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+                storageRoot,
+                "AgentWorkspace",
+                "browser-site-experience-test"));
+            siteExperienceStore.RecordSnapshotResult("https://example.com", true, "ok");
+            FakeBrowserProvider browser = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowedGroupIds = "3003",
+                EnableInternetAccess = true,
+                EnableBalancedTextStreaming = false
+            }, browserProvider: browser, browserSiteExperienceStore: siteExperienceStore);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                GroupId = 3003,
+                UserId = 2002,
+                SelfId = 999,
+                RawMessage = "/qchat web doctor"
             });
 
             string diagnostics = await WaitForQChatCommandDroppedDiagnosticAsync(storageRoot);
@@ -12198,7 +12569,8 @@ public class QChatServiceAdapterTests
         IAgentPublicSearchProvider? publicSearchProvider = null,
         AgentPublicSearchService? publicSearchService = null,
         AgentExternalRagService? externalRagService = null,
-        IAgentBrowserProvider? browserProvider = null)
+        IAgentBrowserProvider? browserProvider = null,
+        AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null)
     {
         riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
@@ -12227,7 +12599,8 @@ public class QChatServiceAdapterTests
             publicSearchProvider: publicSearchProvider,
             publicSearchService: publicSearchService,
             externalRagService: externalRagService,
-            browserProvider: browserProvider)
+            browserProvider: browserProvider,
+            browserSiteExperienceStore: browserSiteExperienceStore)
         {
             Configuration = config
         };

@@ -277,7 +277,8 @@ public partial class QChatService(
     IAgentPublicSearchProvider? publicSearchProvider = null,
     AgentPublicSearchService? publicSearchService = null,
     AgentExternalRagService? externalRagService = null,
-    IAgentBrowserProvider? browserProvider = null) :
+    IAgentBrowserProvider? browserProvider = null,
+    AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -296,8 +297,10 @@ public partial class QChatService(
     readonly AgentPublicSearchService? injectedPublicSearchService = publicSearchService;
     readonly AgentExternalRagService? injectedExternalRagService = externalRagService;
     readonly IAgentBrowserProvider? injectedBrowserProvider = browserProvider;
+    readonly AgentBrowserSiteExperienceStore? injectedBrowserSiteExperienceStore = browserSiteExperienceStore;
     QChatImageRecognitionService? resolvedImageRecognitionService;
     IAgentPublicSearchProvider? resolvedPublicSearchProvider;
+    AgentBrowserSiteExperienceStore? resolvedBrowserSiteExperienceStore;
     QChatOwnerEventOutbox? resolvedOwnerEventOutbox;
     QChatOwnerEventDispatcher? resolvedOwnerEventDispatcher;
     IQChatOwnerEventPublisher? resolvedOwnerEventPublisher;
@@ -310,6 +313,10 @@ public partial class QChatService(
         GetOneBotClient);
     IQChatOwnerEventPublisher OwnerEventPublisher => injectedOwnerEventPublisher
         ?? (resolvedOwnerEventPublisher ??= new QChatOwnerEventPublisher(OwnerEventOutbox, OwnerEventDispatcher));
+    AgentBrowserSiteExperienceStore BrowserSiteExperienceStore => injectedBrowserSiteExperienceStore
+        ?? (resolvedBrowserSiteExperienceStore ??= new AgentBrowserSiteExperienceStore(Path.Combine(
+            AlifePath.StorageFolderPath,
+            "AgentWorkspace")));
 
     DesktopActionGateway? resolvedDesktopActionGateway;
     DesktopActionGateway DesktopGateway => resolvedDesktopActionGateway ??= injectedDesktopActionGateway
@@ -4307,6 +4314,18 @@ public partial class QChatService(
     async Task<bool> TryHandleOwnerBrowserSnapshotCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
     {
         string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (TryParseWebAutoReadCommand(text, out string autoReadUrl) ||
+            TryParseSemanticWebAutoReadRequest(text, out autoReadUrl))
+        {
+            return await TryHandleOwnerWebAutoReadCommandAsync(messageEvent, senderRole, autoReadUrl);
+        }
+
+        if (TryParseBrowserDoctorCommand(text))
+            return await TryHandleOwnerBrowserDoctorCommandAsync(messageEvent, senderRole);
+
+        if (TryParseBrowserStatusCommand(text))
+            return await TryHandleOwnerBrowserStatusCommandAsync(messageEvent, senderRole);
+
         if (TryParseBrowserSnapshotCommand(text, out string url) == false &&
             TryParseSemanticBrowserSnapshotRequest(text, out url) == false)
             return false;
@@ -4322,7 +4341,9 @@ public partial class QChatService(
             return true;
 
         QChatConfig config = Configuration ?? new QChatConfig();
-        AgentWebAccessService webAccess = new(browserProvider: injectedBrowserProvider);
+        AgentWebAccessService webAccess = new(
+            browserProvider: injectedBrowserProvider,
+            browserSiteExperienceStore: BrowserSiteExperienceStore);
         AgentWebAccessResponse response = await webAccess.ExecuteAsync(new AgentWebAccessRequest(
             MapWebAccessActorRole(senderRole),
             AgentWebAccessCapability.BrowserSnapshot,
@@ -4346,6 +4367,105 @@ public partial class QChatService(
             url,
             response.Success,
             response.Reason
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerWebAutoReadCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string url)
+    {
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+            return true;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        AgentWebAccessService webAccess = new(
+            internetService: injectedInternetService,
+            browserProvider: injectedBrowserProvider,
+            browserSiteExperienceStore: BrowserSiteExperienceStore);
+        AgentWebAccessResponse response = await webAccess.ExecuteAsync(new AgentWebAccessRequest(
+            MapWebAccessActorRole(senderRole),
+            AgentWebAccessCapability.AutoRead,
+            url,
+            new AgentWebAccessConfig
+            {
+                EnableAutoRead = config.EnableInternetAccess,
+                EnablePublicFetch = config.EnableInternetAccess,
+                EnableBrowserSnapshot = config.EnableInternetAccess,
+                MaxQueryChars = config.PublicInternetQueryMaxChars
+            }));
+
+        await SendCommandReplyAsync(
+            messageEvent,
+            senderRole,
+            targetType,
+            targetId,
+            NeutralizePublicExternalQqMarkup(response.FormattedContent));
+        WriteQChatDiagnostic("qchat-web-auto-read-command-handled", "QChat web auto-read command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            url,
+            response.Capability,
+            response.Success,
+            response.Reason
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerBrowserStatusCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+            return true;
+
+        string status = BrowserSiteExperienceStore.FormatStatus();
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, status);
+        WriteQChatDiagnostic("qchat-browser-status-command-handled", "QChat browser status command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerBrowserDoctorCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+            return true;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        string doctor = BrowserSiteExperienceStore.FormatDoctor(
+            internetAccessEnabled: config.EnableInternetAccess,
+            browserProviderConfigured: injectedBrowserProvider != null);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, doctor);
+        WriteQChatDiagnostic("qchat-browser-doctor-command-handled", "QChat browser doctor command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            config.EnableInternetAccess,
+            HasBrowserProvider = injectedBrowserProvider != null
         });
         return true;
     }
@@ -4536,6 +4656,31 @@ public partial class QChatService(
                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
     }
 
+    static bool TryParseWebAutoReadCommand(string? text, out string url)
+    {
+        url = "";
+        string normalized = text?.Trim() ?? string.Empty;
+        const string prefix = "/qchat web read ";
+        if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        url = normalized[prefix.Length..].Trim();
+        return Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+               && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }
+
+    static bool TryParseBrowserStatusCommand(string? text)
+    {
+        string normalized = text?.Trim() ?? string.Empty;
+        return normalized.Equals("/qchat web status", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool TryParseBrowserDoctorCommand(string? text)
+    {
+        string normalized = text?.Trim() ?? string.Empty;
+        return normalized.Equals("/qchat web doctor", StringComparison.OrdinalIgnoreCase);
+    }
+
     static bool TryParseSemanticBrowserSnapshotRequest(string? text, out string url)
     {
         url = "";
@@ -4552,6 +4697,31 @@ public partial class QChatService(
 
         url = BuildBrowserSearchUrl(ExpandOwnerBrowserSearchQuery(query));
         return true;
+    }
+
+    static bool TryParseSemanticWebAutoReadRequest(string? text, out string url)
+    {
+        url = "";
+        string normalized = NormalizeBrowserSemanticText(text);
+        if (HasSemanticBrowserIntent(normalized))
+            return false;
+        if (HasSemanticWebAutoReadIntent(normalized) == false)
+            return false;
+        return TryExtractHttpUrl(normalized, out url);
+    }
+
+    static bool HasSemanticWebAutoReadIntent(string text)
+    {
+        return ContainsAny(
+            text,
+            "\u8bfb\u4e00\u4e0b",
+            "\u8bfb\u8bfb",
+            "\u770b\u770b\u8fd9\u4e2a\u94fe\u63a5",
+            "\u770b\u4e00\u4e0b\u8fd9\u4e2a\u94fe\u63a5",
+            "\u603b\u7ed3\u8fd9\u4e2a\u7f51\u9875",
+            "\u5206\u6790\u8fd9\u4e2a\u7f51\u9875",
+            "read ",
+            "summarize ");
     }
 
     static bool HasSemanticBrowserIntent(string text)

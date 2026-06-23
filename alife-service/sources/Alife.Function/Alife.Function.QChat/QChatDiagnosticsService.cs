@@ -209,6 +209,9 @@ public static class QChatDiagnosticsService
     public static string BuildWebMenuText()
     {
         return string.Join(Environment.NewLine,
+            "/qchat web status - 查看最近浏览器站点经验和访问策略",
+            "/qchat web doctor - 检查浏览器 provider、联网开关和最近站点策略",
+            "/qchat web read <url> - 按站点经验自动选择公开读取或只读浏览器快照",
             "Web 浏览器指令：",
             "/qchat web snapshot <url> - 获取公网 HTTP/HTTPS 页面只读浏览器快照",
             "",

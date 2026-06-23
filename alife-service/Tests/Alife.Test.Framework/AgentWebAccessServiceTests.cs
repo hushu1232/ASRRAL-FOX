@@ -114,6 +114,156 @@ public sealed class AgentWebAccessServiceTests
     }
 
     [Test]
+    public async Task ExecuteAsync_AutoReadUnknownPublicSiteUsesPublicFetch()
+    {
+        FakeInternetService internet = new(new AgentInternetFetchResult(
+            true,
+            "ok",
+            "public fetch content"));
+        FakeBrowserProvider browser = new();
+        AgentBrowserSiteExperienceStore store = new(CreateTempStoreRoot());
+        AgentWebAccessService service = new(
+            internetService: internet,
+            browserProvider: browser,
+            browserSiteExperienceStore: store);
+
+        AgentWebAccessResponse response = await service.ExecuteAsync(new AgentWebAccessRequest(
+            AgentWebAccessActorRole.Owner,
+            AgentWebAccessCapability.AutoRead,
+            "https://example.com/docs",
+            new AgentWebAccessConfig
+            {
+                EnableAutoRead = true,
+                EnablePublicFetch = true,
+                EnableBrowserSnapshot = true
+            }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.Success, Is.True);
+            Assert.That(response.Capability, Is.EqualTo(AgentWebAccessCapability.PublicFetch));
+            Assert.That(response.Reason, Is.EqualTo("ok"));
+            Assert.That(response.FormattedContent, Is.EqualTo("public fetch content"));
+            Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.LastUrl, Is.EqualTo("https://example.com/docs"));
+            Assert.That(browser.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task ExecuteAsync_AutoReadRecordedBrowserSiteUsesSnapshot()
+    {
+        FakeInternetService internet = new(new AgentInternetFetchResult(
+            true,
+            "ok",
+            "public fetch content"));
+        FakeBrowserProvider browser = new(new AgentBrowserSnapshot(
+            true,
+            "ok",
+            "https://example.com/dashboard",
+            "Dashboard",
+            "browser content",
+            []));
+        AgentBrowserSiteExperienceStore store = new(CreateTempStoreRoot());
+        store.RecordSnapshotResult("https://example.com/dashboard", true, "ok");
+        AgentWebAccessService service = new(
+            internetService: internet,
+            browserProvider: browser,
+            browserSiteExperienceStore: store);
+
+        AgentWebAccessResponse response = await service.ExecuteAsync(new AgentWebAccessRequest(
+            AgentWebAccessActorRole.Owner,
+            AgentWebAccessCapability.AutoRead,
+            "https://www.example.com/dashboard",
+            new AgentWebAccessConfig
+            {
+                EnableAutoRead = true,
+                EnablePublicFetch = true,
+                EnableBrowserSnapshot = true
+            }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.Success, Is.True);
+            Assert.That(response.Capability, Is.EqualTo(AgentWebAccessCapability.BrowserSnapshot));
+            Assert.That(response.FormattedContent, Does.Contain("browser content"));
+            Assert.That(browser.Calls, Is.EqualTo(1));
+            Assert.That(browser.LastRequest?.Url, Is.EqualTo("https://www.example.com/dashboard"));
+            Assert.That(internet.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task ExecuteAsync_AutoReadLoginSiteIsDeniedBeforeProviders()
+    {
+        FakeInternetService internet = new(new AgentInternetFetchResult(
+            true,
+            "ok",
+            "public fetch content"));
+        FakeBrowserProvider browser = new();
+        AgentBrowserSiteExperienceStore store = new(CreateTempStoreRoot());
+        store.RecordSnapshotResult("https://secure.example.com", false, "login_required");
+        AgentWebAccessService service = new(
+            internetService: internet,
+            browserProvider: browser,
+            browserSiteExperienceStore: store);
+
+        AgentWebAccessResponse response = await service.ExecuteAsync(new AgentWebAccessRequest(
+            AgentWebAccessActorRole.Owner,
+            AgentWebAccessCapability.AutoRead,
+            "https://secure.example.com/account",
+            new AgentWebAccessConfig
+            {
+                EnableAutoRead = true,
+                EnablePublicFetch = true,
+                EnableBrowserSnapshot = true
+            }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.Success, Is.False);
+            Assert.That(response.Capability, Is.EqualTo(AgentWebAccessCapability.AutoRead));
+            Assert.That(response.Reason, Is.EqualTo("site_requires_login_or_owner_assistance"));
+            Assert.That(response.FormattedContent, Does.Contain("web_access_denied"));
+            Assert.That(internet.Calls, Is.Zero);
+            Assert.That(browser.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task ExecuteAsync_AutoReadGroupMemberDeniedBeforeProviders()
+    {
+        FakeInternetService internet = new(new AgentInternetFetchResult(
+            true,
+            "ok",
+            "public fetch content"));
+        FakeBrowserProvider browser = new();
+        AgentWebAccessService service = new(
+            internetService: internet,
+            browserProvider: browser,
+            browserSiteExperienceStore: new AgentBrowserSiteExperienceStore(CreateTempStoreRoot()));
+
+        AgentWebAccessResponse response = await service.ExecuteAsync(new AgentWebAccessRequest(
+            AgentWebAccessActorRole.GroupMember,
+            AgentWebAccessCapability.AutoRead,
+            "https://example.com/docs",
+            new AgentWebAccessConfig
+            {
+                EnableAutoRead = true,
+                EnablePublicFetch = true,
+                EnableBrowserSnapshot = true
+            }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.Success, Is.False);
+            Assert.That(response.Reason, Is.EqualTo("owner_required"));
+            Assert.That(internet.Calls, Is.Zero);
+            Assert.That(browser.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task ExecuteAsync_ExternalRagQueryAllowed_UsesConfiguredChunkLimit()
     {
         FakeExternalRagService rag = new("rag context");
@@ -228,4 +378,7 @@ public sealed class AgentWebAccessServiceTests
             return new AgentExternalRagQueryResponse(true, "ok", [], formattedContext);
         }
     }
+
+    static string CreateTempStoreRoot() =>
+        Path.Combine(Path.GetTempPath(), "alife-web-access-auto-read-tests-" + Guid.NewGuid().ToString("N"));
 }

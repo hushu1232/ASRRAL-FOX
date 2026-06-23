@@ -13,6 +13,7 @@ public enum AgentWebAccessActorRole
 public enum AgentWebAccessCapability
 {
     PublicSearch,
+    AutoRead,
     PublicFetch,
     BrowserSnapshot,
     BrowserInteract,
@@ -23,6 +24,7 @@ public enum AgentWebAccessCapability
 public sealed class AgentWebAccessConfig
 {
     public bool EnablePublicSearch { get; set; }
+    public bool EnableAutoRead { get; set; }
     public bool EnablePublicFetch { get; set; }
     public bool EnableBrowserSnapshot { get; set; }
     public bool EnableBrowserInteract { get; set; }
@@ -60,6 +62,11 @@ public static class AgentWebAccessRouter
         return request.Capability switch
         {
             AgentWebAccessCapability.PublicSearch => EvaluatePublicSearch(request.ActorRole, config),
+            AgentWebAccessCapability.AutoRead => EvaluateOwnerOnly(
+                request.ActorRole,
+                config.EnableAutoRead,
+                request.Capability,
+                "auto_read_disabled"),
             AgentWebAccessCapability.PublicFetch => EvaluateOwnerOnly(
                 request.ActorRole,
                 config.EnablePublicFetch,
