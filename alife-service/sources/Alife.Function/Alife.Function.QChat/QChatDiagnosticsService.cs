@@ -54,6 +54,7 @@ public static class QChatDiagnosticsService
             "desktop" => Handled(BuildDesktopMenuText()),
             "internet" => Handled(BuildInternetMenuText()),
             "web" => Handled(BuildWebMenuText() + Environment.NewLine + "/qchat web smoke - 查看 QQ 联网研究真实链路手测清单"),
+            "web browser-agent" => Handled(BuildWebBrowserAgentText()),
             "web smoke" => Handled(BuildWebSmokeText()),
             "rag" or "rag status" => Handled(BuildRagMenuText()),
             "timing" => Handled(BuildTimingMenuText()),
@@ -240,6 +241,18 @@ public static class QChatDiagnosticsService
             "预期：能看到浏览器 provider、联网开关和最近站点经验。",
             "",
             "不得触发：点击、登录、下载、表单提交、JS 执行、私网或 file URL");
+    }
+
+    public static string BuildWebBrowserAgentText()
+    {
+        return string.Join(Environment.NewLine,
+            "browser-agent=phase1",
+            "scope=owner-only private-chat",
+            "allowed=search,navigate,snapshot,scroll,public-link,image-ok,video-link-only,back,stop",
+            "blocked=no-login no-form-submit no-video-download no-local-upload no-js no-private-network",
+            "media=image-ok video-link-only",
+            "limits=steps:5 pages:3 evidence:3",
+            "smoke.owner.private=browse https://github.com/vercel-labs/agent-browser");
     }
 
     public static string BuildRagMenuText()

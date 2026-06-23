@@ -234,6 +234,22 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleWebBrowserAgentReturnsOwnerOnlyPhaseOneSummary()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat web browser-agent", CreateRoute(), CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("browser-agent=phase1"));
+            Assert.That(result.Text, Does.Contain("owner-only"));
+            Assert.That(result.Text, Does.Contain("no-login"));
+            Assert.That(result.Text, Does.Contain("image-ok"));
+            Assert.That(result.Text, Does.Contain("video-link-only"));
+        });
+    }
+
+    [Test]
     public void TryHandleRagMenuReturnsOwnerManagementUsage()
     {
         QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat rag", CreateRoute(), CreateProfile());

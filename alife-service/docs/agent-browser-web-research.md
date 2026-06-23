@@ -223,3 +223,44 @@ Run these checks against a live QQ/NapCat session before treating the feature as
    Expected: diagnostics show browser provider state, internet switch state, and recent site experience.
 
 The smoke run must not trigger clicking, login, downloads, form submission, JavaScript execution, private-network access, or `file:` URLs.
+
+## Browser Agent Automation Phase 1
+
+Status: implementation in progress until final focused verification and GitHub upload pass.
+
+Phase 1 adds a bounded owner-only browser Agent for private QQ chat. It is separate from group-member public search/RAG. Group members may use the public web research path when enabled, but they cannot trigger the browser automation provider, menu chain, or model fallback through browser-agent wording.
+
+Allowed Phase 1 actions:
+
+- public web search;
+- public HTTP/HTTPS navigation;
+- read-only browser snapshots;
+- bounded scroll/page observation;
+- safe public link navigation;
+- public image return as QQ image after URL, DNS, MIME, magic-byte, size, and D-drive cache validation;
+- public video return as link only;
+- compact sourced QQ output.
+
+Blocked Phase 1 actions:
+
+- login;
+- form submission;
+- arbitrary downloads;
+- video download or QQ file upload;
+- local-file upload;
+- arbitrary JavaScript from model output;
+- private-network, localhost, loopback, `file:`, `data:`, or `javascript:` targets;
+- browser automation for non-owner private users or group messages.
+
+Media rule:
+
+- Images may be fetched only from validated public URLs and stored under controlled D-drive cache roots before later QQ image return.
+- Videos are never downloaded by the bot. A validated public video target is returned as a text link only.
+
+Diagnostics:
+
+```text
+/qchat web browser-agent
+```
+
+Expected machine-readable markers include `browser-agent=phase1`, `owner-only`, `no-login`, `image-ok`, and `video-link-only`.

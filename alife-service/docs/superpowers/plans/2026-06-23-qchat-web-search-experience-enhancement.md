@@ -796,3 +796,20 @@ Include:
 - Verification completed so far:
   - `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "PublicSearchGroupMentionSemanticTriggerSearchesAndDoesNotDispatchModel|PublicSearchGroupNoMentionDoesNotSearch|WebResearchGroupMentionCooldownDoesNotSearchOrDispatchModel|NonOwnerCannotTriggerInternetLookupOrModel"` -> 4 passed, 0 failed.
   - `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --filter AgentWebResearchServiceTests` -> 20 passed, 0 failed.
+
+---
+
+## Final Status 2026-06-23
+
+- Completed: first-phase QQ web search experience enhancement.
+- Completed: semantic `@bot` group search trigger, role-aware QQ result formatting, diagnostics, cooldown/cache/resource-control tests, and GitHub upload.
+- Uploaded: GitHub carrier remote `github/master` verified at `8f5b14d9856fb387930378c3cb2a353f463a1885`.
+- Not complete: full browser-agent automation is still unfinished.
+- Browser-agent unfinished scope:
+  - no general page open/scroll/click workflow exposed to QQ;
+  - no multi-page browsing plan executor;
+  - no login/form workflow;
+  - no screenshot-to-strategy feedback loop in daily QQ chat;
+  - no browser session state policy for QQ users;
+  - no full web automation live smoke path.
+- Boundary: this plan closes the QQ public web search/RAG-like entry path, but does not close the larger browser automation Agent phase.

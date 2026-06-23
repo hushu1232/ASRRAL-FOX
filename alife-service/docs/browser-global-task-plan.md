@@ -235,3 +235,48 @@ Upload hygiene evidence:
 Remaining follow-up outside the browser roadmap:
 
 - Historical garbled Chinese text still exists in some docs/tests/source comments. Clean it in a separate encoding-focused pass with narrow tests, because broad text cleanup during browser feature work would create noisy diffs and higher regression risk.
+
+## Priority 8: Browser Agent Automation Phase 1
+
+Status: in progress on 2026-06-23.
+
+Goal: add owner-only bounded browser automation over public pages while keeping group-member web access on the lighter public search/RAG path.
+
+Scope:
+
+- Owner private chat may trigger browser automation through semantic browser-agent wording such as `browse https://example.com/docs`.
+- Non-owner private users and all group messages must not trigger the browser automation provider, browser automation menu chain, or model fallback through browser-agent wording.
+- Public search and external RAG for group members remain separate from browser automation.
+- Runtime media cache should stay on controlled D-drive paths, not C drive.
+
+Allowed actions:
+
+- search public web;
+- navigate public HTTP/HTTPS URLs;
+- capture read-only browser snapshots;
+- observe bounded text/links;
+- follow safe public links;
+- return validated public images as QQ images later;
+- return public videos as links only.
+
+Blocked actions:
+
+- login;
+- form submission;
+- arbitrary download;
+- video download or upload;
+- local-file upload;
+- arbitrary JavaScript;
+- private network, localhost, loopback, `file:`, `data:`, or `javascript:` targets.
+
+Completion evidence required:
+
+- `AgentBrowserActionPolicyTests` pass.
+- `AgentBrowserTaskPlannerTests` pass.
+- `AgentBrowserAutomationServiceTests` pass.
+- `AgentBrowserMediaOutputServiceTests` pass.
+- QChat owner-private automation test passes.
+- QChat non-owner and group denial tests pass.
+- `/qchat web browser-agent` diagnostics text exists and contains `browser-agent=phase1`, `owner-only`, `no-login`, `image-ok`, and `video-link-only`.
+- Focused build/test verification passes.
+- GitHub upload through `D:\FOXD` uses the full `D:\Alife` source root.

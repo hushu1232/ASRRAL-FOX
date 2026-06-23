@@ -89,6 +89,12 @@ public record QChatConfig
     public int PublicInternetGroupCooldownSeconds { get; set; } = 30;
     public int PublicInternetResultCacheSeconds { get; set; } = 120;
     public int PublicInternetMaxConcurrentResearch { get; set; } = 2;
+    public bool EnableBrowserAgentAutomation { get; set; }
+    public int BrowserAgentMaxSteps { get; set; } = 5;
+    public int BrowserAgentMaxPages { get; set; } = 3;
+    public int BrowserAgentMaxLinksPerPage { get; set; } = 20;
+    public int BrowserAgentMaxTextCharsPerPage { get; set; } = 4000;
+    public int BrowserAgentMaxEvidenceItems { get; set; } = 3;
     public bool EnableBalancedTextStreaming { get; set; } = true;
     public bool EnableConversationSettleWindow { get; set; }
     public int PrivateSettleMilliseconds { get; set; } = 700;
@@ -2736,6 +2742,8 @@ public partial class QChatService(
                     return;
                 if (await TryHandlePublicInternetCommandAsync(messageEvent, senderRole, content))
                     return;
+                if (await TryHandleBrowserAgentAutomationAsync(messageEvent, senderRole))
+                    return;
                 recentEventMemory.Remember(messageEvent, content, DateTimeOffset.Now);
                 QChatEventRoute eventRoute = QChatEventRouter.Route(messageEvent, senderRole);
                 QChatOwnerCommandService ownerCommandService = BuildOwnerCommandService();
@@ -4605,6 +4613,82 @@ public partial class QChatService(
             },
             provider,
             auditLog);
+    }
+
+    AgentBrowserAutomationConfig CreateBrowserAutomationConfig(QChatConfig config) => new()
+    {
+        Enabled = config.EnableBrowserAgentAutomation,
+        MaxSteps = config.BrowserAgentMaxSteps,
+        MaxPages = config.BrowserAgentMaxPages,
+        MaxLinksPerPage = config.BrowserAgentMaxLinksPerPage,
+        MaxTextCharsPerPage = config.BrowserAgentMaxTextCharsPerPage,
+        MaxEvidenceItems = config.BrowserAgentMaxEvidenceItems,
+        MediaCacheRoot = @"D:\Alife\Runtime\BrowserAgentMedia"
+    };
+
+    async Task<bool> TryHandleBrowserAgentAutomationAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        QChatBrowserAgentTrigger trigger = QChatBrowserAgentTriggerPolicy.Parse(
+            messageEvent.MessageType,
+            senderRole,
+            messageEvent.RawMessage);
+        if (trigger.Kind == QChatBrowserAgentTriggerKind.None)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (trigger.Kind == QChatBrowserAgentTriggerKind.Denied)
+        {
+            WriteQChatDiagnostic("qchat-browser-agent-denied", "QChat browser automation request was denied.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                senderRole,
+                trigger.Reason
+            });
+            return true;
+        }
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        IAgentPublicSearchProvider? searchProvider = injectedPublicSearchProvider;
+        if (searchProvider == null && config.EnablePublicInternetSearch)
+            searchProvider = resolvedPublicSearchProvider ??= CreateDefaultPublicSearchProvider();
+        AgentBrowserAutomationService service = new(
+            browserProvider: injectedBrowserProvider,
+            searchProvider: searchProvider,
+            siteExperienceStore: BrowserSiteExperienceStore);
+        AgentBrowserAutomationResult result = await service.ExecuteAsync(new AgentBrowserAutomationRequest(
+            trigger.Task,
+            AgentWebAccessActorRole.Owner,
+            CreateBrowserAutomationConfig(config),
+            ActorUserId: messageEvent.UserId,
+            GroupId: messageEvent.GroupId));
+
+        WriteQChatDiagnostic("qchat-browser-agent-result", "QChat browser automation request completed.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            result.Success,
+            result.Reason,
+            StepCount = result.Steps.Count,
+            result.OpenedPageCount,
+            EvidenceCount = result.Evidence.Count
+        });
+
+        await SendCommandReplyAsync(
+            messageEvent,
+            senderRole,
+            targetType,
+            targetId,
+            NeutralizePublicExternalQqMarkup(QChatBrowserAgentFormatter.Format(result)));
+        return true;
     }
 
     static IAgentPublicSearchProvider CreateDefaultPublicSearchProvider()
