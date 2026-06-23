@@ -54,17 +54,32 @@ Remaining before full completion:
 
 ## Priority 2: Site Experience Feedback Into Strategy
 
-Status: pending.
+Status: completed on 2026-06-23.
 
 Goal: make recorded site experience influence future web research decisions.
 
 Tasks:
 
-- Lower rank or skip hosts with recent login-wall failures.
-- Lower rank or snippet-only hosts with repeated fetch failures.
-- Prefer official/docs/GitHub hosts when site history is clean.
-- Surface recent failures in `/qchat web doctor`.
-- Add tests for failure-driven ranking and fallback.
+- Lower rank or skip hosts with recent login-wall failures. Done: `Blocked` site experience is removed from research candidates before owner auto-read.
+- Lower rank or snippet-only hosts with repeated fetch failures. Done: anti-bot history avoids owner auto-read and uses compact search snippet evidence instead.
+- Prefer official/docs/GitHub hosts when site history is clean. Done: source type ranking remains in place, and clean successful history receives a positive candidate score.
+- Surface recent failures in `/qchat web doctor`. Done: browser doctor/status use `AgentBrowserSiteExperienceStore` recent records.
+- Add tests for failure-driven ranking and fallback. Done: framework and QChat integration tests cover blocked-host skip and anti-bot snippet fallback.
+
+Token saving effect:
+
+- Known login-wall hosts are skipped before page reads, avoiding failed fetch/browser attempts and avoiding low-value snippets in final evidence.
+- Known anti-bot hosts are not auto-read by the owner path; the bot uses the short search snippet instead.
+- Candidate scoring favors sources with clean successful history, reducing wasted attempts on repeatedly failing domains.
+- Evidence remains compact and deterministic, so the later QQ formatting path does not carry full external page text when it is unlikely to help.
+
+Verification evidence:
+
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~ResearchAsync_SkipsKnownLoginWallHostFromSiteExperience|FullyQualifiedName~ResearchAsync_UsesSearchSnippetForKnownAntiBotHostWithoutReadingPage"` passed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~WebResearchOwnerPrivateSemanticSearchUsesInjectedSiteExperienceToSkipBlockedHost"` passed after wiring QChat research to the shared site experience store.
+- `dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore --filter "FullyQualifiedName~AgentWebResearchServiceTests|FullyQualifiedName~AgentBrowserSiteExperienceStoreTests|FullyQualifiedName~AgentWebAccessServiceTests|FullyQualifiedName~AgentWebAccessRouterTests|FullyQualifiedName~AgentPublicSearchServiceTests"` passed: 57 passed, 0 failed.
+- `dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "FullyQualifiedName~WebResearch|FullyQualifiedName~QChatPublicInternetCommandPolicyTests|FullyQualifiedName~QChatInternetCapabilityPolicyTests|FullyQualifiedName~QChatDiagnosticsServiceTests"` passed: 71 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
 
 ## Priority 3: Search Intelligence
 

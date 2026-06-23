@@ -4606,7 +4606,7 @@ public partial class QChatService(
                         browserSiteExperienceStore: BrowserSiteExperienceStore);
                 }
 
-                AgentWebResearchService researchService = new(publicSearchService, webAccessService);
+                AgentWebResearchService researchService = new(publicSearchService, webAccessService, BrowserSiteExperienceStore);
                 AgentWebResearchResult research = await researchService.ResearchAsync(new AgentWebResearchRequest(
                     command.Query,
                     MapWebAccessActorRole(senderRole),

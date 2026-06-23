@@ -231,6 +231,81 @@ public sealed class AgentWebResearchServiceTests
     }
 
     [Test]
+    public async Task ResearchAsync_SkipsKnownLoginWallHostFromSiteExperience()
+    {
+        AgentBrowserSiteExperienceStore store = new(CreateTempRoot());
+        store.RecordSnapshotResult(
+            "https://login.example.com/private",
+            success: false,
+            reason: "login_required");
+        FakePublicSearchService search = new([
+            new AgentPublicSearchResult("Login Wall", "https://login.example.com/private", "login snippet"),
+            new AgentPublicSearchResult("Public Docs", "https://docs.example.com/public", "docs snippet")
+        ]);
+        FakeInternetService internet = new(new AgentInternetFetchResult(true, "ok", "public docs content"));
+        AgentWebResearchService service = new(
+            search,
+            new AgentWebAccessService(internetService: internet),
+            store);
+
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            "site experience",
+            AgentWebAccessActorRole.Owner,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                EnableAutoRead = true,
+                EnablePublicFetch = true
+            },
+            MaxSources: 1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.LastUrl, Is.EqualTo("https://docs.example.com/public"));
+            Assert.That(result.Evidence.Single().Title, Is.EqualTo("Public Docs"));
+        });
+    }
+
+    [Test]
+    public async Task ResearchAsync_UsesSearchSnippetForKnownAntiBotHostWithoutReadingPage()
+    {
+        AgentBrowserSiteExperienceStore store = new(CreateTempRoot());
+        store.RecordSnapshotResult(
+            "https://captcha.example.com/page",
+            success: false,
+            reason: "cloudflare captcha");
+        FakePublicSearchService search = new([
+            new AgentPublicSearchResult("Anti Bot", "https://captcha.example.com/page", "search snippet saves tokens")
+        ]);
+        FakeInternetService internet = new(new AgentInternetFetchResult(true, "ok", "should not be read"));
+        AgentWebResearchService service = new(
+            search,
+            new AgentWebAccessService(internetService: internet),
+            store);
+
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            "anti bot topic",
+            AgentWebAccessActorRole.Owner,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                EnableAutoRead = true,
+                EnablePublicFetch = true
+            },
+            MaxSources: 1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(internet.Calls, Is.Zero);
+            Assert.That(result.Evidence.Single().Summary, Is.EqualTo("search snippet saves tokens"));
+            Assert.That(result.Answer, Does.Contain("search snippet saves tokens"));
+        });
+    }
+
+    [Test]
     public async Task ResearchAsync_OwnerFallsBackToSearchSnippetWhenPageReadFails()
     {
         FakePublicSearchService search = new([

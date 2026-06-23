@@ -1025,6 +1025,107 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task WebResearchOwnerPrivateSemanticSearchUsesInjectedSiteExperienceToAvoidAntiBotRead()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchProvider provider = new(
+            new AgentPublicSearchResult("Anti Bot Result", "https://captcha.example.com/page", "search snippet saves tokens"));
+        FakeInternetService internet = new("should not be read");
+        AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+            Path.GetTempPath(),
+            "alife-qchat-web-research-site-experience-tests",
+            Guid.NewGuid().ToString("N")));
+        siteExperienceStore.RecordSnapshotResult(
+            "https://captcha.example.com/page",
+            success: false,
+            reason: "cloudflare captcha");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnablePublicInternetSearch = true,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, publicSearchProvider: provider, internetService: internet, browserSiteExperienceStore: siteExperienceStore);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            UserId = 1001,
+            SelfId = 999,
+            RawMessage = "查一下 agent-browser web access"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string message = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(provider.Calls, Is.EqualTo(1));
+            Assert.That(internet.Calls, Is.Zero);
+            Assert.That(message, Does.Contain("search snippet saves tokens"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task WebResearchOwnerPrivateSemanticSearchUsesInjectedSiteExperienceToSkipBlockedHost()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchProvider provider = new(
+            new AgentPublicSearchResult("Login Wall Result", "https://login.example.com/private", "should be skipped"),
+            new AgentPublicSearchResult("Public Docs Result", "https://docs.example.com/public", "public fallback snippet"));
+        FakeInternetService internet = new("public fallback page content");
+        AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
+            Path.GetTempPath(),
+            "alife-qchat-web-research-blocked-site-tests",
+            Guid.NewGuid().ToString("N")));
+        siteExperienceStore.RecordSnapshotResult(
+            "https://login.example.com/private",
+            success: false,
+            reason: "login_required");
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnablePublicInternetSearch = true,
+            EnableInternetAccess = true,
+            EnableBalancedTextStreaming = false
+        }, publicSearchProvider: provider, internetService: internet, browserSiteExperienceStore: siteExperienceStore);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            UserId = 1001,
+            SelfId = 999,
+            RawMessage = "查一下 agent-browser web access"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string message = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(provider.Calls, Is.EqualTo(1));
+            Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.LastUrl, Is.EqualTo("https://docs.example.com/public"));
+            Assert.That(message, Does.Contain("public fallback page content"));
+            Assert.That(message, Does.Not.Contain("should be skipped"));
+            Assert.That(dispatchCount, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task WebResearchGroupMentionSearchDoesNotReadPageOrUseBrowser()
     {
         FakeOneBotRuntime runtime = new();

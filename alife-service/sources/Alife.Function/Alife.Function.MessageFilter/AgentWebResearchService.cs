@@ -9,10 +9,12 @@ namespace Alife.Function.Agent;
 
 public sealed class AgentWebResearchService(
     AgentPublicSearchService? searchService = null,
-    AgentWebAccessService? webAccessService = null)
+    AgentWebAccessService? webAccessService = null,
+    AgentBrowserSiteExperienceStore? siteExperienceStore = null)
 {
     readonly AgentPublicSearchService? searchService = searchService;
     readonly AgentWebAccessService? webAccessService = webAccessService;
+    readonly AgentBrowserSiteExperienceStore? siteExperienceStore = siteExperienceStore;
 
     public async Task<AgentWebResearchResult> ResearchAsync(
         AgentWebResearchRequest request,
@@ -74,6 +76,10 @@ public sealed class AgentWebResearchService(
         if (webAccessService == null)
             return BuildSearchEvidence(result);
 
+        AgentBrowserSiteExperience? experience = GetSiteExperience(result.Url);
+        if (experience is { HasAntiBotSignals: true })
+            return BuildSearchEvidence(result);
+
         AgentWebAccessResponse response = await webAccessService.ExecuteAsync(new AgentWebAccessRequest(
             AgentWebAccessActorRole.Owner,
             AgentWebAccessCapability.AutoRead,
@@ -125,15 +131,52 @@ public sealed class AgentWebResearchService(
         return Regex.Replace((query ?? "").Trim(), @"\s+", " ");
     }
 
-    static AgentPublicSearchResult[] BuildCandidates(
+    AgentPublicSearchResult[] BuildCandidates(
         IReadOnlyList<AgentPublicSearchResult> results,
         int maxSources)
     {
         return results
-            .Where(result => AgentBrowserSiteExperienceStore.TryNormalizeHttpHost(result.Url, out _))
-            .OrderByDescending(GetSourceTrustScore)
+            .Where(IsUsableCandidate)
+            .OrderByDescending(GetCandidateScore)
             .Take(maxSources)
             .ToArray();
+    }
+
+    bool IsUsableCandidate(AgentPublicSearchResult result)
+    {
+        if (AgentBrowserSiteExperienceStore.TryNormalizeHttpHost(result.Url, out _) == false)
+            return false;
+
+        AgentBrowserSiteExperience? experience = GetSiteExperience(result.Url);
+        return experience?.PreferredStrategy != AgentBrowserSiteStrategy.Blocked;
+    }
+
+    int GetCandidateScore(AgentPublicSearchResult result)
+    {
+        int score = GetSourceTrustScore(result);
+        AgentBrowserSiteExperience? experience = GetSiteExperience(result.Url);
+        if (experience == null)
+            return score;
+
+        if (experience.LastSuccess)
+            score += 8;
+        if (experience.HasAntiBotSignals)
+            score -= 25;
+        if (experience.RiskLevel == AgentBrowserSiteRiskLevel.Medium)
+            score -= 10;
+        if (experience.RiskLevel == AgentBrowserSiteRiskLevel.High)
+            score -= 40;
+        return score;
+    }
+
+    AgentBrowserSiteExperience? GetSiteExperience(string url)
+    {
+        if (siteExperienceStore == null)
+            return null;
+
+        return AgentBrowserSiteExperienceStore.TryNormalizeHttpHost(url, out string host)
+            ? siteExperienceStore.Get(host)
+            : null;
     }
 
     static IEnumerable<string> PlanOwnerExpandedQueries(string query)

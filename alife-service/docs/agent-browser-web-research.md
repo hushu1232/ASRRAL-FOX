@@ -10,6 +10,13 @@ This feature turns ordinary QQ lookup requests into a read-only research flow:
 
 The bot searches the public web, selects public HTTP/HTTPS results, builds short evidence, and replies with a compact sourced answer.
 
+Normal Chinese examples:
+
+```text
+查一下 agent-browser web access
+@bot 搜一下 dotnet 9 release notes
+```
+
 ## Current Flow
 
 ```text
@@ -53,6 +60,17 @@ It does not:
 Unsafe or unreadable search results are skipped. If no usable evidence remains, the bot says it did not find reliable public content instead of inventing an answer.
 
 When owner-only page auto-read fails for an otherwise safe public result, the service falls back to the search title and snippet instead of discarding the result. This keeps answers useful when a site returns 403, rejects simple fetch, or is temporarily unavailable. The failed read is also recorded in `AgentBrowserSiteExperienceStore`, so later browser strategy and diagnostics can see hosts that hit login walls, anti-bot pages, or repeated fetch failures.
+
+## Site Experience Strategy
+
+`AgentBrowserSiteExperienceStore` is part of the research strategy, not only diagnostics.
+
+- `Blocked` hosts, such as recent login-wall failures, are removed from the research candidate list before page reading.
+- Hosts with anti-bot signals avoid owner auto-read and use the short search snippet instead.
+- Hosts with recent successful reads receive a small ranking boost.
+- Medium/high risk history lowers rank, so cleaner official/docs/GitHub sources are preferred when available.
+
+This saves tokens and latency because the bot does not repeatedly fetch pages that are likely to fail, and it does not feed low-quality login/captcha/error content into the final answer. The fallback evidence is intentionally compact: title, URL, and search snippet only.
 
 ## Source Ranking
 

@@ -200,6 +200,53 @@ dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore 
 
 Expected: all focused web research tests pass.
 
+### Task 6: Site Experience Feedback Into Strategy
+
+**Files:**
+- Modify: `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchService.cs`
+- Modify: `sources/Alife.Function/Alife.Function.QChat/QChatService.cs`
+- Modify: `Tests/Alife.Test.Framework/AgentWebResearchServiceTests.cs`
+- Modify: `Tests/Alife.Test.QChat/QChatServiceAdapterTests.cs`
+- Modify: `docs/agent-browser-web-research.md`
+- Modify: `docs/browser-global-task-plan.md`
+
+- [x] **Step 1: Add failing tests**
+
+Add tests proving:
+
+- research skips a known login-wall `Blocked` host and reads the next public result,
+- research uses search snippet evidence for known anti-bot hosts without owner auto-read,
+- QChat passes the injected `AgentBrowserSiteExperienceStore` into the research service, so blocked hosts do not leak back into QQ evidence.
+
+- [x] **Step 2: Implement site experience-aware candidate strategy**
+
+`AgentWebResearchService` now accepts an optional `AgentBrowserSiteExperienceStore`.
+
+Behavior:
+
+- `PreferredStrategy=Blocked` removes the host from candidates,
+- anti-bot history switches owner evidence to snippet-only,
+- recent success boosts candidate score,
+- medium/high risk history lowers candidate score.
+
+- [x] **Step 3: Wire QChat to the same store**
+
+`QChatService` now creates `AgentWebResearchService` with `BrowserSiteExperienceStore`, matching the store already used by owner auto-read and browser snapshot paths.
+
+- [x] **Step 4: Document token savings**
+
+Documented the strategy in `docs/agent-browser-web-research.md` and `docs/browser-global-task-plan.md`.
+
+- [x] **Step 5: Verify and upload**
+
+Run focused Framework/QChat web research tests and `dotnet build --no-restore`, then upload through the `D:\FOXD` workflow.
+
+Verification on 2026-06-23:
+
+- Framework focused tests passed: 57 passed, 0 failed.
+- QChat focused tests passed: 71 passed, 0 failed.
+- `dotnet build --no-restore` passed with 0 warnings and 0 errors.
+
 ### Self-Review
 
 - Spec coverage: covers keyword trigger, public search, page read, evidence summary, QQ formatting, permissions, and docs.
