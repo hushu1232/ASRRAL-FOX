@@ -12119,6 +12119,74 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task ConversationSettleWindowPassesCompactSpeakerSummaryToXiayuState()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        XiaYuSelfStateStore stateStore = CreateTempXiaYuSelfStateStore();
+        CapturingQChatService service = new(functionCaller, runtime, xiaYuSelfStateStore: stateStore)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowProactiveGroupChat = true,
+                ProactiveChatProbability = 1.0f,
+                PassiveGroupReplyCooldownSeconds = 0,
+                MaxBufferMessages = 0,
+                EnableBalancedTextStreaming = false,
+                EnableConversationSettleWindow = true,
+                GroupSettleMilliseconds = 160,
+                RecallGraceMilliseconds = 1,
+                MaxSettleMilliseconds = 500
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 211,
+            UserId = 2002,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2002, Nickname = "member" },
+            RawMessage = "[CQ:at,qq=2905391496] hello from first"
+        });
+        await Task.Delay(60);
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 212,
+            UserId = 2003,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2003, Nickname = "member2" },
+            RawMessage = "[CQ:at,qq=2905391496] second raw line"
+        });
+
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+        const string startMarker = "[XiaYu state - private, do not quote]";
+        const string endMarker = "[/XiaYu state]";
+        int start = inbound.Formatted.IndexOf(startMarker, StringComparison.Ordinal);
+        int end = inbound.Formatted.IndexOf(endMarker, StringComparison.Ordinal);
+        string stateBlock = start >= 0 && end >= start
+            ? inbound.Formatted[start..(end + endMarker.Length)]
+            : string.Empty;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(stateBlock, Does.Contain(startMarker));
+            Assert.That(stateBlock, Does.Contain("group_rhythm=noisy"));
+            Assert.That(stateBlock, Does.Contain("turn_messages=2 turn_speakers=2 multi_speaker=true"));
+            Assert.That(stateBlock, Does.Not.Contain("hello from first"));
+            Assert.That(stateBlock, Does.Not.Contain("second raw line"));
+            Assert.That(inbound.SourceMessageIds, Is.EqualTo(new[] { 211L, 212L }));
+        });
+    }
+
+    [Test]
     public async Task ConversationSettleWindowDropsRecalledPrivateTriggerBeforeModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
