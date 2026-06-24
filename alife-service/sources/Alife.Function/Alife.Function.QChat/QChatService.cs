@@ -2672,6 +2672,12 @@ public partial class QChatService(
                 return;
             }
 
+            if (basicMessageEvent is OneBotMessageEvent configAliasMessageEvent &&
+                await TryHandleNaturalOwnerConfigAliasAsync(configAliasMessageEvent, senderRole))
+            {
+                return;
+            }
+
             if (basicMessageEvent is OneBotMessageEvent maintenanceAliasMessageEvent &&
                 await TryHandleNaturalOwnerMaintenanceAliasAsync(maintenanceAliasMessageEvent, senderRole))
             {
@@ -2952,6 +2958,51 @@ public partial class QChatService(
             messageEvent.GroupId,
             senderRole,
             decision.Reason
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleNaturalOwnerConfigAliasAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        if (QChatNaturalOwnerConfigAliasPolicy.TryMapCommand(plainText, out string command) == false)
+            return false;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            WriteQChatDiagnostic("qchat-natural-config-alias-dropped", "Dropped non-owner natural config alias before command routing and model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                command
+            });
+            return true;
+        }
+
+        OneBotMessageEvent commandEvent = messageEvent with { RawMessage = command };
+        QChatOwnerCommandService ownerCommandService = BuildOwnerCommandService();
+        bool handled = await ownerCommandService.TryHandleAsync(new QChatOwnerCommandContext(
+            commandEvent,
+            senderRole,
+            command));
+        if (handled)
+        {
+            WriteQChatDiagnostic("qchat-natural-config-alias-handled", "Owner natural config alias mapped to an internal low-risk QChat command.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                command
+            });
+            return true;
+        }
+
+        WriteQChatDiagnostic("qchat-natural-config-alias-unhandled", "Natural config alias mapped to an internal command that no handler accepted.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            command
         });
         return true;
     }

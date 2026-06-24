@@ -3197,6 +3197,46 @@ public class QChatServiceAdapterTests
         });
     }
 
+    [TestCase("羽，说慢一点")]
+    [TestCase("羽，先合并一下多段消息")]
+    public async Task OwnerNaturalTimingOnAliasEnablesHumanlikeTimingWithoutModelDispatch(string text)
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableReplyTimingDelay = false,
+            EnableConversationSettleWindow = false,
+            EnableBalancedTextStreaming = false
+        };
+        QChatService service = CreateStartedService(runtime, config);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = text
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string status = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(config.EnableReplyTimingDelay, Is.True);
+            Assert.That(config.EnableConversationSettleWindow, Is.True);
+            Assert.That(status, Does.Contain("reply_timing_delay=enabled"));
+            Assert.That(status, Does.Contain("conversation_settle_window=enabled"));
+        });
+    }
+
     [Test]
     public async Task OwnerQChatTimingOffDisablesHumanlikeTimingWithoutModelDispatch()
     {
@@ -3222,6 +3262,46 @@ public class QChatServiceAdapterTests
             SelfId = 2905391496,
             UserId = 3045846738,
             RawMessage = "/qchat timing off"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string status = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(config.EnableReplyTimingDelay, Is.False);
+            Assert.That(config.EnableConversationSettleWindow, Is.False);
+            Assert.That(status, Does.Contain("reply_timing_delay=disabled"));
+            Assert.That(status, Does.Contain("conversation_settle_window=disabled"));
+        });
+    }
+
+    [TestCase("羽，回复快一点")]
+    [TestCase("羽，不用等我连发了")]
+    public async Task OwnerNaturalTimingOffAliasDisablesHumanlikeTimingWithoutModelDispatch(string text)
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableReplyTimingDelay = true,
+            EnableConversationSettleWindow = true,
+            EnableBalancedTextStreaming = false
+        };
+        QChatService service = CreateStartedService(runtime, config);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = text
         });
 
         await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
@@ -3317,6 +3397,45 @@ public class QChatServiceAdapterTests
                 Assert.That(runtime.PrivateMessages, Is.Empty);
                 Assert.That(runtime.GroupMessages, Is.Empty);
             });
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerNaturalTimingAliasDropsSilentlyWithoutMutationOrModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
+            EnableReplyTimingDelay = false,
+            EnableConversationSettleWindow = false,
+            EnableBalancedTextStreaming = false
+        };
+        QChatService service = CreateStartedService(runtime, config);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 10001,
+            RawMessage = "羽，说慢一点"
+        });
+
+        await Task.Delay(300);
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(config.EnableReplyTimingDelay, Is.False);
+            Assert.That(config.EnableConversationSettleWindow, Is.False);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(runtime.GroupMessages, Is.Empty);
         });
     }
 
