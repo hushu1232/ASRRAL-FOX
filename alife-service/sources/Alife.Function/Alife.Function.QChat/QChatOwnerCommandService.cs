@@ -95,13 +95,6 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
 
         if (senderRole != QChatSenderRole.Owner)
         {
-            if (isHelpAliasCommand)
-                return false;
-
-            await sendAsync(
-                targetType,
-                targetId,
-                "Only the owner can use QChat diagnostics.");
             writeDiagnostic("qchat-diagnostics-denied", "QChat diagnostics command denied for non-owner sender.", new {
                 messageEvent.UserId,
                 messageEvent.GroupId,
@@ -159,7 +152,11 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
 
         if (senderRole != QChatSenderRole.Owner)
         {
-            await sendAsync(targetType, targetId, "Only the owner can view agent task status.");
+            writeDiagnostic("agent-status-command-denied", "QQ task status command denied for non-owner sender.", new {
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                command = text
+            }, null);
             return true;
         }
 

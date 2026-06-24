@@ -22,13 +22,14 @@ public sealed class AgentControlCenterConfig
     public bool AllowMentionWakeup { get; set; } = true;
     public bool AllowPassiveGroupListening { get; set; } = true;
     public bool AllowProactiveChat { get; set; } = true;
+    public bool SuppressLowValueProactiveChat { get; set; } = true;
     public bool AllowAutomaticMaintenanceInspection { get; set; } = true;
     public int ProactiveChatIntensity { get; set; } = 2;
     public int MaxSelfConfigChangesPerHour { get; set; } = 6;
     public int MaintenanceInspectionIntervalMinutes { get; set; } = 15;
     public int MaintenanceDuplicateCooldownMinutes { get; set; } = 120;
     public string LowRiskConfigurationKeys { get; set; } =
-        "AllowMentionWakeup;AllowPassiveGroupListening;AllowProactiveChat;AllowAutomaticMaintenanceInspection;ProactiveChatIntensity;MaxSelfConfigChangesPerHour;MaintenanceInspectionIntervalMinutes;MaintenanceDuplicateCooldownMinutes";
+        "AllowMentionWakeup;AllowPassiveGroupListening;AllowProactiveChat;SuppressLowValueProactiveChat;AllowAutomaticMaintenanceInspection;ProactiveChatIntensity;MaxSelfConfigChangesPerHour;MaintenanceInspectionIntervalMinutes;MaintenanceDuplicateCooldownMinutes";
     public string ProtectedConfigurationKeys { get; set; } =
         "OwnerUserIds;AllowedWorkspaceRoots;AllowedCommands;RequireOwnerConfirmationForHighRiskConfiguration;ProtectedConfigurationKeys;GitHubUpload;QZonePost;QZoneComment;QZoneLike;GroupFileUpload;CodeExecution";
 }

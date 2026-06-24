@@ -171,8 +171,8 @@ public static class QChatIntentClassifier
     {
         string text = Merge(input.PlainText, input.ReadableText);
         bool sleep = ContainsDirectQuietModeSleepCommand(text);
-        bool wake = ContainsAny(text, "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "出来吧", "出来一下", "回来", "wake", "resume");
-        bool quietModeMention = ContainsAny(text, "安静", "别说话", "不要说话", "别回复", "不要回复", "睡觉", "睡一会", "睡会", "休息", "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "quiet", "silent", "wake", "resume");
+        bool wake = ContainsAny(text, "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "出来吧", "出来一下", "回来", "恢复正常", "wake", "resume");
+        bool quietModeMention = ContainsAny(text, "安静", "别说话", "不要说话", "别回复", "不要回复", "睡觉", "睡一会", "睡会", "休息", "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "恢复正常", "quiet", "silent", "wake", "resume");
         bool meta = ContainsAny(text, "是什么", "会不会", "为什么", "怎么", "失败", "测试", "验证", "演示", "试试", "能不能", "是不是", "是否");
         bool candidate = sleep || wake || (quietModeMention && meta);
         if (candidate == false)
@@ -201,6 +201,7 @@ public static class QChatIntentClassifier
             text,
             "先安静",
             "安静一下",
+            "安静一点",
             "安静一会",
             "安静一阵",
             "安静点",

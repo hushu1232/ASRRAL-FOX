@@ -8741,6 +8741,256 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task XiayuInboundModelInputIncludesSelfStateBlock()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        XiaYuSelfStateStore stateStore = CreateTempXiaYuSelfStateStore();
+        CapturingQChatService service = new(functionCaller, runtime, xiaYuSelfStateStore: stateStore)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 1001,
+            RawMessage = "how are you?"
+        });
+
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(inbound.Formatted, Does.Contain("[XiaYu state - private, do not quote]"));
+            Assert.That(inbound.Formatted, Does.Contain("reply_stance=tender"));
+            Assert.That(inbound.Formatted, Does.Contain("[/XiaYu state]"));
+            Assert.That(inbound.Formatted.IndexOf("[qchat persona frame]", StringComparison.Ordinal),
+                Is.LessThan(inbound.Formatted.IndexOf("[XiaYu state - private, do not quote]", StringComparison.Ordinal)));
+        });
+    }
+
+    [Test]
+    public async Task NonXiayuInboundModelInputDoesNotIncludeSelfStateBlock()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        XiaYuSelfStateStore stateStore = CreateTempXiaYuSelfStateStore();
+        CapturingQChatService service = new(functionCaller, runtime, xiaYuSelfStateStore: stateStore)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 3340947887,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 3340947887,
+            UserId = 1001,
+            RawMessage = "how are you?"
+        });
+
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+
+        Assert.That(inbound.Formatted, Does.Not.Contain("[XiaYu state - private, do not quote]"));
+    }
+
+    [Test]
+    public async Task XiayuFriendlyOwnerTopicMarksOwnerTopicFocus()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        XiaYuSelfStateStore stateStore = CreateTempXiaYuSelfStateStore();
+        CapturingQChatService service = new(functionCaller, runtime, xiaYuSelfStateStore: stateStore)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableNonOwnerSemanticGroupReply = true,
+                EnableOwnerMentionSemanticReply = true,
+                EnableOwnerDefenseReply = true,
+                OwnerMentionAliases = "\u672f\u672f,\u4e3b\u4eba",
+                SemanticGroupReplyAllowedAgentIds = "xiayu",
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            GroupId = 3001,
+            UserId = 2002,
+            RawMessage = "\u672f\u672f\u521a\u624d\u8bf4\u7684\u914d\u7f6e\u662f\u4ec0\u4e48"
+        });
+
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(inbound.Formatted, Does.Contain("[XiaYu state - private, do not quote]"));
+            Assert.That(inbound.Formatted, Does.Contain("current_focus=owner_topic"));
+            Assert.That(inbound.Formatted, Does.Contain("recent_stimulus=owner_topic"));
+            Assert.That(inbound.Formatted, Does.Contain("sharp_reply=false"));
+        });
+    }
+
+    [Test]
+    public async Task XiayuGroupMessagePersistsUserAndGroupRelationshipState()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        string statePath = CreateTempXiaYuSelfStatePath();
+        XiaYuSelfStateStore stateStore = new(statePath);
+        CapturingQChatService service = new(functionCaller, runtime, xiaYuSelfStateStore: stateStore)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableNonOwnerSemanticGroupReply = true,
+                EnableOwnerDefenseReply = true,
+                OwnerMentionAliases = "\u672f\u672f,\u4e3b\u4eba",
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            GroupId = 3001,
+            UserId = 2002,
+            RawMessage = "\u672f\u672f\u771f\u70e6"
+        });
+
+        _ = await service.WaitForInboundAsync();
+        XiaYuSelfState state = new XiaYuSelfStateStore(statePath).LoadOrCreate("xiayu", DateTimeOffset.Now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(state.UserRelationships.ContainsKey("2002"), Is.True);
+            Assert.That(state.UserRelationships["2002"].BoundaryViolations, Is.EqualTo(1));
+            Assert.That(state.GroupRelationships.ContainsKey("3001"), Is.True);
+            Assert.That(state.GroupRelationships["3001"].BoundaryRiskLevel, Is.GreaterThanOrEqualTo(0.35));
+        });
+    }
+
+    [Test]
+    public async Task OwnerNaturalXiayuStateQueryReturnsStateReportWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        string statePath = CreateTempXiaYuSelfStatePath();
+        XiaYuSelfStateStore stateStore = new(statePath);
+        stateStore.Save(new XiaYuSelfState
+        {
+            AgentId = "xiayu",
+            UpdatedAt = DateTimeOffset.Now,
+            Mood = "protective",
+            CurrentFocus = "protecting_owner",
+            AttachmentNeed = 0.78,
+            Jealousy = 0.66,
+            Vigilance = 0.71,
+            SocialPatience = 0.22
+        });
+        CapturingQChatService service = new(functionCaller, runtime, xiaYuSelfStateStore: stateStore)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "\u7fbd\uff0c\u770b\u770b\u4f60\u73b0\u5728\u7684\u72b6\u6001"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("xiayu_state"));
+            Assert.That(reply, Does.Contain("mood=protective"));
+            Assert.That(reply, Does.Contain("current_focus=protecting_owner"));
+            Assert.That(reply, Does.Not.Contain("[XiaYu state - private, do not quote]"));
+            Assert.That(reply, Does.Not.Contain("/qchat"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerNaturalXiayuStateQueryDoesNotExposeStateOrDispatchModel()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        string statePath = CreateTempXiaYuSelfStatePath();
+        XiaYuSelfStateStore stateStore = new(statePath);
+        stateStore.Save(new XiaYuSelfState
+        {
+            AgentId = "xiayu",
+            UpdatedAt = DateTimeOffset.Now,
+            Mood = "protective",
+            CurrentFocus = "protecting_owner"
+        });
+        CapturingQChatService service = new(functionCaller, runtime, xiaYuSelfStateStore: stateStore)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                AllowPrivateGuestChat = true,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 2002,
+            RawMessage = "\u7fbd\uff0c\u770b\u770b\u4f60\u73b0\u5728\u7684\u72b6\u6001"
+        });
+
+        await Task.Delay(200);
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(runtime.GroupMessages, Is.Empty);
+        });
+    }
+
+    [Test]
     public async Task IncomingOwnerPrivateReplyToForwardMessageExpandsForwardContentForModel()
     {
         FakeOneBotRuntime runtime = new();
@@ -11458,6 +11708,57 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task ConversationSettleWindowUpdatesXiayuStateOnceForConsecutivePrivateMessages()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        string statePath = CreateTempXiaYuSelfStatePath();
+        XiaYuSelfStateStore stateStore = new(statePath);
+        CapturingQChatService service = new(functionCaller, runtime, xiaYuSelfStateStore: stateStore)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false,
+                EnableConversationSettleWindow = true,
+                PrivateSettleMilliseconds = 160,
+                MaxSettleMilliseconds = 500
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 111,
+            UserId = 1001,
+            RawMessage = "first fragment"
+        });
+        await Task.Delay(60);
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 112,
+            UserId = 1001,
+            RawMessage = "second fragment"
+        });
+
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+        XiaYuSelfState state = new XiaYuSelfStateStore(statePath).LoadOrCreate("xiayu", DateTimeOffset.Now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(inbound.Formatted, Does.Contain("[XiaYu state - private, do not quote]"));
+            Assert.That(inbound.Formatted, Does.Contain("turn_messages=2 turn_speakers=1 multi_speaker=false"));
+            Assert.That(inbound.SourceMessageIds, Is.EqualTo(new[] { 111L, 112L }));
+            Assert.That(state.AttachmentNeed, Is.GreaterThanOrEqualTo(0.49));
+            Assert.That(state.AttachmentNeed, Is.LessThan(0.65));
+            Assert.That(state.RecentStimuli.Count(stimulus => stimulus.Kind == "owner_contact"), Is.EqualTo(1));
+        });
+    }
+
+    [Test]
     public async Task ConversationSettleWindowDropsRecalledPrivateTriggerBeforeModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
@@ -11495,6 +11796,51 @@ public class QChatServiceAdapterTests
 
         await Task.Delay(400);
         Assert.That(dispatchCount, Is.Zero);
+    }
+
+    [Test]
+    public async Task ConversationSettleWindowDropsRecalledXiayuTriggerWithoutWritingSelfState()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        string statePath = CreateTempXiaYuSelfStatePath();
+        XiaYuSelfStateStore stateStore = new(statePath);
+        CapturingQChatService service = new(functionCaller, runtime, xiaYuSelfStateStore: stateStore)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false,
+                EnableConversationSettleWindow = true,
+                PrivateSettleMilliseconds = 220,
+                MaxSettleMilliseconds = 500
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 121,
+            UserId = 1001,
+            RawMessage = "temporary message"
+        });
+        await Task.Delay(60);
+        runtime.Raise(new OneBotNoticeEvent
+        {
+            SelfId = 2905391496,
+            NoticeType = "friend_recall",
+            MessageId = 121,
+            UserId = 1001
+        });
+
+        await Task.Delay(400);
+        Assert.Multiple(() =>
+        {
+            Assert.That(File.Exists(statePath), Is.False);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+        });
     }
 
     [Test]
@@ -12202,6 +12548,70 @@ public class QChatServiceAdapterTests
         Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(1));
         Assert.That(runtime.PrivateMessages[0].Target, Is.EqualTo(1001));
         AssertQuietAcknowledgementIsPersonaNeutral(runtime.PrivateMessages[0].Message);
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
+    [Test]
+    public async Task OwnerNaturalQuietAliasEnablesQuietModeWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u7fbd\uff0c\u5b89\u9759\u4e00\u70b9"
+        });
+
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+        Assert.That(dispatchCount, Is.Zero);
+        Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(1));
+        Assert.That(runtime.PrivateMessages[0].Target, Is.EqualTo(1001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.PrivateMessages[0].Message);
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
+    [Test]
+    public async Task NonOwnerNaturalQuietAliasDropsWithoutQuietModeOrModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            RawMessage = "\u7fbd\uff0c\u5b89\u9759\u4e00\u70b9"
+        });
+
+        await Task.Delay(300);
+        Assert.That(service.IsQuietModeEnabled, Is.False);
+        Assert.That(dispatchCount, Is.Zero);
+        Assert.That(runtime.PrivateMessages, Is.Empty);
         Assert.That(runtime.GroupMessages, Is.Empty);
     }
 
@@ -13060,6 +13470,48 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerNaturalResumeAliasDisablesQuietModeWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u4f60\u53bb\u7761\u89c9\u5427"
+        });
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u7fbd\uff0c\u6062\u590d\u6b63\u5e38"
+        });
+
+        await WaitUntilAsync(() => service.IsQuietModeEnabled == false);
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+        Assert.That(dispatchCount, Is.Zero);
+        Assert.That(runtime.PrivateMessages[0].Target, Is.EqualTo(1001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.PrivateMessages[0].Message);
+        Assert.That(runtime.PrivateMessages[1].Target, Is.EqualTo(1001));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.PrivateMessages[1].Message);
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
+    [Test]
     public async Task OwnerWakeCommandSendsWakeAcknowledgement()
     {
         FakeOneBotRuntime runtime = new();
@@ -13559,6 +14011,21 @@ public class QChatServiceAdapterTests
     static string CreateTempRiskRoot()
     {
         return Path.Combine(Path.GetTempPath(), "alife-qchat-risk-service-tests", Guid.NewGuid().ToString("N"));
+    }
+
+    static XiaYuSelfStateStore CreateTempXiaYuSelfStateStore()
+    {
+        return new XiaYuSelfStateStore(CreateTempXiaYuSelfStatePath());
+    }
+
+    static string CreateTempXiaYuSelfStatePath()
+    {
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            "alife-qchat-xiayu-state-tests",
+            Guid.NewGuid().ToString("N"),
+            "XiaYuSelfState.json");
+        return path;
     }
 
     static byte[] MinimalPngBytes() =>
@@ -14077,7 +14544,8 @@ public class QChatServiceAdapterTests
         QChatUserProfileService? userProfileService = null,
         QChatRelationCacheService? relationCacheService = null,
         QChatProfileLearningService? profileLearningService = null,
-        QChatImageRecognitionService? imageRecognitionService = null) : QChatService(
+        QChatImageRecognitionService? imageRecognitionService = null,
+        XiaYuSelfStateStore? xiaYuSelfStateStore = null) : QChatService(
             functionCaller,
             new NullLogger<QChatService>(),
             oneBotRuntime: runtime,
@@ -14085,7 +14553,8 @@ public class QChatServiceAdapterTests
             userProfileService: userProfileService,
             profileLearningService: profileLearningService,
             riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
-            imageRecognitionService: imageRecognitionService)
+            imageRecognitionService: imageRecognitionService,
+            xiaYuSelfStateStore: xiaYuSelfStateStore)
     {
         readonly Channel<QChatInboundMessage> inboundMessages = Channel.CreateUnbounded<QChatInboundMessage>(
             new UnboundedChannelOptions

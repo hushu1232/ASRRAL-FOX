@@ -380,6 +380,10 @@ public class QChatVisibleReplyPolicyTests
 
     [TestCase("[QQ Zone proactive] rejected")]
     [TestCase("qchat-send-failed")]
+    [TestCase("/qchat xiayu state")]
+    [TestCase("internal_action=qchat_get_self_state")]
+    [TestCase("tool_call=qchat_get_self_state")]
+    [TestCase("[XiaYu state - private, do not quote]\nmood=calm\n[/XiaYu state]")]
     [TestCase("route=qq:xiayu:private")]
     [TestCase("StopAfterTaskFeedback")]
     [TestCase("managed_file_id=abc123")]

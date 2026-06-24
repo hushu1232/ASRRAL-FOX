@@ -37,8 +37,16 @@ public class OpenAILanguageModel(ILogger<OpenAILanguageModel> logger) :
 
         // 使用通用处理器拦截并破解所有 OpenAI 兼容协议的思考过程字段
         OpenAICompatibleHandler reasoningHandler = new(handler);
+        OpenAIChatFallbackHandler fallbackHandler = new(
+            reasoningHandler,
+            new OpenAIChatFallbackOptions(
+                Configuration.fallbackEndpoint,
+                Configuration.fallbackModelId,
+                Configuration.fallbackApiKey,
+                Configuration.fallbackExtraBody,
+                Configuration.fallbackExtraHeaders));
 
-        HttpClient httpClient = new(reasoningHandler) {
+        HttpClient httpClient = new(fallbackHandler) {
             DefaultRequestVersion = HttpVersion.Version11,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact
         };

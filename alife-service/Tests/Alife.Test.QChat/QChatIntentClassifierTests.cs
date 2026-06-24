@@ -148,8 +148,10 @@ public class QChatIntentClassifierTests
 
     [TestCase("\u5148\u5b89\u9759\u4e00\u4e0b", "sleep")]
     [TestCase("\u522b\u8bf4\u8bdd\u4e86", "sleep")]
+    [TestCase("\u7fbd\uff0c\u5b89\u9759\u4e00\u70b9", "sleep")]
     [TestCase("\u7761\u4e00\u4f1a\u513f", "sleep")]
     [TestCase("\u9192\u9192", "wake")]
+    [TestCase("\u7fbd\uff0c\u6062\u590d\u6b63\u5e38", "wake")]
     [TestCase("\u53ef\u4ee5\u8bf4\u8bdd\u4e86", "wake")]
     [TestCase("\u51fa\u6765\u5427", "wake")]
     public void QuietModeIntentConfirmsNaturalControlPhrases(string text, string action)

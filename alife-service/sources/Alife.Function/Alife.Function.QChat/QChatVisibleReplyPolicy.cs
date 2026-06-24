@@ -38,10 +38,17 @@ public sealed class QChatVisibleReplyPolicy
         "[QQ",
         "[QChat",
         "[Internal",
+        "[XiaYu state",
+        "[/XiaYu state]",
         "[qchat persona frame]",
         "[/qchat persona frame]",
         "[qchat image analysis]",
         "[/qchat image analysis]",
+        "/qchat",
+        "internal_action=",
+        "tool_call=",
+        "tool_choice=",
+        "function_call=",
         "speaker_role=",
         "recommended_stance=",
         "social_intent=",
@@ -57,6 +64,7 @@ public sealed class QChatVisibleReplyPolicy
         "Bearer ",
         "AgnesVisionApiKey",
         "qchat-",
+        "qchat_",
         "qzone-",
         "route=",
         "session=qq:",
@@ -83,7 +91,9 @@ public sealed class QChatVisibleReplyPolicy
         bool shouldReply)
     {
         string selected = SelectConversationSection(modelText ?? string.Empty, conversationKind);
-        string sanitized = QChatVisibleTextPolicy.SanitizeVisibleText(selected);
+        string sanitized = ContainsInternalRuntimeMarker(selected)
+            ? string.Empty
+            : QChatVisibleTextPolicy.SanitizeVisibleText(selected);
 
         if (shouldReply == false && conversationKind == QChatConversationKind.Group)
         {

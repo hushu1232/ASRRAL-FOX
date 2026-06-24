@@ -105,10 +105,16 @@ internal static class QChatVisibleTextPolicy
         "[QQ",
         "[QChat",
         "[Internal",
+        "[XiaYu state",
+        "[/XiaYu state]",
         "[qchat persona frame]",
         "[/qchat persona frame]",
         "[qchat image analysis]",
         "[/qchat image analysis]",
+        "internal_action=",
+        "tool_call=",
+        "tool_choice=",
+        "function_call=",
         "speaker_role=",
         "recommended_stance=",
         "social_intent=",
@@ -147,7 +153,8 @@ internal static class QChatVisibleTextPolicy
     static readonly (string Start, string End)[] InternalBlockMarkers =
     [
         ("[qchat persona frame]", "[/qchat persona frame]"),
-        ("[qchat image analysis]", "[/qchat image analysis]")
+        ("[qchat image analysis]", "[/qchat image analysis]"),
+        ("[XiaYu state", "[/XiaYu state]")
     ];
 
     public static string SanitizeVisibleText(string? message)

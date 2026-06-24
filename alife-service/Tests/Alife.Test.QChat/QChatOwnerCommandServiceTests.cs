@@ -46,7 +46,7 @@ public class QChatOwnerCommandServiceTests
     }
 
     [Test]
-    public async Task TryHandleDiagnosticsCommandAsyncDeniesNonOwnerWithoutRouteLeak()
+    public async Task TryHandleDiagnosticsCommandAsyncSilentlyDropsNonOwnerWithoutRouteLeak()
     {
         List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
         List<string> diagnostics = [];
@@ -75,10 +75,7 @@ public class QChatOwnerCommandServiceTests
         Assert.Multiple(() =>
         {
             Assert.That(handled, Is.True);
-            Assert.That(sent, Has.Count.EqualTo(1));
-            Assert.That(sent[0].Message, Does.Contain("Only the owner"));
-            Assert.That(sent[0].Message, Does.Not.Contain("session="));
-            Assert.That(sent[0].Message, Does.Not.Contain("agent=xiayu"));
+            Assert.That(sent, Is.Empty);
             Assert.That(diagnostics, Does.Contain("qchat-diagnostics-denied"));
         });
     }
@@ -145,7 +142,7 @@ public class QChatOwnerCommandServiceTests
     }
 
     [Test]
-    public async Task TryHandleStatusCommandAsyncDeniesNonOwnerWithoutFormattingStatus()
+    public async Task TryHandleStatusCommandAsyncSilentlyDropsNonOwnerWithoutFormattingStatus()
     {
         List<string> sent = [];
         int formatCalls = 0;
@@ -173,8 +170,7 @@ public class QChatOwnerCommandServiceTests
         {
             Assert.That(handled, Is.True);
             Assert.That(formatCalls, Is.Zero);
-            Assert.That(sent.Single(), Does.Contain("Only the owner"));
-            Assert.That(sent.Single(), Does.Not.Contain("should not leak"));
+            Assert.That(sent, Is.Empty);
         });
     }
 

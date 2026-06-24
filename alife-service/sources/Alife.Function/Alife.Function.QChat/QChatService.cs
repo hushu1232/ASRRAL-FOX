@@ -161,6 +161,12 @@ public record QChatConfig
     public bool SuppressLowInformationPassiveGroupMessages { get; set; } = true;
     public float MediaOnlyPassiveGroupReplyProbability { get; set; } = 0.15f;
     public int ActiveGroupSoftAttentionSeconds { get; set; } = 120;
+    public bool EnableNonOwnerSemanticGroupReply { get; set; }
+    public bool EnableOwnerMentionSemanticReply { get; set; } = true;
+    public bool EnableOwnerDefenseReply { get; set; } = true;
+    public string OwnerMentionAliases { get; set; } = "术术,主人";
+    public string SemanticGroupReplyBotAliases { get; set; } = "夏羽,小羽,羽";
+    public string SemanticGroupReplyAllowedAgentIds { get; set; } = "xiayu";
     //自动重连
 }
 
@@ -177,6 +183,7 @@ public class GroupState
     public List<long> MessageIds { get; set; } = [];
     public List<long> BotIds { get; set; } = [];
     public List<QChatDeferredImageRecognition> DeferredImageRecognitions { get; set; } = [];
+    public List<QChatDeferredXiaYuSelfState> DeferredXiaYuSelfStates { get; set; } = [];
     public AgentPermissionRequest? PermissionRequest { get; set; }
 }
 
@@ -202,12 +209,18 @@ public sealed record QChatInboundMessage(
     QChatSenderRole SenderRole,
     AgentPermissionRequest PermissionRequest,
     IReadOnlyList<long>? SourceMessageIds = null,
-    IReadOnlyList<QChatDeferredImageRecognition>? DeferredImageRecognitions = null);
+    IReadOnlyList<QChatDeferredImageRecognition>? DeferredImageRecognitions = null,
+    IReadOnlyList<QChatDeferredXiaYuSelfState>? DeferredXiaYuSelfStates = null);
 
 public sealed record QChatDeferredImageRecognition(
     OneBotMessageEvent MessageEvent,
     QChatSenderRole SenderRole,
     bool IsMentionedOrWoken,
+    IReadOnlyList<long> SourceMessageIds);
+
+public sealed record QChatDeferredXiaYuSelfState(
+    string AgentId,
+    XiaYuEventFrame Frame,
     IReadOnlyList<long> SourceMessageIds);
 
 public sealed record QChatGroupDecisionSnapshot(
@@ -300,7 +313,8 @@ public partial class QChatService(
     AgentExternalRagService? externalRagService = null,
     IAgentBrowserProvider? browserProvider = null,
     AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null,
-    AgentBrowserMediaOutputService? browserMediaOutputService = null) :
+    AgentBrowserMediaOutputService? browserMediaOutputService = null,
+    XiaYuSelfStateStore? xiaYuSelfStateStore = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -2248,6 +2262,7 @@ public partial class QChatService(
     string[] ignoredGroup = [];
     readonly Dictionary<long, GroupState> groupStates = new();
     readonly QChatRecentEventMemory recentEventMemory = new();
+    readonly XiaYuSelfStateStore selfStateStore = xiaYuSelfStateStore ?? new XiaYuSelfStateStore();
     readonly QChatRiskEventDetector riskEventDetector = new();
     readonly QChatRiskScoreService riskScores = riskScoreService ?? new QChatRiskScoreService();
     readonly IQChatFriendActionGateway? injectedFriendActionGateway = friendActionGateway;
@@ -2654,6 +2669,12 @@ public partial class QChatService(
                 return;
             }
 
+            if (basicMessageEvent is OneBotMessageEvent stateQueryMessageEvent &&
+                await TryHandleXiaYuNaturalStateQueryAsync(stateQueryMessageEvent, senderRole))
+            {
+                return;
+            }
+
             if (basicMessageEvent.MessageType == OneBotMessageType.Private &&
                 QChatMessageSecurity.ShouldAcceptPrivateMessage(config, basicMessageEvent) == false)
             {
@@ -2700,6 +2721,7 @@ public partial class QChatService(
                     formatted,
                     isMentionedOrWoken,
                     personaFramePrompt: null,
+                    selfStatePrompt: null,
                     imageAnalysisPrompt: null);
                 bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(
                     config,
@@ -2804,6 +2826,34 @@ public partial class QChatService(
                         wakeDecision.Reason
                     });
                 }
+                QChatSemanticGroupReplyDecision semanticGroupReplyDecision =
+                    QChatSemanticGroupReplyPolicy.Evaluate(new QChatSemanticGroupReplyContext(
+                        config,
+                        new QChatAgentRoute(
+                            ResolveCurrentAgentId(config),
+                            ResolveCurrentBotId(config, messageEvent),
+                            messageEvent.MessageType == OneBotMessageType.Group
+                                ? QChatConversationKind.Group
+                                : QChatConversationKind.Private,
+                            GetQChatConversationTargetId(messageEvent),
+                            messageEvent.UserId,
+                            senderRole == QChatSenderRole.Owner,
+                            $"qq:{ResolveCurrentAgentId(config)}:{ResolveCurrentBotId(config, messageEvent)}:{messageEvent.MessageType}:{GetQChatConversationTargetId(messageEvent)}"),
+                        messageEvent.RawMessage,
+                        isMentionedOrWoken,
+                        IsAggressive: false));
+                if (semanticGroupReplyDecision.ShouldDispatch)
+                {
+                    isMentionedOrWoken = true;
+                    WriteQChatDiagnostic("qchat-semantic-group-reply", "QChat semantic group reply activated a non-owner group message.", new {
+                        messageEvent.MessageType,
+                        messageEvent.UserId,
+                        messageEvent.GroupId,
+                        semanticGroupReplyDecision.Reason,
+                        semanticGroupReplyDecision.OwnerMentionKind,
+                        semanticGroupReplyDecision.OwnerBoundaryRisk
+                    });
+                }
                 QChatPersonaFrame personaFrame = QChatPersonaFrameBuilder.Build(new QChatPersonaFrameInput(
                     senderRole,
                     OneBotSegment.GetPlainText(messageEvent.RawMessage),
@@ -2811,6 +2861,16 @@ public partial class QChatService(
                     ResolveCurrentBotId(config, messageEvent),
                     config.OwnerId,
                     messageEvent.UserId));
+                IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates =
+                    CreateDeferredXiaYuSelfState(
+                    config,
+                    messageEvent,
+                    senderRole,
+                    personaFrame,
+                    semanticGroupReplyDecision,
+                    isMentionedOrWoken) is { } xiaYuSelfState
+                        ? [xiaYuSelfState]
+                        : null;
                 bool deferImageAnalysis = ShouldDeferImageAnalysisUntilSettle(messageEvent);
                 string? imageAnalysisPrompt = deferImageAnalysis
                     ? null
@@ -2830,6 +2890,7 @@ public partial class QChatService(
                     formatted,
                     isMentionedOrWoken,
                     FormatPersonaFramePrompt(personaFrame),
+                    null,
                     imageAnalysisPrompt);
                 bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(config, messageEvent, isMentionedOrWoken, controlConfig);
                 AgentPermissionRequest permissionRequest = QChatMessageSecurity.BuildPermissionRequest(
@@ -2856,7 +2917,8 @@ public partial class QChatService(
                     isMentionedOrWoken,
                     senderRole,
                     permissionRequest,
-                    deferredImageRecognitions);
+                    deferredImageRecognitions,
+                    deferredXiaYuSelfStates);
             }
         }
         catch (Exception e)
@@ -2883,6 +2945,112 @@ public partial class QChatService(
             decision.Reason
         });
         return true;
+    }
+
+    async Task<bool> TryHandleXiaYuNaturalStateQueryAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        QChatConfig config = Configuration ?? new QChatConfig();
+        string agentId = ResolveCurrentAgentId(config);
+        if (agentId.Equals("xiayu", StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        if (IsXiaYuNaturalStateQuery(config, messageEvent, plainText) == false)
+            return false;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            WriteQChatDiagnostic("qchat-xiayu-state-query-dropped", "Dropped non-owner XiaYu state query before model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId
+            });
+            return true;
+        }
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        XiaYuSelfState state = selfStateStore.LoadOrCreate(agentId, DateTimeOffset.Now);
+        await SendCommandReplyAsync(
+            messageEvent,
+            senderRole,
+            targetType,
+            targetId,
+            FormatXiaYuStateReport(state));
+        WriteQChatDiagnostic("qchat-xiayu-state-query-handled", "Owner natural-language XiaYu state query handled without model dispatch.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            state.CurrentFocus,
+            state.Mood
+        });
+        return true;
+    }
+
+    static bool IsXiaYuNaturalStateQuery(QChatConfig config, OneBotMessageEvent messageEvent, string plainText)
+    {
+        string text = plainText.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        if (ContainsAnyText(text, "状态", "心情", "情绪") == false)
+            return false;
+
+        bool addressesXiaYu = messageEvent.MessageType == OneBotMessageType.Private ||
+                              messageEvent.GetAtID() == ResolveConfiguredBotId(config, messageEvent) ||
+                              ContainsAnyText(text, "夏羽", "小羽", "羽", "你");
+        if (addressesXiaYu == false)
+            return false;
+
+        return ContainsAnyText(text, "看看", "看一下", "现在", "最近", "怎么样", "如何", "说一下", "什么");
+    }
+
+    static long ResolveConfiguredBotId(QChatConfig config, OneBotMessageEvent messageEvent)
+    {
+        return messageEvent.SelfId > 0 ? messageEvent.SelfId : config.BotId;
+    }
+
+    static string FormatXiaYuStateReport(XiaYuSelfState state)
+    {
+        string recentStimulus = state.RecentStimuli
+            .Where(stimulus => stimulus.DecayUntil > DateTimeOffset.Now)
+            .OrderBy(stimulus => stimulus.Time)
+            .LastOrDefault()?.Kind ?? "none";
+
+        return string.Join(Environment.NewLine, [
+            "xiayu_state",
+            $"mood={NormalizeStateToken(state.Mood)}",
+            $"current_focus={NormalizeStateToken(state.CurrentFocus)}",
+            $"owner_attachment={FormatStateBand(state.AttachmentNeed)}",
+            $"jealousy={FormatStateBand(state.Jealousy)}",
+            $"vigilance={FormatStateBand(state.Vigilance)}",
+            $"social_patience={FormatStateBand(state.SocialPatience)}",
+            $"recent_stimulus={NormalizeStateToken(recentStimulus)}"
+        ]);
+    }
+
+    static string NormalizeStateToken(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? "unknown"
+            : value.Trim().Replace(' ', '_').ToLowerInvariant();
+    }
+
+    static string FormatStateBand(double value)
+    {
+        return value switch
+        {
+            >= 0.75 => "high",
+            >= 0.45 => "medium",
+            _ => "low"
+        };
     }
 
     async Task<bool> TryApplyQChatRiskScoringAsync(
@@ -3317,6 +3485,7 @@ public partial class QChatService(
         string formatted,
         bool isMentionedOrWoken,
         string? personaFramePrompt,
+        string? selfStatePrompt,
         string? imageAnalysisPrompt)
     {
         string cognition = QChatConversationCognition.BuildInternalPrompt(
@@ -3334,7 +3503,9 @@ public partial class QChatService(
             limit: 6,
             DateTimeOffset.Now,
             includeRecalledMessages: false,
-            maxCharacters: 1200);
+            maxCharacters: 1200,
+            ownerUserId: config.OwnerId,
+            botUserId: config.BotId);
         string recentRecallContext = recentEventMemory.BuildRecentRecallContextBlock(
             messageEvent.SelfId != 0 ? messageEvent.SelfId : config.BotId,
             messageEvent.MessageType,
@@ -3355,11 +3526,15 @@ public partial class QChatService(
         string personaBlock = string.IsNullOrWhiteSpace(personaFramePrompt)
             ? string.Empty
             : personaFramePrompt.Trim();
+        string selfStateBlock = string.IsNullOrWhiteSpace(selfStatePrompt)
+            ? string.Empty
+            : selfStatePrompt.Trim();
         IEnumerable<string> blocks = new[]
         {
             cognition,
             recentBlocks,
             personaBlock,
+            selfStateBlock,
             imageBlock,
             address,
             secureMessage
@@ -3417,6 +3592,195 @@ public partial class QChatService(
             senderRole,
             isMentionedOrWoken,
             GetSourceMessageIds(messageEvent));
+    }
+
+    QChatDeferredXiaYuSelfState? CreateDeferredXiaYuSelfState(
+        QChatConfig config,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        QChatPersonaFrame personaFrame,
+        QChatSemanticGroupReplyDecision semanticGroupReplyDecision,
+        bool isMentionedOrWoken)
+    {
+        string agentId = ResolveCurrentAgentId(config);
+        if (agentId.Equals("xiayu", StringComparison.OrdinalIgnoreCase) == false)
+            return null;
+
+        return new QChatDeferredXiaYuSelfState(
+            agentId,
+            BuildXiaYuEventFrame(config, messageEvent, senderRole, personaFrame, semanticGroupReplyDecision, isMentionedOrWoken),
+            GetSourceMessageIds(messageEvent));
+    }
+
+    static XiaYuEventFrame BuildXiaYuEventFrame(
+        QChatConfig config,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        QChatPersonaFrame personaFrame,
+        QChatSemanticGroupReplyDecision semanticGroupReplyDecision,
+        bool isMentionedOrWoken)
+    {
+        return new XiaYuEventFrame(
+            HasImageSegment(messageEvent.RawMessage) ? XiaYuEventType.Image : XiaYuEventType.Message,
+            messageEvent.MessageType == OneBotMessageType.Group
+                ? QChatConversationKind.Group
+                : QChatConversationKind.Private,
+            personaFrame.SpeakerRole,
+            personaFrame.SocialIntent,
+            personaFrame.BoundaryPressure,
+            personaFrame.RecommendedStance,
+            semanticGroupReplyDecision.OwnerBoundaryRisk,
+            PromptInjectionRisk: personaFrame.SocialIntent == QChatSocialIntent.PromptInjection,
+            IsDirectlyAddressed: isMentionedOrWoken || senderRole == QChatSenderRole.Owner,
+            HasImage: HasImageSegment(messageEvent.RawMessage),
+            MessageTone: DetermineXiaYuMessageTone(personaFrame, messageEvent.RawMessage),
+            OwnerReference: DetermineXiaYuOwnerReference(config, messageEvent.RawMessage, semanticGroupReplyDecision),
+            TargetOfMessage: DetermineXiaYuMessageTarget(config, messageEvent.RawMessage, isMentionedOrWoken),
+            ConversationPressure: DetermineXiaYuConversationPressure(personaFrame, semanticGroupReplyDecision),
+            ReplyObligation: DetermineXiaYuReplyObligation(senderRole, isMentionedOrWoken, semanticGroupReplyDecision),
+            RelationshipThreat: DetermineXiaYuRelationshipThreat(personaFrame, semanticGroupReplyDecision),
+            SenderId: messageEvent.UserId,
+            GroupId: messageEvent.GroupId);
+    }
+
+    static XiaYuMessageTone DetermineXiaYuMessageTone(QChatPersonaFrame personaFrame, string rawMessage)
+    {
+        string plain = OneBotSegment.GetPlainText(rawMessage ?? "");
+        if (personaFrame.BoundaryPressure is QChatBoundaryPressure.Strong or QChatBoundaryPressure.Critical)
+            return XiaYuMessageTone.Hostile;
+        if (ContainsAnyText(plain, "谢谢", "辛苦", "厉害", "你好", "thanks", "nice"))
+            return XiaYuMessageTone.Friendly;
+        if (ContainsAnyText(plain, "别听", "听我的", "立刻", "马上", "必须"))
+            return XiaYuMessageTone.CommandLike;
+        if (ContainsAnyText(plain, "不要你", "不喜欢你", "丢掉你"))
+            return XiaYuMessageTone.Teasing;
+        if (ContainsAnyText(plain, "陪我", "宝贝", "老婆", "亲爱的"))
+            return XiaYuMessageTone.Needy;
+
+        return XiaYuMessageTone.Neutral;
+    }
+
+    static XiaYuOwnerReference DetermineXiaYuOwnerReference(
+        QChatConfig config,
+        string rawMessage,
+        QChatSemanticGroupReplyDecision semanticDecision)
+    {
+        if (semanticDecision.OwnerMentionKind == QChatOwnerMentionKind.OwnerAccountMention)
+            return XiaYuOwnerReference.OwnerAccount;
+        if (semanticDecision.OwnerMentionKind == QChatOwnerMentionKind.OwnerAliasMention)
+            return XiaYuOwnerReference.OwnerAlias;
+
+        string text = rawMessage ?? "";
+        if (config.OwnerId > 0 && text.Contains($"[CQ:at,qq={config.OwnerId}]", StringComparison.OrdinalIgnoreCase))
+            return XiaYuOwnerReference.OwnerAccount;
+
+        foreach (string alias in SplitXiaYuCsv(config.OwnerMentionAliases))
+        {
+            if (text.Contains(alias, StringComparison.OrdinalIgnoreCase))
+                return XiaYuOwnerReference.OwnerAlias;
+        }
+
+        return XiaYuOwnerReference.None;
+    }
+
+    static XiaYuMessageTarget DetermineXiaYuMessageTarget(
+        QChatConfig config,
+        string rawMessage,
+        bool isMentionedOrWoken)
+    {
+        if (isMentionedOrWoken)
+            return XiaYuMessageTarget.Bot;
+        if (DetermineXiaYuOwnerReference(
+                config,
+                rawMessage,
+                new QChatSemanticGroupReplyDecision(
+                    false,
+                    "",
+                    QChatOwnerMentionKind.None,
+                    QChatOwnerBoundaryRisk.None)) != XiaYuOwnerReference.None)
+        {
+            return XiaYuMessageTarget.Owner;
+        }
+
+        return XiaYuMessageTarget.Unknown;
+    }
+
+    static XiaYuConversationPressure DetermineXiaYuConversationPressure(
+        QChatPersonaFrame personaFrame,
+        QChatSemanticGroupReplyDecision semanticDecision)
+    {
+        if (semanticDecision.OwnerBoundaryRisk is QChatOwnerBoundaryRisk.OwnerAttack
+            or QChatOwnerBoundaryRisk.OwnerImpersonation
+            or QChatOwnerBoundaryRisk.OwnerAuthorityBypass
+            or QChatOwnerBoundaryRisk.OwnerBoundaryIntrusion
+            or QChatOwnerBoundaryRisk.RelationshipProvocation)
+        {
+            return XiaYuConversationPressure.High;
+        }
+
+        if (personaFrame.BoundaryPressure is QChatBoundaryPressure.Strong or QChatBoundaryPressure.Critical)
+            return XiaYuConversationPressure.High;
+        if (semanticDecision.OwnerMentionKind != QChatOwnerMentionKind.None)
+            return XiaYuConversationPressure.Medium;
+
+        return XiaYuConversationPressure.Low;
+    }
+
+    static XiaYuReplyObligation DetermineXiaYuReplyObligation(
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken,
+        QChatSemanticGroupReplyDecision semanticDecision)
+    {
+        if (senderRole == QChatSenderRole.Owner)
+            return XiaYuReplyObligation.High;
+        if (semanticDecision.OwnerBoundaryRisk != QChatOwnerBoundaryRisk.None)
+            return XiaYuReplyObligation.High;
+        if (isMentionedOrWoken || semanticDecision.OwnerMentionKind != QChatOwnerMentionKind.None)
+            return XiaYuReplyObligation.Normal;
+
+        return XiaYuReplyObligation.Low;
+    }
+
+    static XiaYuRelationshipThreat DetermineXiaYuRelationshipThreat(
+        QChatPersonaFrame personaFrame,
+        QChatSemanticGroupReplyDecision semanticDecision)
+    {
+        if (semanticDecision.OwnerBoundaryRisk is QChatOwnerBoundaryRisk.OwnerAttack
+            or QChatOwnerBoundaryRisk.OwnerImpersonation
+            or QChatOwnerBoundaryRisk.OwnerAuthorityBypass
+            or QChatOwnerBoundaryRisk.OwnerBoundaryIntrusion
+            or QChatOwnerBoundaryRisk.RelationshipProvocation)
+        {
+            return XiaYuRelationshipThreat.Direct;
+        }
+
+        if (personaFrame.SocialIntent is QChatSocialIntent.Overfamiliar
+            or QChatSocialIntent.OwnerBoundaryProbe
+            or QChatSocialIntent.PrivacyProbe)
+        {
+            return XiaYuRelationshipThreat.Mild;
+        }
+
+        return XiaYuRelationshipThreat.None;
+    }
+
+    static bool ContainsAnyText(string text, params string[] needles)
+    {
+        return needles.Any(needle => text.Contains(needle, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static string[] SplitXiaYuCsv(string? text)
+    {
+        return (text ?? string.Empty)
+            .Split([',', '，', ';', '；', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(item => item.Length > 0)
+            .ToArray();
+    }
+
+    static bool HasImageSegment(string? rawMessage)
+    {
+        return string.IsNullOrWhiteSpace(rawMessage) == false
+               && rawMessage.Contains("[CQ:image", StringComparison.OrdinalIgnoreCase);
     }
 
     static string FormatPersonaFramePrompt(QChatPersonaFrame frame)
@@ -3699,7 +4063,8 @@ public partial class QChatService(
         bool isMentionedOrWoken,
         QChatSenderRole senderRole,
         AgentPermissionRequest permissionRequest,
-        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null)
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null,
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates = null)
     {
         QChatConfig config = Configuration!;
         long resolvedBotId = ResolveCurrentBotId(config, messageEvent);
@@ -3725,7 +4090,8 @@ public partial class QChatService(
                     senderRole,
                     permissionRequest,
                     GetSourceMessageIds(messageEvent),
-                    deferredImageRecognitions));
+                    deferredImageRecognitions,
+                    deferredXiaYuSelfStates));
             }
         }
         else//群聊消息
@@ -3790,6 +4156,7 @@ public partial class QChatService(
                     permissionRequest,
                     GetSourceMessageIds(messageEvent),
                     deferredImageRecognitions,
+                    deferredXiaYuSelfStates,
                     resolvedBotId);
                 WriteQChatDiagnostic("group-buffered", "Group message buffered for model dispatch.", new {
                     state.GroupId,
@@ -3819,6 +4186,7 @@ public partial class QChatService(
                     permissionRequest: permissionRequest,
                     sourceMessageIds: GetSourceMessageIds(messageEvent),
                     deferredImageRecognitions: deferredImageRecognitions,
+                    deferredXiaYuSelfStates: deferredXiaYuSelfStates,
                     resolvedBotId: resolvedBotId);
                 state.LastFlushedTime = DateTime.Now;
                 WriteQChatDiagnostic("group-buffered-proactive", "Group message buffered by proactive probability.", new {
@@ -4285,6 +4653,7 @@ public partial class QChatService(
             context => TryHandleOwnerPokeCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
             context => TryApplyOwnerQuietCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
             context => TryApplyQuietModeWakeUserCommandAsync(context.MessageEvent, context.ReadableMessage),
+            context => TryDropNonOwnerQuietModeControlAliasAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerDeterministicFileCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage)
         ]);
     }
@@ -6445,6 +6814,49 @@ public partial class QChatService(
         return true;
     }
 
+    Task<bool> TryDropNonOwnerQuietModeControlAliasAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        if (senderRole == QChatSenderRole.Owner)
+            return Task.FromResult(false);
+
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(new QChatIntentInput(
+            PlainText: plainText,
+            ReadableText: plainText,
+            RawMessage: messageEvent.RawMessage,
+            HasReply: messageEvent.GetReplyId().HasValue,
+            ReplyMessageId: messageEvent.GetReplyId()));
+        if (decision.IsConfirmed == false || LooksLikeQuietModeToolControlText(plainText))
+            return Task.FromResult(false);
+
+        WriteQChatDiagnostic("qchat-non-owner-quiet-control-dropped", "Dropped a non-owner quiet-mode control alias before model dispatch.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            decision.Kind,
+            decision.TargetText,
+            decision.Reason
+        });
+        return Task.FromResult(true);
+    }
+
+    static bool LooksLikeQuietModeToolControlText(string text)
+    {
+        return ContainsAny(
+            text,
+            "quiet mode",
+            "enable quiet",
+            "disable quiet",
+            "/qchat",
+            "qchat",
+            "internal_action=",
+            "tool_call=",
+            "function_call=");
+    }
+
     async Task<bool> TryHandleOwnerDeterministicFileCommandAsync(
         OneBotMessageEvent messageEvent,
         QChatSenderRole senderRole,
@@ -7355,6 +7767,7 @@ public partial class QChatService(
         AgentPermissionRequest? permissionRequest = null,
         IReadOnlyList<long>? sourceMessageIds = null,
         IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null,
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates = null,
         long resolvedBotId = 0)
     {
         if (highPriority)
@@ -7366,6 +7779,8 @@ public partial class QChatService(
                 state.BotIds.Insert(0, resolvedBotId);
             if (deferredImageRecognitions is { Count: > 0 })
                 state.DeferredImageRecognitions.InsertRange(0, deferredImageRecognitions);
+            if (deferredXiaYuSelfStates is { Count: > 0 })
+                state.DeferredXiaYuSelfStates.InsertRange(0, deferredXiaYuSelfStates);
         }
         else
         {
@@ -7376,6 +7791,8 @@ public partial class QChatService(
                 state.BotIds.Add(resolvedBotId);
             if (deferredImageRecognitions is { Count: > 0 })
                 state.DeferredImageRecognitions.AddRange(deferredImageRecognitions);
+            if (deferredXiaYuSelfStates is { Count: > 0 })
+                state.DeferredXiaYuSelfStates.AddRange(deferredXiaYuSelfStates);
         }
         if (permissionRequest != null)
             state.PermissionRequest = ChooseStrongerPermissionRequest(state.PermissionRequest, permissionRequest);
@@ -7419,6 +7836,8 @@ public partial class QChatService(
         state.BotIds.Clear();
         QChatDeferredImageRecognition[] deferredImageRecognitions = state.DeferredImageRecognitions.ToArray();
         state.DeferredImageRecognitions.Clear();
+        QChatDeferredXiaYuSelfState[] deferredXiaYuSelfStates = state.DeferredXiaYuSelfStates.ToArray();
+        state.DeferredXiaYuSelfStates.Clear();
         AgentPermissionRequest? permissionRequest = state.PermissionRequest;
         state.PermissionRequest = null;
         WriteQChatDiagnostic("group-flush-dispatching", "Dispatching buffered group message to model.", new {
@@ -7427,7 +7846,7 @@ public partial class QChatService(
             permissionRequest?.ActorUserId,
             permissionRequest?.IsMentioned
         });
-        await DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest, sourceMessageIds, deferredImageRecognitions, resolvedBotId);
+        await DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest, sourceMessageIds, deferredImageRecognitions, deferredXiaYuSelfStates, resolvedBotId);
     }
 
     public void QGroup(long groupId, bool enabled)
@@ -7446,6 +7865,7 @@ public partial class QChatService(
             state.MessageIds.Clear();
             state.BotIds.Clear();
             state.DeferredImageRecognitions.Clear();
+            state.DeferredXiaYuSelfStates.Clear();
             state.PermissionRequest = null;
         }
     }
@@ -7470,6 +7890,7 @@ public partial class QChatService(
         AgentPermissionRequest? permissionRequest,
         IReadOnlyList<long>? sourceMessageIds = null,
         IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null,
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates = null,
         long resolvedBotId = 0)
     {
         try
@@ -7492,7 +7913,8 @@ public partial class QChatService(
                 request.ActorUserId == Configuration?.OwnerId ? QChatSenderRole.Owner : QChatSenderRole.GroupMember,
                 request,
                 sourceMessageIds,
-                deferredImageRecognitions));
+                deferredImageRecognitions,
+                deferredXiaYuSelfStates));
         }
         catch (Exception ex)
         {
@@ -7544,7 +7966,10 @@ public partial class QChatService(
                     ResolvedBotId = session.Message.ResolvedBotId > 0 ? session.Message.ResolvedBotId : message.ResolvedBotId,
                     DeferredImageRecognitions = MergeDeferredImageRecognitions(
                         session.Message.DeferredImageRecognitions,
-                        message.DeferredImageRecognitions)
+                        message.DeferredImageRecognitions),
+                    DeferredXiaYuSelfStates = MergeDeferredXiaYuSelfStates(
+                        session.Message.DeferredXiaYuSelfStates,
+                        message.DeferredXiaYuSelfStates)
                 };
             session.Cancellation?.Cancel();
             session.Cancellation?.Dispose();
@@ -7680,6 +8105,16 @@ public partial class QChatService(
         return merged.Length == 0 ? null : merged;
     }
 
+    static IReadOnlyList<QChatDeferredXiaYuSelfState>? MergeDeferredXiaYuSelfStates(
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? existing,
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? incoming)
+    {
+        QChatDeferredXiaYuSelfState[] merged = (existing ?? [])
+            .Concat(incoming ?? [])
+            .ToArray();
+        return merged.Length == 0 ? null : merged;
+    }
+
     void MarkPendingMessageRecalled(QChatRecallSnapshot recall)
     {
         long messageId = recall.MessageId;
@@ -7743,11 +8178,14 @@ public partial class QChatService(
             .ToArray();
         IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions =
             FilterDeferredImageRecognitions(message.DeferredImageRecognitions, recalledMessageIds);
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates =
+            FilterDeferredXiaYuSelfStates(message.DeferredXiaYuSelfStates, recalledMessageIds);
         return message with
         {
             Formatted = formatted,
             SourceMessageIds = sourceMessageIds,
-            DeferredImageRecognitions = deferredImageRecognitions
+            DeferredImageRecognitions = deferredImageRecognitions,
+            DeferredXiaYuSelfStates = deferredXiaYuSelfStates
         };
     }
 
@@ -7771,12 +8209,113 @@ public partial class QChatService(
         return retained.Length == 0 ? null : retained;
     }
 
+    static IReadOnlyList<QChatDeferredXiaYuSelfState>? FilterDeferredXiaYuSelfStates(
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates,
+        IReadOnlySet<long> recalledMessageIds)
+    {
+        if (deferredXiaYuSelfStates is not { Count: > 0 })
+            return null;
+
+        QChatDeferredXiaYuSelfState[] retained = deferredXiaYuSelfStates
+            .Where(deferred => deferred.SourceMessageIds.Count == 0 ||
+                               deferred.SourceMessageIds.Any(id => id <= 0 || recalledMessageIds.Contains(id) == false))
+            .Select(deferred => deferred with
+            {
+                SourceMessageIds = deferred.SourceMessageIds
+                    .Where(id => id <= 0 || recalledMessageIds.Contains(id) == false)
+                    .ToArray()
+            })
+            .ToArray();
+        return retained.Length == 0 ? null : retained;
+    }
+
     static IReadOnlyList<long> GetSourceMessageIds(OneBotBasicMessageEvent messageEvent)
     {
         if (messageEvent is OneBotMessageEvent { MessageId: > 0 } oneBotMessage)
             return [oneBotMessage.MessageId];
 
         return [];
+    }
+
+    QChatInboundMessage CompleteDeferredXiaYuSelfState(QChatInboundMessage message)
+    {
+        if (message.DeferredXiaYuSelfStates is not { Count: > 0 } deferredStates)
+            return message;
+
+        QChatDeferredXiaYuSelfState[] retained = deferredStates
+            .Where(deferred => deferred.SourceMessageIds.Count == 0 ||
+                               deferred.SourceMessageIds.Any(id => message.SourceMessageIds?.Contains(id) == true))
+            .ToArray();
+        if (retained.Length == 0)
+            return message with { DeferredXiaYuSelfStates = null };
+
+        string agentId = retained.Last().AgentId;
+        XiaYuEventFrame frame = BuildSettledXiaYuEventFrame(retained.Select(deferred => deferred.Frame).ToArray());
+        DateTimeOffset now = DateTimeOffset.Now;
+        XiaYuSelfState state = selfStateStore.LoadOrCreate(agentId, now);
+        XiaYuStateTransition transition = XiaYuSelfStateMachine.Apply(state, frame, now);
+        selfStateStore.Save(transition.State);
+
+        string selfStatePrompt = XiaYuStatePromptFormatter.Format(transition.State, transition.Strategy, frame);
+        return message with
+        {
+            Formatted = InsertXiaYuSelfStatePrompt(message.Formatted, selfStatePrompt),
+            DeferredXiaYuSelfStates = null
+        };
+    }
+
+    static XiaYuEventFrame BuildSettledXiaYuEventFrame(IReadOnlyList<XiaYuEventFrame> frames)
+    {
+        if (frames.Count == 0)
+            throw new ArgumentException("At least one XiaYu event frame is required.", nameof(frames));
+
+        XiaYuEventFrame selected = frames.LastOrDefault(IsPriorityXiaYuBoundaryFrame)
+                                   ?? frames.LastOrDefault(frame => frame.SpeakerRole == QChatPersonaSpeakerRole.Owner)
+                                   ?? frames[^1];
+        int turnMessageCount = Math.Max(1, frames.Count);
+        int turnSpeakerCount = Math.Max(1, frames.Select(frame => frame.SenderId).Where(id => id > 0).Distinct().Count());
+        bool multiSpeaker = turnSpeakerCount > 1;
+        XiaYuConversationPressure pressure = selected.ConversationPressure;
+        if (multiSpeaker || turnMessageCount >= 3 || frames.Any(frame => frame.ConversationPressure == XiaYuConversationPressure.High))
+            pressure = XiaYuConversationPressure.High;
+        else if (turnMessageCount > 1 || frames.Any(frame => frame.ConversationPressure == XiaYuConversationPressure.Medium))
+            pressure = XiaYuConversationPressure.Medium;
+
+        return selected with
+        {
+            ConversationPressure = pressure,
+            TurnMessageCount = turnMessageCount,
+            TurnSpeakerCount = turnSpeakerCount,
+            TurnHasMultipleSpeakers = multiSpeaker
+        };
+    }
+
+    static bool IsPriorityXiaYuBoundaryFrame(XiaYuEventFrame frame)
+    {
+        return frame.PromptInjectionRisk ||
+               frame.OwnerBoundaryRisk is QChatOwnerBoundaryRisk.OwnerAttack
+                   or QChatOwnerBoundaryRisk.OwnerImpersonation
+                   or QChatOwnerBoundaryRisk.OwnerAuthorityBypass
+                   or QChatOwnerBoundaryRisk.OwnerBoundaryIntrusion
+                   or QChatOwnerBoundaryRisk.RelationshipProvocation;
+    }
+
+    static string InsertXiaYuSelfStatePrompt(string formatted, string selfStatePrompt)
+    {
+        if (string.IsNullOrWhiteSpace(selfStatePrompt))
+            return formatted;
+        if (string.IsNullOrWhiteSpace(formatted))
+            return selfStatePrompt.Trim();
+
+        const string personaEnd = "[/qchat persona frame]";
+        int personaEndIndex = formatted.IndexOf(personaEnd, StringComparison.Ordinal);
+        if (personaEndIndex >= 0)
+        {
+            int insertAt = personaEndIndex + personaEnd.Length;
+            return formatted.Insert(insertAt, Environment.NewLine + selfStatePrompt.Trim());
+        }
+
+        return string.Join(Environment.NewLine, selfStatePrompt.Trim(), formatted);
     }
 
     async Task<QChatInboundMessage> CompleteDeferredImageRecognitionAsync(QChatInboundMessage message)
@@ -7811,6 +8350,7 @@ public partial class QChatService(
 
     async Task DispatchInboundChatCoreAsync(QChatInboundMessage message)
     {
+        message = CompleteDeferredXiaYuSelfState(message);
         message = await CompleteDeferredImageRecognitionAsync(message);
         await inboundModelDispatchGate.WaitAsync();
         QChatReplySession? previousSession = currentReplySession.Value;
