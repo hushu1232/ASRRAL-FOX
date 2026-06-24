@@ -2858,6 +2858,94 @@ public class QChatServiceAdapterTests
         });
     }
 
+    [TestCase("\u7fbd\uff0c\u770b\u770b\u8bb0\u5fc6\u72b6\u6001", "memory_scope=qchat/xiayu")]
+    [TestCase("\u7fbd\uff0c\u770b\u770b\u684c\u9762\u80fd\u529b", "desktop_status=ok")]
+    [TestCase("\u7fbd\uff0c\u770b\u770b\u5ef6\u65f6\u8bbe\u7f6e", "reply_timing_delay=")]
+    [TestCase("\u7fbd\uff0c\u4e3b\u4eba\u4e8b\u4ef6\u961f\u5217\u600e\u4e48\u6837", "owner_events=")]
+    public async Task OwnerNaturalMaintenanceAliasReturnsReadOnlyStatusWithoutModelDispatch(
+        string text,
+        string expectedMarker)
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        DesktopControlService desktopControl = new(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+            DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+            new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+            [new ProcessSnapshot(1, "Alife.Client", 100)],
+            [new WindowSnapshot(1, "Alife", "Alife.Client")],
+            [])));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableReplyTimingDelay = true,
+            EnableConversationSettleWindow = true,
+            EnableBalancedTextStreaming = false
+        },
+            desktopControl: desktopControl);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            UserId = 3045846738,
+            SelfId = 2905391496,
+            RawMessage = text
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain(expectedMarker));
+            Assert.That(reply, Does.Not.Contain("xiayu_state"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerNaturalMaintenanceAliasDropsWithoutStatusOrModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            UserId = 100200300,
+            SelfId = 2905391496,
+            RawMessage = "\u7fbd\uff0c\u770b\u770b\u8bb0\u5fc6\u72b6\u6001"
+        });
+
+        await Task.Delay(300);
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(runtime.GroupMessages, Is.Empty);
+        });
+    }
+
     [Test]
     public async Task OwnerPrivateQChatRouteCommandReturnsDiagnosticsBeforeModelDispatch()
     {

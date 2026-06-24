@@ -2672,8 +2672,8 @@ public partial class QChatService(
                 return;
             }
 
-            if (basicMessageEvent is OneBotMessageEvent diagnosticsStatusMessageEvent &&
-                await TryHandleNaturalQChatDiagnosticsStatusAliasAsync(diagnosticsStatusMessageEvent, senderRole))
+            if (basicMessageEvent is OneBotMessageEvent maintenanceAliasMessageEvent &&
+                await TryHandleNaturalOwnerMaintenanceAliasAsync(maintenanceAliasMessageEvent, senderRole))
             {
                 return;
             }
@@ -2956,16 +2956,41 @@ public partial class QChatService(
         return true;
     }
 
-    async Task<bool> TryHandleNaturalQChatDiagnosticsStatusAliasAsync(
+    async Task<bool> TryHandleNaturalOwnerMaintenanceAliasAsync(
         OneBotMessageEvent messageEvent,
         QChatSenderRole senderRole)
     {
         string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
-        if (QChatOwnerCommandService.IsNaturalDiagnosticsStatusCommand(plainText) == false)
+        if (QChatNaturalOwnerMaintenanceAliasPolicy.TryMapCommand(plainText, out string command) == false)
             return false;
 
-        OneBotMessageEvent commandEvent = messageEvent with { RawMessage = "/qchat status" };
-        return await TryHandleQChatDiagnosticsCommandAsync(commandEvent, senderRole);
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            WriteQChatDiagnostic("qchat-natural-maintenance-alias-dropped", "Dropped non-owner natural maintenance alias before command routing and model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                command
+            });
+            return true;
+        }
+
+        OneBotMessageEvent commandEvent = messageEvent with { RawMessage = command };
+        QChatOwnerCommandService ownerCommandService = BuildOwnerCommandService();
+        bool handled = await ownerCommandService.TryHandleAsync(new QChatOwnerCommandContext(
+            commandEvent,
+            senderRole,
+            command));
+        if (handled)
+            return true;
+
+        WriteQChatDiagnostic("qchat-natural-maintenance-alias-unhandled", "Natural maintenance alias mapped to an internal command that no handler accepted.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            command
+        });
+        return true;
     }
 
     async Task<bool> TryHandleXiaYuNaturalStateQueryAsync(
