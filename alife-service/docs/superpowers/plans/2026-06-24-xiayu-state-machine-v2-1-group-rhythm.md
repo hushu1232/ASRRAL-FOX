@@ -250,7 +250,7 @@ Append a dated note to the V1 plan stating:
 V2.1 adds compact group rhythm and settled-turn speaker summary. It stores no raw text and affects only reply strategy.
 ```
 
-- [ ] **Step 4: Track files and upload**
+- [x] **Step 4: Track files and upload**
 
 ```powershell
 git -C D:\Alife add -- sources/Alife.Function/Alife.Function.QChat/XiaYuSelfStateMachine.cs sources/Alife.Function/Alife.Function.QChat/XiaYuSelfStateStore.cs Tests/Alife.Test.QChat/XiaYuSelfStateMachineTests.cs docs/superpowers/plans/2026-06-24-xiayu-self-state-machine-v1.md docs/superpowers/plans/2026-06-24-xiayu-state-machine-v2-1-group-rhythm.md
