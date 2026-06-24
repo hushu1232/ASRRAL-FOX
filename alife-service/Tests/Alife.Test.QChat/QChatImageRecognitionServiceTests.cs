@@ -122,6 +122,38 @@ public sealed class QChatImageRecognitionServiceTests
         });
     }
 
+    [Test]
+    public async Task UsageDiagnosticIncludesFailureKindsWithoutUnsafeDetails()
+    {
+        List<(string EventName, string Detail, object? Data)> diagnostics = [];
+        FailingFakeImageRecognitionClient client = new(
+            QChatImageRecognitionProviderResult.Fail(
+                "agnes",
+                "agnes-2.0-flash",
+                QChatImageRecognitionFailureKind.HttpError,
+                "http_403"));
+        QChatImageRecognitionService service = new(
+            client,
+            (eventName, detail, data, _) => diagnostics.Add((eventName, detail, data)));
+
+        _ = await service.BuildPromptAsync(new QChatImageRecognitionContext(
+            EnabledConfig(),
+            Message("[CQ:image,file=cat.jpg,url=https://example.invalid/cat.jpg]", OneBotMessageType.Private),
+            QChatSenderRole.Owner,
+            IsMentionedOrWoken: false,
+            IsPassiveGroupMessage: false));
+
+        string diagnosticJson = JsonSerializer.Serialize(diagnostics.Single().Data);
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnosticJson, Does.Contain("\"FailureKinds\":[\"HttpError\"]"));
+            Assert.That(diagnosticJson, Does.Not.Contain("http_403"));
+            Assert.That(diagnosticJson, Does.Not.Contain("https://example.invalid/cat.jpg"));
+            Assert.That(diagnosticJson, Does.Not.Contain("Bearer"));
+            Assert.That(diagnosticJson, Does.Not.Contain("Authorization"));
+        });
+    }
+
     static QChatConfig EnabledConfig() => new()
     {
         EnableImageRecognition = true,
@@ -155,6 +187,21 @@ public sealed class QChatImageRecognitionServiceTests
         {
             Calls++;
             return Task.FromResult(QChatImageRecognitionProviderResult.Ok("agnes", request.Model, content, usage));
+        }
+    }
+
+    sealed class FailingFakeImageRecognitionClient(
+        QChatImageRecognitionProviderResult result) : IQChatImageRecognitionClient
+    {
+        public string ProviderName => "agnes";
+        public int Calls { get; private set; }
+
+        public Task<QChatImageRecognitionProviderResult> AnalyzeAsync(
+            QChatImageRecognitionProviderRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(result);
         }
     }
 }

@@ -133,6 +133,11 @@ public sealed class QChatImageRecognitionService(
                 ImageCount = results.Count,
                 AnalyzedCount = results.Count(item => item.Result.Success),
                 FailedCount = results.Count(item => item.Result.Success == false),
+                FailureKinds = results
+                    .Where(item => item.Result.Success == false)
+                    .Select(item => item.Result.FailureKind.ToString())
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray(),
                 PromptTokens = promptTokens,
                 CompletionTokens = completionTokens,
                 TotalTokens = totalTokens,

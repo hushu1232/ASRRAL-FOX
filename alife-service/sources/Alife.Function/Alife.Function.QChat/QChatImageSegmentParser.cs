@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Net;
 using System.Text.RegularExpressions;
 
 namespace Alife.Function.QChat;
@@ -38,7 +39,7 @@ public static class QChatImageSegmentParser
         if (match.Success == false)
             return null;
 
-        string value = match.Groups["value"].Value.Trim();
+        string value = WebUtility.HtmlDecode(match.Groups["value"].Value.Trim());
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }

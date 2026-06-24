@@ -136,6 +136,14 @@ internal static class QChatVisibleTextPolicy
         "no-reply"
     ];
 
+    static readonly string[] CrossAgentNames =
+    [
+        "\u771F\u592E",
+        "\u54AA\u7EEA",
+        "\u96E8\u5BAB\u54AA\u7EEA",
+        "\u590F\u7FBD"
+    ];
+
     static readonly (string Start, string End)[] InternalBlockMarkers =
     [
         ("[qchat persona frame]", "[/qchat persona frame]"),
@@ -230,10 +238,34 @@ internal static class QChatVisibleTextPolicy
         if (InternalRuntimeMarkers.Any(marker => trimmed.Contains(marker, StringComparison.OrdinalIgnoreCase)))
             return true;
 
+        if (IsCrossAgentChatLine(trimmed))
+            return true;
+
         if (HasInternalStateLineShape(trimmed))
             return true;
 
         return IsHumanInvisibleStateText(trimmed);
+    }
+
+    static bool IsCrossAgentChatLine(string text)
+    {
+        if (text.Contains("<call", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return CrossAgentNames.Any(name => IsDirectCrossAgentAddress(text, name));
+    }
+
+    static bool IsDirectCrossAgentAddress(string text, string name)
+    {
+        if (text.StartsWith(name, StringComparison.Ordinal) == false)
+            return false;
+
+        string rest = text[name.Length..].TrimStart();
+        if (rest.Length == 0)
+            return false;
+
+        return rest[0] is ',' or '\uFF0C' or ':' or '\uFF1A' or '\u3001' or '.' or '\u3002' or '\u2026' or '!' or '\uFF01' or '?' or '\uFF1F'
+               || rest.StartsWith("\u4F60", StringComparison.Ordinal);
     }
 
     static bool HasInternalStateLineShape(string text)

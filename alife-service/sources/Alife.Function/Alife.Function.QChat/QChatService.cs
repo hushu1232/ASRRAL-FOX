@@ -376,10 +376,7 @@ public partial class QChatService(
 
     string? ResolveAgnesVisionApiKey()
     {
-        string? env = Environment.GetEnvironmentVariable("ALIFE_AGNES_VISION_API_KEY");
-        if (string.IsNullOrWhiteSpace(env) == false)
-            return env;
-        return Configuration?.AgnesVisionApiKey;
+        return QChatAgnesVisionApiKeyResolver.Resolve(Configuration?.AgnesVisionApiKey);
     }
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";

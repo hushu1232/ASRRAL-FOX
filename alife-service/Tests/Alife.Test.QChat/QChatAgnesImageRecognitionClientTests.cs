@@ -10,6 +10,28 @@ namespace Alife.Test.QChat;
 public sealed class QChatAgnesImageRecognitionClientTests
 {
     [Test]
+    public void ApiKeyResolverFallsBackToUserEnvironmentVariable()
+    {
+        string variableName = "ALIFE_TEST_AGNES_VISION_API_KEY_" + Guid.NewGuid().ToString("N");
+        Environment.SetEnvironmentVariable(variableName, null);
+        Environment.SetEnvironmentVariable(variableName, "user-key", EnvironmentVariableTarget.User);
+
+        try
+        {
+            string? resolved = QChatAgnesVisionApiKeyResolver.Resolve(
+                configValue: "",
+                environmentVariableName: variableName);
+
+            Assert.That(resolved, Is.EqualTo("user-key"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variableName, null, EnvironmentVariableTarget.User);
+            Environment.SetEnvironmentVariable(variableName, null);
+        }
+    }
+
+    [Test]
     public async Task SendsOpenAiCompatibleImageUrlRequest()
     {
         RecordingHandler handler = new("""{"choices":[{"message":{"content":"cat on desk"}}],"usage":{"prompt_tokens":123,"completion_tokens":7,"total_tokens":130}}""");

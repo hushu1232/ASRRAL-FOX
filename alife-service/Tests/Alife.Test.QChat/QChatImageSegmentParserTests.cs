@@ -22,6 +22,20 @@ public sealed class QChatImageSegmentParserTests
     }
 
     [Test]
+    public void DecodesHtmlEscapedAmpersandsInImageUrl()
+    {
+        IReadOnlyList<QChatImageCandidate> images = QChatImageSegmentParser.Extract(
+            "[CQ:image,file=abc.jpg,url=https://multimedia.nt.qq.com.cn/download?appid=1406&amp;fileid=abc&amp;rkey=def]");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(images, Has.Count.EqualTo(1));
+            Assert.That(images[0].Url, Is.EqualTo("https://multimedia.nt.qq.com.cn/download?appid=1406&fileid=abc&rkey=def"));
+            Assert.That(images[0].SourceKind, Is.EqualTo(QChatImageSourceKind.PublicUrl));
+        });
+    }
+
+    [Test]
     public void ExtractsFileOnlyImageAsMissingUrl()
     {
         IReadOnlyList<QChatImageCandidate> images = QChatImageSegmentParser.Extract("[CQ:image,file=abc.jpg]");

@@ -120,6 +120,20 @@ public sealed class QChatPersonaBoundaryTests
     }
 
     [Test]
+    public void XiaYuPromptForbidsCrossAgentChatInQqVisibleOutput()
+    {
+        using JsonDocument qchatConfig = JsonDocument.Parse(File.ReadAllText(GetXiaYuQChatConfigPath()));
+        string appendChatPrompt = qchatConfig.RootElement.GetProperty("AppendChatPrompt").GetString() ?? string.Empty;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(appendChatPrompt, Does.Contain("\u7981\u6b62\u8de8 agent \u804a\u5929"));
+            Assert.That(appendChatPrompt, Does.Contain("\u4e0d\u5f97\u5728 QQ \u53ef\u89c1\u8f93\u51fa\u4e2d\u5411\u5176\u4ed6\u672c\u5730 agent"));
+            Assert.That(appendChatPrompt, Does.Contain("\u65e7\u8bb0\u5fc6\u53ea\u4f5c\u4e3a\u5df2\u5e9f\u5f03\u80cc\u666f"));
+        });
+    }
+
+    [Test]
     public void VirtualWorldCallDeliveryLabelsSourceAndFactBoundary()
     {
         string message = VirtualWorldService.FormatCallDeliveryMessage("夏羽", "真央", "<call target=\"真央\">加好友了吗</call>");

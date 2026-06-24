@@ -74,6 +74,39 @@ public class QChatOutboundPlannerTests
     }
 
     [Test]
+    public void PlanTextDropsCrossAgentCallMarkup()
+    {
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner()
+            .PlanText("<call target=\"\u771F\u592E\">\u7761\u4E86\u5417\u771F\u592E</call>");
+
+        Assert.That(plan.Items, Is.Empty);
+    }
+
+    [TestCase("\u771F\u592E\uFF0C\u4F60\u90A3\u8FB9\u7684\u70E4\u9C7C\u5403\u5B8C\u6CA1\u6709")]
+    [TestCase("\u771F\u592E\u3002")]
+    [TestCase("\u54AA\u7EEA\uFF1F")]
+    public void PlanTextDropsDirectCrossAgentAddress(string text)
+    {
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(text);
+
+        Assert.That(plan.Items, Is.Empty);
+    }
+
+    [Test]
+    public void PlanTextKeepsNonAddressMentionOfOtherAgentName()
+    {
+        string text = "\u4F60\u4EEC\u8BF4\u7684\u662F\u771F\u592E\uFF1F";
+
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(text);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Items, Has.Count.EqualTo(1));
+            Assert.That(plan.Items[0].Text, Is.EqualTo(text));
+        });
+    }
+
+    [Test]
     public void PlanTextPreservesQqImageCqCode()
     {
         string text = "[CQ:image,file=D:/Alife/Runtime/BrowserAgentMedia/a.png]";
