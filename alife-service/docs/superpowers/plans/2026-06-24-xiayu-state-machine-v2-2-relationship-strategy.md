@@ -318,7 +318,7 @@ Append a dated note to the V1 state-machine document:
 V2.2 adds compact relationship profiles and reply strategy hints. It loosens ordinary social expression by making friendly non-owner chat explicit, while preserving all hard command/capability restrictions.
 ```
 
-- [ ] **Step 4: Track files and upload**
+- [x] **Step 4: Track files and upload**
 
 ```powershell
 git -C D:\Alife add -- sources/Alife.Function/Alife.Function.QChat/XiaYuSelfStateMachine.cs Tests/Alife.Test.QChat/XiaYuSelfStateMachineTests.cs docs/superpowers/plans/2026-06-24-xiayu-self-state-machine-v1.md docs/superpowers/plans/2026-06-24-xiayu-state-machine-v2-2-relationship-strategy.md
