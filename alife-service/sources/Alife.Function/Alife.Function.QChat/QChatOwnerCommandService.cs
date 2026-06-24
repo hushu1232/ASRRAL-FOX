@@ -65,6 +65,19 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
                || text.Equals("/tasks", StringComparison.OrdinalIgnoreCase);
     }
 
+    public static bool IsNaturalDiagnosticsStatusCommand(string text)
+    {
+        string normalized = text.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return false;
+        if (ContainsAny(normalized, "状态") == false)
+            return false;
+        if (ContainsAny(normalized, "QQ聊天", "QChat", "qchat", "聊天状态", "链路", "工程", "系统", "服务") == false)
+            return false;
+
+        return ContainsAny(normalized, "看看", "看一下", "检查", "现在", "怎么样", "如何", "状态");
+    }
+
     public static bool IsRecallCommand(string text)
     {
         return QChatIntentClassifier.ClassifyRecall(QChatIntentInput.FromText(text)).IsConfirmed;
@@ -82,7 +95,10 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
         bool isDiagnosticsCommand = IsDiagnosticsCommand(text);
         bool isHelpAliasCommand = IsHelpAliasCommand(text);
-        if (isDiagnosticsCommand == false && isHelpAliasCommand == false)
+        bool isNaturalDiagnosticsStatusCommand = IsNaturalDiagnosticsStatusCommand(text);
+        if (isDiagnosticsCommand == false &&
+            isHelpAliasCommand == false &&
+            isNaturalDiagnosticsStatusCommand == false)
             return false;
 
         ArgumentNullException.ThrowIfNull(config);
@@ -105,7 +121,11 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
 
         QChatAgentRoute route = BuildQChatDiagnosticsRoute(messageEvent, config);
         QChatAgentProfile profile = ResolveQChatDiagnosticsProfile(route);
-        string commandText = isHelpAliasCommand ? "/qchat" : text;
+        string commandText = isHelpAliasCommand
+            ? "/qchat"
+            : isNaturalDiagnosticsStatusCommand
+                ? "/qchat status"
+                : text;
         QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
             commandText,
             route,

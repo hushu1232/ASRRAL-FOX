@@ -1381,7 +1381,10 @@ public partial class QChatService(
         QChatConfig config = Configuration ?? new QChatConfig();
         string agentId = ResolveCurrentAgentId(config);
         string formatted = QChatCommandPersonaFormatter.Format(agentId, senderRole, message);
-        return SendTextOrMediaMessageAsync(targetType, targetId, formatted, streamText: false);
+        if (string.IsNullOrWhiteSpace(formatted))
+            return Task.CompletedTask;
+
+        return SendSingleMessageAsync(targetType, targetId, formatted.Trim());
     }
 
     async Task SendSingleMessageAsync(OneBotMessageType type, long targetId, string message)
@@ -2669,6 +2672,12 @@ public partial class QChatService(
                 return;
             }
 
+            if (basicMessageEvent is OneBotMessageEvent diagnosticsStatusMessageEvent &&
+                await TryHandleNaturalQChatDiagnosticsStatusAliasAsync(diagnosticsStatusMessageEvent, senderRole))
+            {
+                return;
+            }
+
             if (basicMessageEvent is OneBotMessageEvent stateQueryMessageEvent &&
                 await TryHandleXiaYuNaturalStateQueryAsync(stateQueryMessageEvent, senderRole))
             {
@@ -2947,6 +2956,18 @@ public partial class QChatService(
         return true;
     }
 
+    async Task<bool> TryHandleNaturalQChatDiagnosticsStatusAliasAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        if (QChatOwnerCommandService.IsNaturalDiagnosticsStatusCommand(plainText) == false)
+            return false;
+
+        OneBotMessageEvent commandEvent = messageEvent with { RawMessage = "/qchat status" };
+        return await TryHandleQChatDiagnosticsCommandAsync(commandEvent, senderRole);
+    }
+
     async Task<bool> TryHandleXiaYuNaturalStateQueryAsync(
         OneBotMessageEvent messageEvent,
         QChatSenderRole senderRole)
@@ -3001,6 +3022,8 @@ public partial class QChatService(
             return false;
 
         if (ContainsAnyText(text, "状态", "心情", "情绪") == false)
+            return false;
+        if (QChatOwnerCommandService.IsNaturalDiagnosticsStatusCommand(text))
             return false;
 
         bool addressesXiaYu = messageEvent.MessageType == OneBotMessageType.Private ||

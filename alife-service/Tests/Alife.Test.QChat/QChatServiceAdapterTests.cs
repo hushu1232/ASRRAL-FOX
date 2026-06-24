@@ -1613,7 +1613,7 @@ public class QChatServiceAdapterTests
             RawMessage = "/qchat rag list"
         });
 
-        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1 || dispatchCount > 0, TimeSpan.FromSeconds(6));
         string reply = runtime.PrivateMessages.Single().Message;
 
         Assert.Multiple(() =>
@@ -2781,6 +2781,81 @@ public class QChatServiceAdapterTests
         Assert.That(runtime.PrivateMessages.Any(message =>
             message.Target == 1001 &&
             message.Message.Contains("status=online", StringComparison.Ordinal)), Is.True);
+    }
+
+    [Test]
+    public async Task OwnerNaturalQChatStatusAliasReturnsDiagnosticsWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            UserId = 3045846738,
+            SelfId = 2905391496,
+            RawMessage = "\u7fbd\uff0c\u770b\u770bQQ\u804a\u5929\u72b6\u6001"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("status=online"));
+            Assert.That(reply, Does.Contain("agent=xiayu"));
+            Assert.That(reply, Does.Not.Contain("xiayu_state"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerNaturalQChatStatusAliasDropsWithoutDiagnosticsOrModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            UserId = 100200300,
+            SelfId = 2905391496,
+            RawMessage = "\u7fbd\uff0c\u770b\u770bQQ\u804a\u5929\u72b6\u6001"
+        });
+
+        await Task.Delay(300);
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(runtime.GroupMessages, Is.Empty);
+        });
     }
 
     [Test]
