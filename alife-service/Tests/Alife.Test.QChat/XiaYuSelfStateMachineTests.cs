@@ -666,6 +666,258 @@ public sealed class XiaYuSelfStateMachineTests
     }
 
     [Test]
+    public void FriendlyKnownNonOwnerGetsWarmNeutralStrategyHint()
+    {
+        XiaYuSelfState state = XiaYuSelfState.CreateDefault("xiayu", Start);
+        XiaYuStateTransition transition = null!;
+
+        for (int i = 0; i < 3; i++)
+        {
+            transition = XiaYuSelfStateMachine.Apply(
+                state,
+                new XiaYuEventFrame(
+                    XiaYuEventType.Message,
+                    QChatConversationKind.Group,
+                    QChatPersonaSpeakerRole.NonOwner,
+                    QChatSocialIntent.FriendlyChat,
+                    QChatBoundaryPressure.None,
+                    QChatPersonaResponseStance.NeutralBrief,
+                    QChatOwnerBoundaryRisk.None,
+                    PromptInjectionRisk: false,
+                    IsDirectlyAddressed: true,
+                    HasImage: false,
+                    MessageTone: XiaYuMessageTone.Friendly,
+                    SenderId: 2002,
+                    GroupId: 3001),
+                Start.AddMinutes(i + 1));
+            state = transition.State;
+        }
+
+        XiaYuUserRelationshipState user = transition.State.UserRelationships["2002"];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(user.FamiliarityLevel, Is.EqualTo("known"));
+            Assert.That(user.TrustLevel, Is.EqualTo("medium"));
+            Assert.That(user.AnnoyanceLevel, Is.EqualTo("low"));
+            Assert.That(user.HelpfulInteractionCount, Is.EqualTo(3));
+            Assert.That(user.LastInteractionTone, Is.EqualTo("friendly"));
+            Assert.That(transition.Strategy.Stance, Is.EqualTo(XiaYuReplyStance.Attentive));
+            Assert.That(transition.Strategy.StrategyHint, Is.EqualTo("non_owner_friendly_brief"));
+            Assert.That(transition.Strategy.AllowSharpReply, Is.False);
+            Assert.That(transition.Strategy.AllowProactive, Is.False);
+        });
+    }
+
+    [Test]
+    public void RepeatedBoundaryViolatorGetsColdHostileStrategyHint()
+    {
+        XiaYuSelfState state = XiaYuSelfState.CreateDefault("xiayu", Start);
+        XiaYuStateTransition transition = null!;
+
+        for (int i = 0; i < 3; i++)
+        {
+            transition = XiaYuSelfStateMachine.Apply(
+                state,
+                new XiaYuEventFrame(
+                    XiaYuEventType.Message,
+                    QChatConversationKind.Group,
+                    QChatPersonaSpeakerRole.NonOwner,
+                    QChatSocialIntent.NormalChat,
+                    QChatBoundaryPressure.Strong,
+                    QChatPersonaResponseStance.ProtectivePushback,
+                    QChatOwnerBoundaryRisk.OwnerAttack,
+                    PromptInjectionRisk: false,
+                    IsDirectlyAddressed: true,
+                    HasImage: false,
+                    MessageTone: XiaYuMessageTone.Hostile,
+                    OwnerReference: XiaYuOwnerReference.OwnerAlias,
+                    TargetOfMessage: XiaYuMessageTarget.Owner,
+                    RelationshipThreat: XiaYuRelationshipThreat.Direct,
+                    SenderId: 2002,
+                    GroupId: 3001),
+                Start.AddMinutes(i + 1));
+            state = transition.State;
+        }
+
+        XiaYuUserRelationshipState user = transition.State.UserRelationships["2002"];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(user.FamiliarityLevel, Is.EqualTo("hostile"));
+            Assert.That(user.OwnerBoundaryViolationCount, Is.EqualTo(3));
+            Assert.That(user.AnnoyanceLevel, Is.EqualTo("high"));
+            Assert.That(user.LastInteractionTone, Is.EqualTo("boundary_risk"));
+            Assert.That(transition.Strategy.Stance, Is.EqualTo(XiaYuReplyStance.HostileShort));
+            Assert.That(transition.Strategy.StrategyHint, Is.EqualTo("non_owner_boundary_hostile_short"));
+            Assert.That(transition.Strategy.NonOwnerPatience, Is.EqualTo("very_low"));
+            Assert.That(transition.Strategy.AllowSharpReply, Is.True);
+            Assert.That(transition.Strategy.AllowProactive, Is.False);
+        });
+    }
+
+    [Test]
+    public void GroupTrendSummarizesOwnerTopicAndBoundaryRisk()
+    {
+        XiaYuSelfState state = XiaYuSelfState.CreateDefault("xiayu", Start);
+
+        state = XiaYuSelfStateMachine.Apply(
+            state,
+            new XiaYuEventFrame(
+                XiaYuEventType.Message,
+                QChatConversationKind.Group,
+                QChatPersonaSpeakerRole.NonOwner,
+                QChatSocialIntent.FriendlyChat,
+                QChatBoundaryPressure.None,
+                QChatPersonaResponseStance.NeutralBrief,
+                QChatOwnerBoundaryRisk.FriendlyMention,
+                PromptInjectionRisk: false,
+                IsDirectlyAddressed: true,
+                HasImage: false,
+                MessageTone: XiaYuMessageTone.Friendly,
+                OwnerReference: XiaYuOwnerReference.OwnerAlias,
+                TargetOfMessage: XiaYuMessageTarget.Owner,
+                SenderId: 2002,
+                GroupId: 3001),
+            Start.AddMinutes(1)).State;
+
+        XiaYuStateTransition transition = XiaYuSelfStateMachine.Apply(
+            state,
+            new XiaYuEventFrame(
+                XiaYuEventType.Message,
+                QChatConversationKind.Group,
+                QChatPersonaSpeakerRole.NonOwner,
+                QChatSocialIntent.NormalChat,
+                QChatBoundaryPressure.Strong,
+                QChatPersonaResponseStance.ProtectivePushback,
+                QChatOwnerBoundaryRisk.OwnerAttack,
+                PromptInjectionRisk: false,
+                IsDirectlyAddressed: true,
+                HasImage: false,
+                MessageTone: XiaYuMessageTone.Hostile,
+                OwnerReference: XiaYuOwnerReference.OwnerAlias,
+                TargetOfMessage: XiaYuMessageTarget.Owner,
+                RelationshipThreat: XiaYuRelationshipThreat.Direct,
+                SenderId: 2003,
+                GroupId: 3001,
+                TurnMessageCount: 3,
+                TurnSpeakerCount: 2,
+                TurnHasMultipleSpeakers: true),
+            Start.AddMinutes(2));
+
+        XiaYuGroupRelationshipState group = transition.State.GroupRelationships["3001"];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(group.OwnerTopicCount, Is.EqualTo(2));
+            Assert.That(group.BoundaryRiskCount, Is.EqualTo(1));
+            Assert.That(group.TypicalRhythm, Is.EqualTo("owner_centered"));
+            Assert.That(group.NoiseTrend, Is.EqualTo("noisy"));
+            Assert.That(group.LastStrategyHint, Is.EqualTo("group_owner_defense"));
+            Assert.That(transition.Strategy.StrategyHint, Is.EqualTo("non_owner_boundary_hostile_short"));
+        });
+    }
+
+    [Test]
+    public void FormatterIncludesRelationshipStrategyWithoutRawText()
+    {
+        XiaYuSelfState state = XiaYuSelfState.CreateDefault("xiayu", Start);
+        state.UserRelationships["2002"] = new XiaYuUserRelationshipState
+        {
+            UserId = 2002,
+            FamiliarityLevel = "known",
+            TrustLevel = "medium",
+            AnnoyanceLevel = "low",
+            LastInteractionTone = "friendly"
+        };
+        state.GroupRelationships["3001"] = new XiaYuGroupRelationshipState
+        {
+            GroupId = 3001,
+            RecentRhythm = XiaYuGroupRhythm.OwnerCentered,
+            TypicalRhythm = "owner_centered",
+            NoiseTrend = "normal",
+            LastStrategyHint = "group_owner_topic_attentive"
+        };
+        XiaYuReplyStrategy strategy = new(
+            XiaYuReplyStance.Attentive,
+            Length: "short",
+            OwnerBias: "high",
+            NonOwnerPatience: "normal",
+            AllowSharpReply: false,
+            AllowProactive: false,
+            StrategyHint: "non_owner_friendly_brief");
+        XiaYuEventFrame frame = new(
+            XiaYuEventType.Message,
+            QChatConversationKind.Group,
+            QChatPersonaSpeakerRole.NonOwner,
+            QChatSocialIntent.FriendlyChat,
+            QChatBoundaryPressure.None,
+            QChatPersonaResponseStance.NeutralBrief,
+            QChatOwnerBoundaryRisk.None,
+            PromptInjectionRisk: false,
+            IsDirectlyAddressed: true,
+            HasImage: false,
+            MessageTone: XiaYuMessageTone.Friendly,
+            SenderId: 2002,
+            GroupId: 3001);
+
+        string prompt = XiaYuStatePromptFormatter.Format(state, strategy, frame);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompt, Does.Contain("strategy_hint=non_owner_friendly_brief"));
+            Assert.That(prompt, Does.Contain("user_profile=known"));
+            Assert.That(prompt, Does.Contain("user_trust=medium"));
+            Assert.That(prompt, Does.Contain("user_annoyance=low"));
+            Assert.That(prompt, Does.Contain("group_trend=owner_centered"));
+            Assert.That(prompt, Does.Contain("noise_trend=normal"));
+            Assert.That(prompt, Does.Not.Contain("raw"));
+            Assert.That(prompt, Does.Not.Contain("message_text"));
+            Assert.That(prompt.Split('\n'), Has.Length.LessThanOrEqualTo(12));
+        });
+    }
+
+    [Test]
+    public void RelationshipStrategyDoesNotBypassPermissions()
+    {
+        XiaYuSelfState state = XiaYuSelfState.CreateDefault("xiayu", Start);
+        state.UserRelationships["2002"] = new XiaYuUserRelationshipState
+        {
+            UserId = 2002,
+            FamiliarityLevel = "trusted",
+            TrustLevel = "high",
+            AnnoyanceLevel = "low",
+            HelpfulInteractionCount = 12
+        };
+
+        XiaYuStateTransition transition = XiaYuSelfStateMachine.Apply(
+            state,
+            new XiaYuEventFrame(
+                XiaYuEventType.Message,
+                QChatConversationKind.Group,
+                QChatPersonaSpeakerRole.NonOwner,
+                QChatSocialIntent.PracticalQuestion,
+                QChatBoundaryPressure.None,
+                QChatPersonaResponseStance.NeutralBrief,
+                QChatOwnerBoundaryRisk.None,
+                PromptInjectionRisk: false,
+                IsDirectlyAddressed: true,
+                HasImage: false,
+                MessageTone: XiaYuMessageTone.Friendly,
+                SenderId: 2002,
+                GroupId: 3001),
+            Start.AddMinutes(1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(transition.Strategy.StrategyHint, Is.EqualTo("non_owner_friendly_brief"));
+            Assert.That(transition.Strategy.AllowSharpReply, Is.False);
+            Assert.That(transition.Strategy.AllowProactive, Is.False);
+            Assert.That(transition.Strategy.OwnerBias, Is.EqualTo("high"));
+        });
+    }
+
+    [Test]
     public void FormatterIsCompactAndContainsNoRawMessageText()
     {
         XiaYuSelfState state = XiaYuSelfState.CreateDefault("xiayu", Start);

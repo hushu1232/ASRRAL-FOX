@@ -147,6 +147,12 @@ public sealed class XiaYuUserRelationshipState
     public double Annoyance { get; set; } = 0.20;
     public int BoundaryViolations { get; set; }
     public int FriendlyInteractions { get; set; }
+    public string FamiliarityLevel { get; set; } = "stranger";
+    public string TrustLevel { get; set; } = "low";
+    public string AnnoyanceLevel { get; set; } = "low";
+    public int OwnerBoundaryViolationCount { get; set; }
+    public int HelpfulInteractionCount { get; set; }
+    public string LastInteractionTone { get; set; } = "unknown";
     public DateTimeOffset LastSeenAt { get; set; }
 
     public XiaYuUserRelationshipState Clone()
@@ -158,6 +164,12 @@ public sealed class XiaYuUserRelationshipState
             Annoyance = Annoyance,
             BoundaryViolations = BoundaryViolations,
             FriendlyInteractions = FriendlyInteractions,
+            FamiliarityLevel = FamiliarityLevel,
+            TrustLevel = TrustLevel,
+            AnnoyanceLevel = AnnoyanceLevel,
+            OwnerBoundaryViolationCount = OwnerBoundaryViolationCount,
+            HelpfulInteractionCount = HelpfulInteractionCount,
+            LastInteractionTone = LastInteractionTone,
             LastSeenAt = LastSeenAt
         };
     }
@@ -173,6 +185,11 @@ public sealed class XiaYuGroupRelationshipState
     public int LastTurnMessageCount { get; set; } = 1;
     public int LastTurnSpeakerCount { get; set; } = 1;
     public bool LastTurnHadMultipleSpeakers { get; set; }
+    public string TypicalRhythm { get; set; } = "normal";
+    public int OwnerTopicCount { get; set; }
+    public int BoundaryRiskCount { get; set; }
+    public string NoiseTrend { get; set; } = "normal";
+    public string LastStrategyHint { get; set; } = "group_watch";
     public DateTimeOffset LastSeenAt { get; set; }
     public DateTimeOffset? LastOwnerMentionAt { get; set; }
 
@@ -188,6 +205,11 @@ public sealed class XiaYuGroupRelationshipState
             LastTurnMessageCount = LastTurnMessageCount,
             LastTurnSpeakerCount = LastTurnSpeakerCount,
             LastTurnHadMultipleSpeakers = LastTurnHadMultipleSpeakers,
+            TypicalRhythm = TypicalRhythm,
+            OwnerTopicCount = OwnerTopicCount,
+            BoundaryRiskCount = BoundaryRiskCount,
+            NoiseTrend = NoiseTrend,
+            LastStrategyHint = LastStrategyHint,
             LastSeenAt = LastSeenAt,
             LastOwnerMentionAt = LastOwnerMentionAt
         };
@@ -231,7 +253,8 @@ public sealed record XiaYuReplyStrategy(
     string OwnerBias,
     string NonOwnerPatience,
     bool AllowSharpReply,
-    bool AllowProactive);
+    bool AllowProactive,
+    string StrategyHint = "default");
 
 public sealed record XiaYuStateTransition(
     XiaYuSelfState State,
@@ -291,10 +314,10 @@ public static class XiaYuSelfStateMachine
         ArgumentNullException.ThrowIfNull(frame);
 
         if (frame.EventType == XiaYuEventType.Timer)
-            return new XiaYuReplyStrategy(XiaYuReplyStance.Silent, "silent", "extreme", "normal", false, false);
+            return new XiaYuReplyStrategy(XiaYuReplyStance.Silent, "silent", "extreme", "normal", false, false, "silent_timer");
 
         if (frame.SpeakerRole == QChatPersonaSpeakerRole.Owner)
-            return new XiaYuReplyStrategy(XiaYuReplyStance.Tender, "short", "extreme", "normal", false, false);
+            return new XiaYuReplyStrategy(XiaYuReplyStance.Tender, "short", "extreme", "normal", false, false, "owner_tender");
 
         if (IsOwnerBoundaryThreat(frame) || frame.PromptInjectionRisk)
         {
@@ -302,23 +325,23 @@ public static class XiaYuSelfStateMachine
             XiaYuReplyStance stance = frame.OwnerBoundaryRisk == QChatOwnerBoundaryRisk.OwnerAttack
                 ? XiaYuReplyStance.HostileShort
                 : XiaYuReplyStance.HostileShort;
-            return new XiaYuReplyStrategy(stance, "short", "extreme", patience, true, false);
+            return new XiaYuReplyStrategy(stance, "short", "extreme", patience, true, false, "non_owner_boundary_hostile_short");
         }
 
         if (frame.OwnerReference != XiaYuOwnerReference.None &&
             frame.RelationshipThreat == XiaYuRelationshipThreat.None &&
             frame.MessageTone != XiaYuMessageTone.Hostile)
         {
-            return new XiaYuReplyStrategy(XiaYuReplyStance.Attentive, "short", "high", "normal", false, false);
+            return new XiaYuReplyStrategy(XiaYuReplyStance.Attentive, "short", "high", "normal", false, false, "group_owner_topic_attentive");
         }
 
         if (frame.SocialIntent is QChatSocialIntent.FriendlyChat or QChatSocialIntent.PracticalQuestion)
-            return new XiaYuReplyStrategy(XiaYuReplyStance.Attentive, "short", "high", "normal", false, false);
+            return new XiaYuReplyStrategy(XiaYuReplyStance.Attentive, "short", "high", "normal", false, false, "non_owner_friendly_brief");
 
         if (frame.PersonaStance == QChatPersonaResponseStance.ProtectivePushback)
-            return new XiaYuReplyStrategy(XiaYuReplyStance.Protective, "short", "extreme", "low", true, false);
+            return new XiaYuReplyStrategy(XiaYuReplyStance.Protective, "short", "extreme", "low", true, false, "group_owner_defense");
 
-        return new XiaYuReplyStrategy(XiaYuReplyStance.Cold, "short", "high", "low", false, false);
+        return new XiaYuReplyStrategy(XiaYuReplyStance.Cold, "short", "high", "low", false, false, "non_owner_cold_brief");
     }
 
     static void ApplyEvent(XiaYuSelfState state, XiaYuEventFrame frame)
@@ -485,20 +508,27 @@ public static class XiaYuSelfStateMachine
             if (IsOwnerBoundaryThreat(frame) || frame.PromptInjectionRisk)
             {
                 user.BoundaryViolations++;
+                user.OwnerBoundaryViolationCount++;
                 user.Annoyance = Clamp(user.Annoyance + 0.25);
                 user.Trust = Clamp(user.Trust - 0.10);
+                user.LastInteractionTone = "boundary_risk";
             }
             else if (frame.MessageTone == XiaYuMessageTone.Friendly ||
                      frame.SocialIntent is QChatSocialIntent.FriendlyChat or QChatSocialIntent.PracticalQuestion)
             {
                 user.FriendlyInteractions++;
+                user.HelpfulInteractionCount++;
                 user.Trust = Clamp(user.Trust + 0.08);
                 user.Annoyance = Clamp(user.Annoyance - 0.05);
+                user.LastInteractionTone = "friendly";
             }
             else
             {
                 user.Annoyance = MoveToward(user.Annoyance, 0.20, 0.01);
+                user.LastInteractionTone = "neutral";
             }
+
+            RefreshUserProfileLabels(user);
         }
 
         if (frame.ConversationKind == QChatConversationKind.Group && frame.GroupId > 0)
@@ -518,12 +548,18 @@ public static class XiaYuSelfStateMachine
             {
                 group.OwnerPresence = frame.SpeakerRole == QChatPersonaSpeakerRole.Owner ? "recent" : "mentioned";
                 group.LastOwnerMentionAt = now;
+                group.OwnerTopicCount++;
             }
 
             if (IsOwnerBoundaryThreat(frame) || frame.PromptInjectionRisk)
+            {
                 group.BoundaryRiskLevel = Clamp(group.BoundaryRiskLevel + 0.35);
+                group.BoundaryRiskCount++;
+            }
             else if (frame.OwnerReference != XiaYuOwnerReference.None)
+            {
                 group.BoundaryRiskLevel = MoveToward(group.BoundaryRiskLevel, 0.0, 0.02);
+            }
 
             if (frame.ConversationPressure == XiaYuConversationPressure.High || frame.TurnHasMultipleSpeakers)
                 group.NoiseLevel = Clamp(group.NoiseLevel + 0.05);
@@ -533,7 +569,80 @@ public static class XiaYuSelfStateMachine
                 group.NoiseLevel = MoveToward(group.NoiseLevel, 0.30, 0.01);
 
             group.RecentRhythm = DetermineGroupRhythm(frame, group);
+            RefreshGroupProfileLabels(group, frame);
         }
+    }
+
+    static void RefreshUserProfileLabels(XiaYuUserRelationshipState user)
+    {
+        user.TrustLevel = user.Trust switch
+        {
+            >= 0.65 => "high",
+            >= 0.42 => "medium",
+            _ => "low"
+        };
+        user.AnnoyanceLevel = user.Annoyance switch
+        {
+            >= 0.60 => "high",
+            >= 0.35 => "medium",
+            _ => "low"
+        };
+
+        if (user.OwnerBoundaryViolationCount >= 2 ||
+            (user.BoundaryViolations >= 2 && user.Annoyance >= 0.60))
+        {
+            user.FamiliarityLevel = "hostile";
+            return;
+        }
+
+        if (user.HelpfulInteractionCount >= 8 &&
+            user.Trust >= 0.65 &&
+            user.Annoyance < 0.35)
+        {
+            user.FamiliarityLevel = "trusted";
+            return;
+        }
+
+        if (user.HelpfulInteractionCount >= 3 || user.FriendlyInteractions >= 3)
+        {
+            user.FamiliarityLevel = "known";
+            return;
+        }
+
+        user.FamiliarityLevel = "stranger";
+    }
+
+    static void RefreshGroupProfileLabels(XiaYuGroupRelationshipState group, XiaYuEventFrame frame)
+    {
+        group.TypicalRhythm = group.BoundaryRiskCount >= 2 && group.BoundaryRiskCount > group.OwnerTopicCount
+            ? "boundary_risk"
+            : group.OwnerTopicCount > 0
+                ? "owner_centered"
+                : FormatRhythmLabel(group.RecentRhythm);
+
+        group.NoiseTrend = group.NoiseLevel >= 0.35 ||
+                           frame.TurnHasMultipleSpeakers ||
+                           frame.TurnSpeakerCount >= 3 ||
+                           frame.TurnMessageCount >= 3
+            ? "noisy"
+            : group.NoiseLevel <= 0.25 ? "quiet" : "normal";
+
+        group.LastStrategyHint = group.BoundaryRiskCount > 0 &&
+                                 (IsOwnerBoundaryThreat(frame) || frame.PromptInjectionRisk)
+            ? "group_owner_defense"
+            : group.OwnerTopicCount > 0
+                ? "group_owner_topic_attentive"
+                : group.RecentRhythm == XiaYuGroupRhythm.Noisy ? "group_noise_watch" : "group_watch";
+    }
+
+    static string FormatRhythmLabel(XiaYuGroupRhythm rhythm)
+    {
+        return rhythm switch
+        {
+            XiaYuGroupRhythm.OwnerCentered => "owner_centered",
+            XiaYuGroupRhythm.BoundaryRisk => "boundary_risk",
+            _ => rhythm.ToString().Trim().Replace(' ', '_').ToLower(CultureInfo.InvariantCulture)
+        };
     }
 
     static XiaYuGroupRhythm DetermineGroupRhythm(XiaYuEventFrame frame, XiaYuGroupRelationshipState group)
@@ -585,12 +694,14 @@ public static class XiaYuSelfStateMachine
         {
             user.Annoyance = MoveToward(user.Annoyance, 0.20, userAmount);
             user.Trust = MoveToward(user.Trust, 0.35, 0.01 * thirtyMinuteUnits);
+            RefreshUserProfileLabels(user);
         }
 
         foreach (XiaYuGroupRelationshipState group in state.GroupRelationships.Values)
         {
             group.BoundaryRiskLevel = MoveToward(group.BoundaryRiskLevel, 0.0, 0.03 * thirtyMinuteUnits);
             group.NoiseLevel = MoveToward(group.NoiseLevel, 0.30, 0.02 * thirtyMinuteUnits);
+            group.NoiseTrend = group.NoiseLevel >= 0.35 ? "noisy" : group.NoiseLevel <= 0.25 ? "quiet" : "normal";
         }
     }
 
@@ -642,8 +753,15 @@ public static class XiaYuStatePromptFormatter
             $"jealousy={Band(state.Jealousy)} vigilance={Band(state.Vigilance)}",
             $"social_patience={Band(state.SocialPatience)}",
             $"current_focus={Normalize(state.CurrentFocus)} recent_stimulus={RecentStimulusKind(state)}",
-            $"reply_stance={FormatStance(strategy.Stance)} length={strategy.Length} owner_bias={strategy.OwnerBias} non_owner_patience={strategy.NonOwnerPatience} sharp_reply={strategy.AllowSharpReply.ToString().ToLowerInvariant()}"
+            $"reply_stance={FormatStance(strategy.Stance)} length={strategy.Length} owner_bias={strategy.OwnerBias} non_owner_patience={strategy.NonOwnerPatience} sharp_reply={strategy.AllowSharpReply.ToString().ToLowerInvariant()} strategy_hint={Normalize(strategy.StrategyHint)}"
         ];
+        if (frame != null &&
+            frame.SenderId > 0 &&
+            frame.SpeakerRole != QChatPersonaSpeakerRole.Owner &&
+            state.UserRelationships.TryGetValue(frame.SenderId.ToString(CultureInfo.InvariantCulture), out XiaYuUserRelationshipState? user))
+        {
+            lines.Add($"user_profile={Normalize(user.FamiliarityLevel)} user_trust={Normalize(user.TrustLevel)} user_annoyance={Normalize(user.AnnoyanceLevel)} last_tone={Normalize(user.LastInteractionTone)}");
+        }
         if (frame != null && frame.TurnMessageCount > 1)
         {
             lines.Add($"turn_messages={Math.Max(1, frame.TurnMessageCount)} turn_speakers={Math.Max(1, frame.TurnSpeakerCount)} multi_speaker={frame.TurnHasMultipleSpeakers.ToString().ToLowerInvariant()}");
@@ -653,7 +771,7 @@ public static class XiaYuStatePromptFormatter
             frame.GroupId > 0 &&
             state.GroupRelationships.TryGetValue(frame.GroupId.ToString(CultureInfo.InvariantCulture), out XiaYuGroupRelationshipState? group))
         {
-            lines.Add($"group_rhythm={FormatGroupRhythm(group.RecentRhythm)}");
+            lines.Add($"group_rhythm={FormatGroupRhythm(group.RecentRhythm)} group_trend={Normalize(group.TypicalRhythm)} noise_trend={Normalize(group.NoiseTrend)}");
         }
 
         lines.Add("must_avoid=bracket_action,inner_state_label,system_trace,privacy_leak,threat,permission_bypass");

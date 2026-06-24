@@ -347,3 +347,31 @@ dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "GroupMultiS
 dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter ConversationSettleWindowPassesCompactSpeakerSummaryToXiayuState --no-restore
 dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "XiaYuSelfStateMachineTests|XiayuInboundModelInputIncludesSelfStateBlock|NonXiayuInboundModelInputDoesNotIncludeSelfStateBlock|XiayuFriendlyOwnerTopicMarksOwnerTopicFocus|XiayuGroupMessagePersistsUserAndGroupRelationshipState|ConversationSettleWindowPassesCompactSpeakerSummaryToXiayuState|ConversationSettleWindowUpdatesXiayuStateOnceForConsecutivePrivateMessages|ConversationSettleWindowDropsRecalledXiayuTriggerWithoutWritingSelfState" --no-restore
 ```
+
+---
+
+## 2026-06-24 Update: V2.2 Relationship Strategy
+
+Implemented in this pass:
+
+- Added compact per-user relationship profile labels: `FamiliarityLevel`, `TrustLevel`, `AnnoyanceLevel`, `OwnerBoundaryViolationCount`, `HelpfulInteractionCount`, and `LastInteractionTone`.
+- Added compact per-group trend labels: `TypicalRhythm`, `OwnerTopicCount`, `BoundaryRiskCount`, `NoiseTrend`, and `LastStrategyHint`.
+- Added `StrategyHint` to `XiaYuReplyStrategy`, so the model receives a clear strategy such as `non_owner_friendly_brief`, `non_owner_boundary_hostile_short`, `group_owner_topic_attentive`, or `owner_tender`.
+- Friendly non-owner messages now produce an explicit usable social strategy instead of being treated as generally hostile.
+- Repeated owner-boundary violations make the same user more hostile/annoying in state, causing shorter and sharper strategy hints.
+- The private XiaYu state prompt includes compact relationship hints without raw QQ text.
+
+Restriction audit result:
+
+- Kept as hard restrictions: non-owner `/qchat` command drops, diagnostics/menu suppression, owner-only maintenance aliases, capability gates, file/browser/desktop high-risk gates, image URL hiding, outbox, blacklists, and hard safety boundaries.
+- Improved as social behavior: friendly non-owner chat, owner-friendly mentions, noisy group rhythm, repeated annoyance, and owner-boundary defense.
+- Relationship strategy still cannot enable proactive sending, command access, file access, browser access, desktop actions, outbox bypass, or permission bypass.
+
+Verification used:
+
+```powershell
+dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "FriendlyKnownNonOwnerGetsWarmNeutralStrategyHint|RepeatedBoundaryViolatorGetsColdHostileStrategyHint|GroupTrendSummarizesOwnerTopicAndBoundaryRisk|FormatterIncludesRelationshipStrategyWithoutRawText|RelationshipStrategyDoesNotBypassPermissions" --no-restore
+dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "QChatCommandAccessPolicyTests|QChatCapabilityPolicyTests|QChatSemanticGroupReplyPolicyTests|RelationshipStrategyDoesNotBypassPermissions|NonOwnerFriendlyMessageCanReachModelPathWithPersonaFrame|FriendlyKnownNonOwnerGetsWarmNeutralStrategyHint" --no-restore
+dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --filter "XiaYuSelfStateMachineTests|QChatCommandAccessPolicyTests|QChatCapabilityPolicyTests|QChatSemanticGroupReplyPolicyTests|NonOwnerFriendlyMessageCanReachModelPathWithPersonaFrame" --no-restore
+dotnet build Sources\Alife\Alife.Client\Alife.Client.csproj --no-restore
+```
