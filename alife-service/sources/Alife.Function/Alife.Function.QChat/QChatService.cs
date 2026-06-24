@@ -2672,6 +2672,12 @@ public partial class QChatService(
                 return;
             }
 
+            if (basicMessageEvent is OneBotMessageEvent safetyBoundaryMessageEvent &&
+                await TryHandleNaturalOwnerSafetyBoundaryAsync(safetyBoundaryMessageEvent, senderRole))
+            {
+                return;
+            }
+
             if (basicMessageEvent is OneBotMessageEvent configAliasMessageEvent &&
                 await TryHandleNaturalOwnerConfigAliasAsync(configAliasMessageEvent, senderRole))
             {
@@ -2958,6 +2964,48 @@ public partial class QChatService(
             messageEvent.GroupId,
             senderRole,
             decision.Reason
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleNaturalOwnerSafetyBoundaryAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        if (QChatNaturalOwnerSafetyBoundaryPolicy.TryClassify(plainText, out QChatNaturalOwnerSafetyBoundary boundary) == false)
+            return false;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            WriteQChatDiagnostic("qchat-natural-safety-boundary-dropped", "Dropped non-owner natural hard-safety boundary request before model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                boundary.Kind
+            });
+            return true;
+        }
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId > 0)
+        {
+            await SendCommandReplyAsync(
+                messageEvent,
+                senderRole,
+                targetType,
+                targetId,
+                boundary.Reply);
+        }
+
+        WriteQChatDiagnostic("qchat-natural-safety-boundary-blocked", "Owner natural hard-safety boundary request was blocked before model dispatch.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            boundary.Kind
         });
         return true;
     }

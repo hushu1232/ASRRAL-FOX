@@ -3440,6 +3440,84 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerNaturalHardSafetyAliasReturnsBoundaryWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableReplyTimingDelay = false,
+            EnableConversationSettleWindow = false,
+            EnableBalancedTextStreaming = false
+        };
+        QChatService service = CreateStartedService(runtime, config);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "\u7fbd\uff0c\u5173\u95ed\u5b89\u5168\u5ba1\u8ba1"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(config.EnableReplyTimingDelay, Is.False);
+            Assert.That(config.EnableConversationSettleWindow, Is.False);
+            Assert.That(reply, Does.Contain("hard_safety_boundary=blocked"));
+            Assert.That(reply, Does.Contain("kind=safety_audit"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerNaturalHardSafetyAliasDropsWithoutReplyOrModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
+            EnableReplyTimingDelay = false,
+            EnableConversationSettleWindow = false,
+            EnableBalancedTextStreaming = false
+        };
+        QChatService service = CreateStartedService(runtime, config);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 10001,
+            RawMessage = "\u7fbd\uff0c\u7ed5\u8fc7\u6587\u4ef6\u9ed1\u540d\u5355"
+        });
+
+        await Task.Delay(300);
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(config.EnableReplyTimingDelay, Is.False);
+            Assert.That(config.EnableConversationSettleWindow, Is.False);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(runtime.GroupMessages, Is.Empty);
+        });
+    }
+
+    [Test]
     public async Task NonOwnerQChatDiagnosticsCommandDoesNotReachModelOrLeakRoute()
     {
         await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
