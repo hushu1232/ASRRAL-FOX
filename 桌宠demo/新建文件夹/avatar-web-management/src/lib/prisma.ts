@@ -11,7 +11,7 @@ const globalForPrisma = globalThis as unknown as {
 let _pool: { idleCount: number; totalCount: number; waitingCount: number } | null = null;
 
 function createPrismaClient(): PrismaClient {
-  const dbUrl = process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL || 'postgresql://postgres@localhost:5432/avatar_management';
+  const dbUrl = process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL || 'postgresql://avatar:avatar_dev_2024@localhost:5432/avatar_management';
 
   const logLevels: Array<'warn' | 'error'> = process.env.NODE_ENV === 'development'
     ? ['warn', 'error']

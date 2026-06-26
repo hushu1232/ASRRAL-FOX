@@ -57,6 +57,13 @@ const envSchema = z.object({
   // WebSocket
   WS_PORT: z.coerce.number().int().positive().optional(),
 
+  // External AI and desktop bridge services
+  RIGGING_SERVICE_URL: z.string().url().default('http://localhost:8001'),
+  RIGGING_TIMEOUT_MS: z.coerce.number().int().positive().default(130000),
+  RIGGING_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().positive().default(5),
+  GPT_SOVITS_URL: z.string().url().default('http://localhost:8002'),
+  OLLAMA_URL: z.string().url().default('http://localhost:11434'),
+
   // Sentry（可选）
   SENTRY_DSN: z.string().optional(),
 
