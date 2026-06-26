@@ -10,6 +10,200 @@ namespace Alife.Test.Framework;
 public class WebBridgeServiceTests
 {
     [Test]
+    public void WebBridgePackageManifestCarriesInstallOnlyActivationPolicy()
+    {
+        WebBridgePackageManifest manifest = new()
+        {
+            SchemaVersion = 1,
+            PackageId = "xiayu-character-bundle",
+            PackageType = "characterBundle",
+            DisplayName = "XiaYu Character Bundle",
+            Version = "1.0.0",
+            Files =
+            [
+                new WebBridgePackageFile
+                {
+                    Kind = "characterCard",
+                    Url = "https://foxd.example/downloads/xiayu/card.json",
+                    RelativePath = "characters/xiayu/card.json",
+                    Sha256 = "sha256-placeholder",
+                    Size = 12
+                }
+            ],
+            ConfigDraft = new WebBridgeConfigDraft
+            {
+                CharacterName = "XiaYu",
+                CharacterCardPath = "characters/xiayu/card.json",
+                Live2DModelPath = "live2d/xiayu/model3.json"
+            },
+            ActivationPolicy = new WebBridgeActivationPolicy
+            {
+                AutoApply = false,
+                RequiresLocalConfirmation = true
+            }
+        };
+
+        Assert.That(manifest.PackageType, Is.EqualTo("characterBundle"));
+        Assert.That(manifest.ActivationPolicy.AutoApply, Is.False);
+        Assert.That(manifest.ActivationPolicy.RequiresLocalConfirmation, Is.True);
+    }
+
+    [Test]
+    public void WebBridgePackageInstallerRejectsPathTraversal()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-installer", Guid.NewGuid().ToString("N"));
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(Array.Empty<byte>()));
+        WebBridgePackageManifest manifest = new()
+        {
+            PackageId = "unsafe-package",
+            PackageType = "live2d",
+            Version = "1.0.0",
+            Files =
+            [
+                new WebBridgePackageFile
+                {
+                    Kind = "live2d",
+                    Url = "https://foxd.example/unsafe",
+                    RelativePath = "../escape.txt",
+                    Sha256 = "",
+                    Size = 0
+                }
+            ]
+        };
+
+        Assert.ThrowsAsync<InvalidOperationException>(() => installer.Install(manifest, CancellationToken.None));
+    }
+
+    [Test]
+    public void WebBridgePackageInstallerRejectsUnsafePackageIdSegment()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-installer", Guid.NewGuid().ToString("N"));
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(new byte[] { 1 }));
+        WebBridgePackageManifest manifest = new()
+        {
+            PackageId = "..",
+            PackageType = "live2d",
+            Version = "1.0.0",
+            Files =
+            [
+                new WebBridgePackageFile
+                {
+                    Kind = "live2d",
+                    Url = "https://foxd.example/model3.json",
+                    RelativePath = "model3.json",
+                    Size = 1
+                }
+            ]
+        };
+
+        Assert.ThrowsAsync<InvalidOperationException>(() => installer.Install(manifest, CancellationToken.None));
+    }
+
+    [Test]
+    public void WebBridgePackageInstallerRejectsHashMismatch()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-installer", Guid.NewGuid().ToString("N"));
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(new byte[] { 1, 2, 3 }));
+        WebBridgePackageManifest manifest = new()
+        {
+            PackageId = "hash-package",
+            PackageType = "live2d",
+            Version = "1.0.0",
+            Files =
+            [
+                new WebBridgePackageFile
+                {
+                    Kind = "live2d",
+                    Url = "https://foxd.example/model3.json",
+                    RelativePath = "live2d/model3.json",
+                    Sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
+                    Size = 3
+                }
+            ]
+        };
+
+        Assert.ThrowsAsync<InvalidOperationException>(() => installer.Install(manifest, CancellationToken.None));
+    }
+
+    [Test]
+    public async Task WebBridgePackageInstallerWritesFilesManifestAndConfigDraftWithoutActivating()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-installer", Guid.NewGuid().ToString("N"));
+        byte[] content = [1, 2, 3];
+        string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant();
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(content));
+        WebBridgePackageManifest manifest = new()
+        {
+            PackageId = "xiayu-character-bundle",
+            PackageType = "characterBundle",
+            Version = "1.0.0",
+            Files =
+            [
+                new WebBridgePackageFile
+                {
+                    Kind = "live2d",
+                    Url = "https://foxd.example/live2d/model3.json",
+                    RelativePath = "live2d/xiayu/model3.json",
+                    Sha256 = hash,
+                    Size = content.Length
+                }
+            ],
+            ConfigDraft = new WebBridgeConfigDraft
+            {
+                CharacterName = "XiaYu",
+                CharacterCardPath = "characters/xiayu/card.json",
+                Live2DModelPath = "live2d/xiayu/model3.json"
+            },
+            ActivationPolicy = new WebBridgeActivationPolicy
+            {
+                AutoApply = false,
+                RequiresLocalConfirmation = true
+            }
+        };
+
+        WebBridgeInstallResult result = await installer.Install(manifest, CancellationToken.None);
+
+        Assert.That(result.Status, Is.EqualTo(WebBridgePackageStatus.PendingActivation));
+        Assert.That(result.InstalledFiles, Is.EqualTo(1));
+        Assert.That(File.Exists(Path.Combine(result.PackageRootPath, "live2d", "xiayu", "model3.json")), Is.True);
+        Assert.That(File.Exists(result.ManifestPath), Is.True);
+        Assert.That(File.Exists(result.ConfigDraftPath), Is.True);
+        Assert.That(File.ReadAllText(result.ConfigDraftPath), Does.Contain("XiaYu"));
+    }
+
+    [Test]
+    public async Task WebBridgePackageInstallerRecordsPendingPackageInCatalog()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-installer", Guid.NewGuid().ToString("N"));
+        byte[] content = [7, 8, 9];
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(content));
+        WebBridgePackageManifest manifest = new()
+        {
+            PackageId = "catalog-package",
+            PackageType = "characterCard",
+            Version = "1.2.3",
+            Files =
+            [
+                new WebBridgePackageFile
+                {
+                    Kind = "characterCard",
+                    Url = "https://foxd.example/card.json",
+                    RelativePath = "characters/card.json",
+                    Size = content.Length
+                }
+            ]
+        };
+
+        await installer.Install(manifest, CancellationToken.None);
+
+        string catalogPath = Path.Combine(root, "catalog.json");
+        Assert.That(File.Exists(catalogPath), Is.True);
+        string catalog = File.ReadAllText(catalogPath);
+        Assert.That(catalog, Does.Contain("catalog-package"));
+        Assert.That(catalog, Does.Contain("pendingActivation"));
+    }
+
+    [Test]
     public void CharacterSyncMapsAvatarConfigToAlifeCharacter()
     {
         WebAvatarConfig avatar = new()
@@ -66,6 +260,23 @@ public class WebBridgeServiceTests
     }
 
     [Test]
+    public async Task WebApiClientPullsPackageManifestEnvelope()
+    {
+        RecordingHandler handler = new() { UsePackageManifestEnvelope = true };
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig { ApiToken = "secret-token" });
+
+        WebBridgePackageManifest manifest = await client.PullPackageManifest("xiayu-character-bundle", CancellationToken.None);
+
+        Assert.That(handler.Requests[0].RequestUri?.PathAndQuery, Is.EqualTo("/api/webbridge/packages/xiayu-character-bundle/manifest"));
+        Assert.That(handler.Requests[0].Headers.Authorization?.Parameter, Is.EqualTo("secret-token"));
+        Assert.That(manifest.PackageId, Is.EqualTo("xiayu-character-bundle"));
+        Assert.That(manifest.ActivationPolicy.AutoApply, Is.False);
+    }
+
+    [Test]
     public async Task WebBridgeServicePullsRemoteAvatarIntoCharacterStore()
     {
         RecordingHandler handler = new();
@@ -82,6 +293,24 @@ public class WebBridgeServiceTests
         Assert.That(characterStore.SavedCharacters[0], Is.SameAs(character));
         Assert.That(character.Name, Is.EqualTo("远端角色"));
         Assert.That(character.Modules, Does.Contain("module.remote"));
+    }
+
+    [Test]
+    public async Task WebBridgeServiceInstallsPackageAsPendingActivation()
+    {
+        RecordingHandler handler = new() { UsePackageManifestEnvelope = true };
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-service-install", Guid.NewGuid().ToString("N"));
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig());
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(new byte[] { 1 }));
+        WebBridgeService service = new(client, new MemoryCharacterBridgeStore(), assetSync: null, packageInstaller: installer);
+
+        WebBridgeInstallResult result = await service.InstallPackage("xiayu-character-bundle", CancellationToken.None);
+
+        Assert.That(result.PackageId, Is.EqualTo("xiayu-character-bundle"));
+        Assert.That(result.Status, Is.EqualTo(WebBridgePackageStatus.PendingActivation));
     }
 
     [Test]
@@ -182,12 +411,36 @@ public class WebBridgeServiceTests
     {
         public List<HttpRequestMessage> Requests { get; } = new();
         public string? PostedJson { get; private set; }
+        public bool UsePackageManifestEnvelope { get; init; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
             if (request.Content != null)
                 PostedJson = await request.Content.ReadAsStringAsync(cancellationToken);
+
+            if (UsePackageManifestEnvelope)
+            {
+                object webResponse = new
+                {
+                    success = true,
+                    data = new WebBridgePackageManifest
+                    {
+                        PackageId = "xiayu-character-bundle",
+                        PackageType = "characterBundle",
+                        Version = "1.0.0",
+                        ActivationPolicy = new WebBridgeActivationPolicy
+                        {
+                            AutoApply = false,
+                            RequiresLocalConfirmation = true
+                        }
+                    }
+                };
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(webResponse))
+                };
+            }
 
             object response = request.RequestUri?.AbsolutePath switch
             {

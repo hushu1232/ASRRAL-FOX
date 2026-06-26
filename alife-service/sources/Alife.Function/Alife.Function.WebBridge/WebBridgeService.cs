@@ -14,11 +14,16 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
 {
     public WebBridgeService() {}
 
-    public WebBridgeService(WebApiClient webApiClient, ICharacterBridgeStore characterStore, WebAssetSync? assetSync = null)
+    public WebBridgeService(
+        WebApiClient webApiClient,
+        ICharacterBridgeStore characterStore,
+        WebAssetSync? assetSync = null,
+        WebBridgePackageInstaller? packageInstaller = null)
     {
         this.webApiClient = webApiClient;
         this.characterStore = characterStore;
         this.assetSync = assetSync;
+        this.packageInstaller = packageInstaller;
     }
 
     public WebBridgeServiceConfig? Configuration { get; set; }
@@ -61,6 +66,14 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
     {
         WebAssetManifest manifest = await GetClient().PullAssets(cancellationToken);
         await GetAssetSync().SyncAssets(manifest, cancellationToken);
+    }
+
+    public async Task<WebBridgeInstallResult> InstallPackage(
+        string packageId,
+        CancellationToken cancellationToken = default)
+    {
+        WebBridgePackageManifest manifest = await GetClient().PullPackageManifest(packageId, cancellationToken);
+        return await GetPackageInstaller().Install(manifest, cancellationToken);
     }
 
     public override async Task AwakeAsync(AwakeContext context)
@@ -111,6 +124,20 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
         return assetSync;
     }
 
+    WebBridgePackageInstaller GetPackageInstaller()
+    {
+        packageInstaller ??= new WebBridgePackageInstaller(
+            Configuration?.PackageRootPath ?? Path.Combine(AlifePath.StorageFolderPath, "WebBridge"),
+            DownloadPackageFile);
+        return packageInstaller;
+    }
+
+    static async Task<byte[]> DownloadPackageFile(WebBridgePackageFile file)
+    {
+        using HttpClient client = new();
+        return await client.GetByteArrayAsync(file.Url);
+    }
+
     void StartSyncLoop()
     {
         syncCancellation?.Cancel();
@@ -151,6 +178,7 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
     WebApiClient? webApiClient;
     ICharacterBridgeStore? characterStore;
     WebAssetSync? assetSync;
+    WebBridgePackageInstaller? packageInstaller;
     CancellationTokenSource? syncCancellation;
     Task? syncTask;
 }

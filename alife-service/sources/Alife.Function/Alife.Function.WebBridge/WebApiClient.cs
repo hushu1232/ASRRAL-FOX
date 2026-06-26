@@ -27,7 +27,7 @@ public class WebApiClient
         response.EnsureSuccessStatusCode();
 
         string json = await response.Content.ReadAsStringAsync(cancellationToken);
-        return JsonSerializer.Deserialize<WebAvatarConfig>(json, jsonOptions) ?? new WebAvatarConfig();
+        return DeserializeEnvelope<WebAvatarConfig>(json);
     }
 
     public async Task PushState(WebAvatarConfig avatarConfig, CancellationToken cancellationToken = default)
@@ -55,7 +55,19 @@ public class WebApiClient
         response.EnsureSuccessStatusCode();
 
         string json = await response.Content.ReadAsStringAsync(cancellationToken);
-        return JsonSerializer.Deserialize<WebAssetManifest>(json, jsonOptions) ?? new WebAssetManifest();
+        return DeserializeEnvelope<WebAssetManifest>(json);
+    }
+
+    public async Task<WebBridgePackageManifest> PullPackageManifest(
+        string packageId,
+        CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = CreateRequest(HttpMethod.Get, $"api/webbridge/packages/{Uri.EscapeDataString(packageId)}/manifest");
+        using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        string json = await response.Content.ReadAsStringAsync(cancellationToken);
+        return DeserializeEnvelope<WebBridgePackageManifest>(json);
     }
 
     HttpRequestMessage CreateRequest(HttpMethod method, string path)
@@ -64,6 +76,20 @@ public class WebApiClient
         if (string.IsNullOrWhiteSpace(config.ApiToken) == false)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiToken);
         return request;
+    }
+
+    static T DeserializeEnvelope<T>(string json) where T : new()
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement payload = document.RootElement;
+        if (payload.ValueKind == JsonValueKind.Object &&
+            payload.TryGetProperty("data", out JsonElement data) &&
+            data.ValueKind == JsonValueKind.Object)
+        {
+            payload = data;
+        }
+
+        return payload.Deserialize<T>(jsonOptions) ?? new T();
     }
 
     readonly HttpClient httpClient;
