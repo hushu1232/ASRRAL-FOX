@@ -150,6 +150,53 @@ describe('petService', () => {
       const updateData = mockPrismaClient.petConfig.update.mock.calls[0][0]?.data;
       expect(updateData.animationModel).toBe('dragonbones');
     });
+
+    it('persists desktop integration config fields accepted by the API route', async () => {
+      mockPrismaClient.petConfig.findUnique.mockResolvedValue(makeRawConfig());
+      mockPrismaClient.petConfig.update.mockResolvedValue(makeRawConfig({
+        ttsLocalUrl: 'http://127.0.0.1:9881',
+        sttLocalUrl: 'http://127.0.0.1:9000',
+        llmModelPath: 'models/qwen2.5.gguf',
+        sovitsUrl: 'http://127.0.0.1:9880',
+        sovitsReferenceVoiceId: 'voice-1',
+        enableWakeWord: false,
+        wakeWord: 'astral',
+        wakeSensitivity: 0.7,
+        autoStartServices: false,
+        pipelineTimeout: 45,
+        modelPath: '/models/default.model3.json',
+      }));
+
+      await petService.updateConfig(userId, workspaceId, {
+        ttsLocalUrl: 'http://127.0.0.1:9881',
+        sttLocalUrl: 'http://127.0.0.1:9000',
+        llmModelPath: 'models/qwen2.5.gguf',
+        sovitsUrl: 'http://127.0.0.1:9880',
+        sovitsReferenceVoiceId: 'voice-1',
+        enableWakeWord: false,
+        wakeWord: 'astral',
+        wakeSensitivity: 0.7,
+        autoStartServices: false,
+        pipelineTimeout: 45,
+        modelPath: '/models/default.model3.json',
+      });
+
+      const updateData = mockPrismaClient.petConfig.update.mock.calls[0][0].data;
+      expect(updateData).toEqual(expect.objectContaining({
+        ttsLocalUrl: 'http://127.0.0.1:9881',
+        sttLocalUrl: 'http://127.0.0.1:9000',
+        llmModelPath: 'models/qwen2.5.gguf',
+        sovitsUrl: 'http://127.0.0.1:9880',
+        sovitsReferenceVoiceId: 'voice-1',
+        enableWakeWord: false,
+        wakeWord: 'astral',
+        wakeSensitivity: 0.7,
+        autoStartServices: false,
+        pipelineTimeout: 45,
+        modelPath: '/models/default.model3.json',
+      }));
+      expect(updateData.updatedAt).toBeInstanceOf(Date);
+    });
   });
 
   // ═══ setAvatarAsPet ═══════════════════════════════════════

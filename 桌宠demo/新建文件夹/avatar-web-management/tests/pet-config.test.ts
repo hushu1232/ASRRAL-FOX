@@ -88,3 +88,30 @@ describe('GET /api/pet/export', () => {
     expect(Array.isArray(data.mappedAssets)).toBe(true);
   });
 });
+
+describe('POST /api/pet/sync', () => {
+  let token: string;
+
+  beforeAll(async () => {
+    const t = await loginAs('demo@example.com', 'demo1234');
+    expect(t).toBeDefined();
+    token = t!;
+  });
+
+  it('accepts desktop WebBridge sync payload and returns exported config', async () => {
+    const res = await post('/api/pet/sync', {
+      clientVersion: 'desktop-webbridge',
+      lastSyncAt: new Date('2026-06-23T00:00:00.000Z').toISOString(),
+      capabilities: ['config', 'assets', 'avatar'],
+    }, token);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual(expect.objectContaining({
+      version: expect.any(Number),
+      petName: expect.any(String),
+      animationModel: expect.any(String),
+      mappedAssets: expect.any(Array),
+    }));
+  });
+});

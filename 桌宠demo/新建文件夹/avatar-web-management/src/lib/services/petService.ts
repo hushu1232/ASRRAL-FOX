@@ -86,11 +86,23 @@ function prepareConfigForDb(data: Partial<PetConfigData>): Record<string, unknow
   if (data.petName !== undefined) dbData.petName = data.petName;
   if (data.personality !== undefined) dbData.personality = data.personality;
   if (data.backstory !== undefined) dbData.backstory = data.backstory;
+  if (data.characterExtra !== undefined) dbData.characterExtra = data.characterExtra;
   if (data.animationModel !== undefined) dbData.animationModel = data.animationModel;
   if (data.avatarId !== undefined) dbData.avatarId = data.avatarId;
   if (data.ffmpegPath !== undefined) dbData.ffmpegPath = data.ffmpegPath;
   if (data.idleTimeout !== undefined) dbData.idleTimeout = data.idleTimeout;
   if (data.wanderInterval !== undefined) dbData.wanderInterval = data.wanderInterval;
+  if (data.ttsLocalUrl !== undefined) dbData.ttsLocalUrl = data.ttsLocalUrl;
+  if (data.sttLocalUrl !== undefined) dbData.sttLocalUrl = data.sttLocalUrl;
+  if (data.llmModelPath !== undefined) dbData.llmModelPath = data.llmModelPath;
+  if (data.sovitsUrl !== undefined) dbData.sovitsUrl = data.sovitsUrl;
+  if (data.sovitsReferenceVoiceId !== undefined) dbData.sovitsReferenceVoiceId = data.sovitsReferenceVoiceId;
+  if (data.enableWakeWord !== undefined) dbData.enableWakeWord = data.enableWakeWord;
+  if (data.wakeWord !== undefined) dbData.wakeWord = data.wakeWord;
+  if (data.wakeSensitivity !== undefined) dbData.wakeSensitivity = data.wakeSensitivity;
+  if (data.autoStartServices !== undefined) dbData.autoStartServices = data.autoStartServices;
+  if (data.pipelineTimeout !== undefined) dbData.pipelineTimeout = data.pipelineTimeout;
+  if (data.modelPath !== undefined) dbData.modelPath = data.modelPath;
   return dbData;
 }
 

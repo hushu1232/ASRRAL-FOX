@@ -1,3 +1,5 @@
+export {};
+
 /**
  * Contract tests for pet API endpoints.
  * Mocks withAuth (pass-through) and petService to verify:
