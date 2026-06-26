@@ -28,6 +28,10 @@ node_modules/
 .next/
 .env
 .env.local
+桌宠demo/新建文件夹/avatar-web-management/public/uploads/
+
+# Local indexes
+.codegraph/
 
 # Archives
 *.zip
