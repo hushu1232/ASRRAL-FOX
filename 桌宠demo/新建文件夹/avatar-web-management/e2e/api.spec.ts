@@ -74,7 +74,10 @@ test.describe('API E2E', () => {
   });
 
   test('GET /api/templates returns templates', async ({ request }) => {
-    const res = await request.get(`${BASE_URL}/api/templates`);
+    const token = await getAuthToken(request);
+    const res = await request.get(`${BASE_URL}/api/templates`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);

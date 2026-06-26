@@ -39,6 +39,7 @@ export default function RegisterForm() {
         <Image src="/images/logo.svg" alt="星尘" width={56} height={56} className="register-form__logo" priority unoptimized />
         <h1 className="register-form__title">{t('title')}</h1>
         <p className="register-form__subtitle">{t('subtitle')}</p>
+        <p className="register-form__note">{t('emailOnly')}</p>
       </div>
 
       {error && <div className="register-form__error">{error}</div>}

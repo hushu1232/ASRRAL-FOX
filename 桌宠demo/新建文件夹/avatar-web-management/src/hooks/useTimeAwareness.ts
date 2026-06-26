@@ -1,7 +1,7 @@
 'use client';
 // useTimeAwareness — 时间感知 hook，监听用户活动 + 定时触发问候/整点/深夜关怀
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   createActivityState,
   timeAwarenessTick,
@@ -17,7 +17,10 @@ const TICK_INTERVAL_MS = 30_000;       // 30s tick
 const ACTIVITY_DEBOUNCE_MS = 5_000;    // 5s no activity → mark inactive
 
 export function useTimeAwareness(config?: Partial<TimeAwarenessConfig>) {
-  const mergedConfig: TimeAwarenessConfig = { ...DEFAULT_TIME_AWARENESS_CONFIG, ...config };
+  const mergedConfig = useMemo<TimeAwarenessConfig>(
+    () => ({ ...DEFAULT_TIME_AWARENESS_CONFIG, ...config }),
+    [config],
+  );
   const stateRef = useRef(createActivityState());
   const activityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -31,7 +34,6 @@ export function useTimeAwareness(config?: Partial<TimeAwarenessConfig>) {
 
   const markActivity = useCallback(() => {
     const state = stateRef.current;
-    const wasIdle = state.idleStartTime !== null;
 
     state.lastActivityTime = Date.now();
     state.isUserActive = true;

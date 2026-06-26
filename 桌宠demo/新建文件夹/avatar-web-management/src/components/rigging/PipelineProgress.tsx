@@ -142,7 +142,7 @@ export default function PipelineProgress({ imageId, previewUrl, onComplete, onEr
         )}
         <div style={{ flex: 1 }}>
           <Steps
-            direction="vertical"
+            orientation="vertical"
             current={progress ? currentStageIndex(progress.stage) : 0}
             status={hasError ? 'error' : isComplete ? 'finish' : 'process'}
             items={STAGES.map((s) => ({

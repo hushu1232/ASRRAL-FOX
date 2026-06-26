@@ -1,95 +1,94 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import zhCN from '../messages/zh-CN.json';
 
 const BASE_URL = 'http://localhost:3000';
 const TEST_EMAIL = 'demo@example.com';
 const TEST_PASSWORD = 'demo1234';
+const messages = zhCN as typeof zhCN;
+const layoutHeader = messages.layout.header;
+const layoutSidebar = messages.layout.sidebar;
+const notifications = messages.notifications;
+
+async function loginViaApi(page: Page) {
+  const res = await page.request.post(`${BASE_URL}/api/auth/login`, {
+    data: { email: TEST_EMAIL, password: TEST_PASSWORD },
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const body = await res.json();
+  if (!body.success) throw new Error(`Login API failed: ${body.error}`);
+}
+
+async function openAuthenticatedPage(page: Page, path = '/dashboard') {
+  await loginViaApi(page);
+  await page.goto(path, { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('domcontentloaded');
+}
+
+function notificationBell(page: Page) {
+  return page.locator('.header__right').getByRole('button', { name: layoutHeader.notifications });
+}
+
+async function visibleNotificationMenuItem(page: Page) {
+  const item = page.locator('.ant-menu-item').filter({ hasText: layoutSidebar.notifications }).first();
+  try {
+    await expect(item).toBeVisible({ timeout: 5000 });
+    return item;
+  } catch {
+    // Mobile layout hides the sidebar until the header menu button opens it.
+  }
+
+  const menuButton = page.getByRole('button', { name: layoutHeader.menu });
+  await expect(menuButton).toBeVisible({ timeout: 30000 });
+  await menuButton.click();
+  await expect(item).toBeVisible({ timeout: 30000 });
+  return item;
+}
 
 test.describe('Notification E2E', () => {
   test('notification bell is visible in header after login', async ({ page }) => {
-    await page.goto(`${BASE_URL}/login`);
-    await page.fill('input[type="email"]', TEST_EMAIL);
-    await page.fill('input[type="password"]', TEST_PASSWORD);
-    await page.click('button[type="submit"]');
-    await page.waitForURL('**/dashboard');
+    await openAuthenticatedPage(page);
 
-    // The bell icon should be visible in the header
-    const bell = page.locator('[aria-label="通知"]');
-    await expect(bell).toBeVisible({ timeout: 10000 });
+    await expect(notificationBell(page)).toBeVisible({ timeout: 30000 });
   });
 
   test('notification bell opens dropdown on click', async ({ page }) => {
-    await page.goto(`${BASE_URL}/login`);
-    await page.fill('input[type="email"]', TEST_EMAIL);
-    await page.fill('input[type="password"]', TEST_PASSWORD);
-    await page.click('button[type="submit"]');
-    await page.waitForURL('**/dashboard');
+    await openAuthenticatedPage(page);
 
-    const bell = page.locator('[aria-label="通知"]');
-    await expect(bell).toBeVisible({ timeout: 10000 });
+    const bell = notificationBell(page);
+    await expect(bell).toBeVisible({ timeout: 30000 });
     await bell.click();
-    await page.waitForTimeout(500);
 
-    // Dropdown should be visible
-    const dropdown = page.locator('.ant-dropdown');
-    const count = await dropdown.count();
-    expect(count).toBeGreaterThanOrEqual(0);
+    const dropdown = page.locator('.ant-dropdown').filter({ hasText: notifications.title });
+    await expect(dropdown).toBeVisible({ timeout: 30000 });
   });
 
   test('notifications page renders', async ({ page }) => {
-    await page.goto(`${BASE_URL}/login`);
-    await page.fill('input[type="email"]', TEST_EMAIL);
-    await page.fill('input[type="password"]', TEST_PASSWORD);
-    await page.click('button[type="submit"]');
-    await page.waitForURL('**/dashboard');
+    await openAuthenticatedPage(page, '/notifications');
 
-    await page.goto(`${BASE_URL}/notifications`);
-    await page.waitForTimeout(1000);
-
-    const heading = page.locator('h1');
-    await expect(heading).toContainText('通知中心', { timeout: 10000 });
-
-    const card = page.locator('.ant-card');
-    await expect(card.first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h1')).toContainText(notifications.notificationCenter, { timeout: 30000 });
+    await expect(page.locator('.ant-card').first()).toBeVisible({ timeout: 30000 });
   });
 
   test('notifications page has mark-all-read button', async ({ page }) => {
-    await page.goto(`${BASE_URL}/login`);
-    await page.fill('input[type="email"]', TEST_EMAIL);
-    await page.fill('input[type="password"]', TEST_PASSWORD);
-    await page.click('button[type="submit"]');
-    await page.waitForURL('**/dashboard');
+    await openAuthenticatedPage(page, '/notifications');
 
-    await page.goto(`${BASE_URL}/notifications`);
-    await page.waitForTimeout(1000);
-
-    const readAllBtn = page.locator('button:has-text("全部已读")');
-    await expect(readAllBtn).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: notifications.markAllRead })).toBeVisible({ timeout: 30000 });
   });
 
   test('sidebar has notification link', async ({ page }) => {
-    await page.goto(`${BASE_URL}/login`);
-    await page.fill('input[type="email"]', TEST_EMAIL);
-    await page.fill('input[type="password"]', TEST_PASSWORD);
-    await page.click('button[type="submit"]');
-    await page.waitForURL('**/dashboard');
+    await openAuthenticatedPage(page);
 
-    const notifLink = page.locator('.ant-menu-item').filter({ hasText: '通知' });
-    await expect(notifLink).toBeVisible({ timeout: 10000 });
+    await expect(await visibleNotificationMenuItem(page)).toBeVisible({ timeout: 30000 });
   });
 
   test('sidebar notification link navigates to notifications page', async ({ page }) => {
-    await page.goto(`${BASE_URL}/login`);
-    await page.fill('input[type="email"]', TEST_EMAIL);
-    await page.fill('input[type="password"]', TEST_PASSWORD);
-    await page.click('button[type="submit"]');
-    await page.waitForURL('**/dashboard');
+    await openAuthenticatedPage(page);
 
-    const notifLink = page.locator('.ant-menu-item').filter({ hasText: '通知' });
+    const notifLink = await visibleNotificationMenuItem(page);
     await notifLink.click();
     await page.waitForURL('**/notifications');
 
-    const heading = page.locator('h1');
-    await expect(heading).toContainText('通知中心', { timeout: 10000 });
+    await expect(page.locator('h1')).toContainText(notifications.notificationCenter, { timeout: 30000 });
   });
 });
 

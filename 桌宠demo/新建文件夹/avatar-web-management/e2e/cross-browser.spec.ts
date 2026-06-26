@@ -1,8 +1,12 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import zhCN from '../messages/zh-CN.json';
 
 const TEST_EMAIL = 'demo@example.com';
 const TEST_PASSWORD = 'demo1234';
+const messages = zhCN as typeof zhCN;
+const auth = messages.auth;
+const chatLogin = messages.chatLogin;
 
 /**
  * Run axe a11y scan and report violations.
@@ -48,44 +52,67 @@ async function loginViaApi(page: Parameters<Parameters<typeof test>[2]>[0]['page
   if (!body.success) throw new Error(`Login API failed: ${body.error}`);
 }
 
+async function waitForChatEmailInput(page: Parameters<Parameters<typeof test>[2]>[0]['page']) {
+  await expect(page.getByPlaceholder(chatLogin.inputPlaceholder_email)).toBeVisible({ timeout: 15000 });
+}
+
+async function openLoginPage(page: Parameters<Parameters<typeof test>[2]>[0]['page']) {
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+  await waitForChatEmailInput(page);
+}
+
+async function submitChatValue(
+  page: Parameters<Parameters<typeof test>[2]>[0]['page'],
+  placeholder: string,
+  value: string,
+) {
+  const input = page.getByPlaceholder(placeholder);
+  await expect(input).toBeVisible({ timeout: 15000 });
+  await input.fill(value);
+  await input.press('Enter');
+}
+
 test.describe('Cross-Browser E2E', () => {
 
   test.describe('1. Public Pages', () => {
     test('Login page renders', async ({ page }) => {
-      await page.goto('/login');
-      await expect(page.locator('h1')).toContainText('虚拟形象管理平台');
-      await expect(page.getByText('还没有账号？立即注册')).toBeVisible();
-      await expect(page.getByText('忘记密码？')).toBeVisible();
-      await expect(page.getByText('企业 SSO 登录')).toBeVisible();
+      await openLoginPage(page);
+      await expect(page.getByRole('heading', { name: chatLogin.title })).toBeVisible();
+      await expect(page.getByText(chatLogin.subtitle)).toBeVisible();
+      await expect(page.getByRole('button', { name: chatLogin.enterpriseSSO })).toBeVisible();
       await checkA11y(page);
     });
 
     test('Register page renders', async ({ page }) => {
       await page.goto('/register');
-      await expect(page.getByText('已有账号？立即登录')).toBeVisible();
-      await expect(page.getByText('仅支持邮箱注册', { exact: false })).toBeVisible();
+      await expect(page.getByRole('heading', { name: auth.register.title })).toBeVisible();
+      await expect(page.getByText(auth.register.subtitle)).toBeVisible();
+      await expect(page.getByPlaceholder(auth.register.emailPlaceholder)).toBeVisible();
+      await expect(page.getByPlaceholder(auth.register.usernamePlaceholder)).toBeVisible();
+      await expect(page.getByRole('textbox', { name: auth.register.password, exact: true })).toBeVisible();
+      await expect(page.getByText(auth.register.emailOnly, { exact: false })).toBeVisible();
+      await expect(page.getByRole('link', { name: auth.register.login })).toHaveAttribute('href', '/login');
       await checkA11y(page);
     });
 
     test('Forgot password page renders', async ({ page }) => {
       await page.goto('/forgot-password');
-      await expect(page.locator('h2')).toContainText('忘记密码');
+      await expect(page.locator('h2')).toContainText(auth.forgotPassword.title);
       await checkA11y(page);
     });
 
     test('Reset password page renders', async ({ page }) => {
       await page.goto('/reset-password?token=test');
-      await expect(page.locator('h2')).toContainText('重置密码');
+      await expect(page.locator('h2')).toContainText(auth.resetPassword.title);
       await checkA11y(page);
     });
   });
 
   test.describe('2. Login Flow', () => {
     test('Login with valid credentials → redirects to dashboard', async ({ page }) => {
-      await page.goto('/login');
-      await page.waitForSelector('input[placeholder="邮箱地址"]', { timeout: 10000 });
-      await page.fill('input[placeholder="邮箱地址"]', TEST_EMAIL);
-      await page.fill('input[placeholder="密码"]', TEST_PASSWORD);
+      await openLoginPage(page);
+      await submitChatValue(page, chatLogin.inputPlaceholder_email, TEST_EMAIL);
+      await expect(page.getByText(chatLogin.askPassword)).toBeVisible({ timeout: 10000 });
 
       // Use native DOM click to bypass Playwright event-layer quirks in WebKit.
       // Also set up response interception as a fallback for browsers where
@@ -95,9 +122,7 @@ test.describe('Cross-Browser E2E', () => {
         { timeout: 15000 }
       ).catch(() => null);
 
-      await page.locator('button[type="submit"]').evaluate(
-        (el) => (el as HTMLButtonElement).click()
-      );
+      await submitChatValue(page, chatLogin.inputPlaceholder_password, TEST_PASSWORD);
 
       // Try to detect navigation first, fall back to API response
       try {
@@ -119,16 +144,10 @@ test.describe('Cross-Browser E2E', () => {
     });
 
     test('Login with wrong credentials → shows error', async ({ page }) => {
-      await page.goto('/login');
-      await page.waitForSelector('input[placeholder="邮箱地址"]', { timeout: 10000 });
-      await page.fill('input[placeholder="邮箱地址"]', TEST_EMAIL);
-      await page.fill('input[placeholder="密码"]', 'wrongpassword');
-      await page.locator('button[type="submit"]').evaluate(
-        (el) => (el as HTMLButtonElement).click()
-      );
-      await page.waitForTimeout(2000);
-      const bodyText = await page.textContent('body');
-      expect(bodyText).toBeTruthy();
+      await openLoginPage(page);
+      await submitChatValue(page, chatLogin.inputPlaceholder_email, TEST_EMAIL);
+      await submitChatValue(page, chatLogin.inputPlaceholder_password, 'wrongpassword');
+      await expect(page.getByText(chatLogin.authError)).toBeVisible({ timeout: 15000 });
     });
   });
 
@@ -194,8 +213,7 @@ test.describe('Cross-Browser E2E', () => {
 
   test.describe('4. Responsive Layout', () => {
     test('Mobile viewport — login page has no horizontal overflow', async ({ page }) => {
-      await page.goto('/login');
-      await page.waitForTimeout(1000);
+      await openLoginPage(page);
       const body = page.locator('body');
       const box = await body.boundingBox();
       if (box) {

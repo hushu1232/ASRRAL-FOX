@@ -11,18 +11,18 @@ export async function GET(req: NextRequest) {
   const { isConfigured } = getIssuerInfo();
 
   if (!isConfigured) {
-    if (process.env.NODE_ENV !== 'production') {
-      return NextResponse.json({
-        success: true,
-        message: 'SSO 未配置。在生产环境中设置 SSO_ISSUER / AZURE_AD_TENANT / KEYCLOAK_URL。',
+    return NextResponse.json({
+      success: true,
+      data: {
+        configured: false,
+        message: 'SSO is not configured. Set SSO_ISSUER, AZURE_AD_TENANT, or KEYCLOAK_URL to enable it.',
         setupGuide: {
           azure_ad: 'https://learn.microsoft.com/entra/identity-platform',
           okta: 'https://developer.okta.com/docs/guides/',
           keycloak: 'https://www.keycloak.org/documentation',
         },
-      });
-    }
-    return NextResponse.json({ success: false, error: 'SSO not configured' }, { status: 500 });
+      },
+    });
   }
 
   try {

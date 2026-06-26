@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { createLogger } from '@/lib/logger';
 import { exportService } from '@/lib/services/export.service';
+import { error } from '@/lib/api-response';
 
 const log = createLogger('api:export');
 
@@ -32,7 +33,6 @@ export const GET = withAuth(async (req, user) => {
     });
   } catch (err) {
     log.error({ err }, 'Export error');
-    const message = err instanceof Error ? err.message : 'Export failed';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return error(err);
   }
 });

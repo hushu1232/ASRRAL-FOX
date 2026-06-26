@@ -38,6 +38,7 @@
       "registerSuccess": "注册成功，请登录",
       "registerFailed": "注册失败",
       "hasAccount": "已有账号？立即登录",
+      "login": "登录",
       "emailOnly": "仅支持邮箱注册",
       "usernameRequired": "请输入用户名",
       "usernameMinLength": "用户名至少2个字符",

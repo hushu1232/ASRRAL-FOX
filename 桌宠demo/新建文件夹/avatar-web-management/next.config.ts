@@ -10,6 +10,15 @@ const withBundleAnalyzer = process.env.ANALYZE === 'true'
   : (config: NextConfig) => config;
 
 const isProduction = process.env.NODE_ENV === 'production';
+const appOrigin =
+  process.env.APP_ORIGIN ||
+  process.env.NEXT_PUBLIC_APP_ORIGIN ||
+  process.env.NEXT_PUBLIC_APP_URL ||
+  '';
+const shouldUpgradeInsecureRequests =
+  isProduction &&
+  process.env.CSP_UPGRADE_INSECURE_REQUESTS !== '0' &&
+  (process.env.CSP_UPGRADE_INSECURE_REQUESTS === '1' || appOrigin.startsWith('https://'));
 
 const nextConfig: NextConfig = {
   output: 'standalone',
@@ -66,9 +75,10 @@ const nextConfig: NextConfig = {
         value: [
           "default-src 'self'",
           // unsafe-eval required by: Three.js WebGL shader compilation (new Function)
-          // unsafe-inline on script-src removed in production; dev needs it for HMR
+          // Next App Router emits inline bootstrap/RSC scripts. Without a nonce
+          // pipeline, production pages cannot hydrate unless inline scripts are allowed.
           isProduction
-            ? "script-src 'self' 'unsafe-eval' 'strict-dynamic' https:"
+            ? "script-src 'self' 'unsafe-eval' 'unsafe-inline' https:"
             : "script-src 'self' 'unsafe-eval' 'unsafe-inline' https:",
           // style-src unsafe-inline required by: Ant Design CSS-in-JS (emotion)
           "style-src 'self' 'unsafe-inline'",
@@ -80,7 +90,7 @@ const nextConfig: NextConfig = {
           "object-src 'none'",
           "base-uri 'self'",
           "form-action 'self'",
-          isProduction ? "upgrade-insecure-requests" : "",
+          shouldUpgradeInsecureRequests ? "upgrade-insecure-requests" : "",
           `report-uri ${process.env.CSP_REPORT_URI || '/api/csp-report'}`,
         ].filter(Boolean).join('; '),
       },

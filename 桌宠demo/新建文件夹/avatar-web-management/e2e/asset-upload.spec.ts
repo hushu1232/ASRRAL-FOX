@@ -15,6 +15,8 @@ async function getAuthToken(request: APIRequestContext) {
 }
 
 test.describe('Asset Upload E2E', () => {
+  test.describe.configure({ mode: 'serial' });
+
   let authToken: string;
   let uploadId: string;
 
@@ -120,32 +122,40 @@ test.describe('Asset Upload E2E', () => {
   test.describe('Chunk Upload', () => {
     const chunkData = Buffer.from('A'.repeat(1024 * 64)); // 64KB mock chunk
 
-    test('PUT /api/assets/upload/:uploadId/chunk uploads chunk 0', async ({ request }) => {
+    test('POST /api/assets/upload/:uploadId/chunk uploads chunk 0', async ({ request }) => {
       if (!uploadId) {
         test.skip();
         return;
       }
-      const res = await request.put(`${BASE_URL}/api/assets/upload/${uploadId}/chunk`, {
-        data: chunkData,
+      const res = await request.post(`${BASE_URL}/api/assets/upload/${uploadId}/chunk`, {
+        multipart: {
+          chunk: {
+            name: 'chunk-0.bin',
+            mimeType: 'application/octet-stream',
+            buffer: chunkData,
+          },
+          chunkIndex: '0',
+        },
         headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-Chunk-Index': '0',
-          'X-Total-Chunks': '1',
           Authorization: `Bearer ${authToken}`,
         },
       });
-      // May return 200 (success) or 400 (if upload session expired)
-      const validStatuses = [200, 400];
-      expect(validStatuses).toContain(res.status());
+      expect(res.status()).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.data.chunkIndex).toBe(0);
+      expect(body.data.progress).toBeGreaterThan(0);
     });
 
-    test('PUT /api/assets/upload/:uploadId/chunk requires auth', async ({ request }) => {
-      const res = await request.put(`${BASE_URL}/api/assets/upload/fake-id/chunk`, {
-        data: chunkData,
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-Chunk-Index': '0',
-          'X-Total-Chunks': '1',
+    test('POST /api/assets/upload/:uploadId/chunk requires auth', async ({ request }) => {
+      const res = await request.post(`${BASE_URL}/api/assets/upload/fake-id/chunk`, {
+        multipart: {
+          chunk: {
+            name: 'chunk-0.bin',
+            mimeType: 'application/octet-stream',
+            buffer: chunkData,
+          },
+          chunkIndex: '0',
         },
       });
       expect(res.status()).toBe(401);

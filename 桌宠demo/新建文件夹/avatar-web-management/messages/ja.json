@@ -36,6 +36,7 @@
       "registerSuccess": "登録成功、ログインしてください",
       "registerFailed": "登録失敗",
       "hasAccount": "アカウントをお持ちの方はログイン",
+      "login": "ログイン",
       "emailOnly": "メール登録のみ",
       "usernameRequired": "ユーザー名を入力してください",
       "usernameMinLength": "ユーザー名は2文字以上必要です",

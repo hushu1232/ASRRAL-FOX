@@ -1,5 +1,5 @@
 import { memoryRateLimit, resetMemoryRateLimit } from '@/lib/rate-limit/memory';
-import { extractUserIdFromAuthHeader, checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
+import { extractUserIdFromAuthHeader, checkRateLimit, isLocalRateLimitAddress, RATE_LIMITS } from '@/lib/rate-limit';
 
 describe('RATE_LIMITS', () => {
   it('defines limits for all protected endpoints', () => {
@@ -21,6 +21,23 @@ describe('RATE_LIMITS', () => {
 
   it('export has 5min window', () => {
     expect(RATE_LIMITS.export.windowMs).toBe(300_000);
+  });
+});
+
+describe('isLocalRateLimitAddress', () => {
+  it('treats IPv4-mapped localhost addresses as local', () => {
+    expect(isLocalRateLimitAddress('::ffff:127.0.0.1')).toBe(true);
+  });
+
+  it('treats standard localhost addresses as local', () => {
+    expect(isLocalRateLimitAddress('127.0.0.1')).toBe(true);
+    expect(isLocalRateLimitAddress('::1')).toBe(true);
+    expect(isLocalRateLimitAddress('localhost')).toBe(true);
+  });
+
+  it('does not treat remote addresses as local', () => {
+    expect(isLocalRateLimitAddress('192.168.1.20')).toBe(false);
+    expect(isLocalRateLimitAddress('8.8.8.8')).toBe(false);
   });
 });
 

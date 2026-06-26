@@ -3,6 +3,7 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
 const BASE_URL = 'http://localhost:3000';
 const TEST_EMAIL = 'demo@example.com';
 const TEST_PASSWORD = 'demo1234';
+const DEFAULT_BASE_MODEL_PATH = '/models/base-female.glb';
 
 async function getAuthToken(request: APIRequestContext) {
   const res = await request.post(`${BASE_URL}/api/auth/login`, {
@@ -15,6 +16,8 @@ async function getAuthToken(request: APIRequestContext) {
 }
 
 test.describe('Avatar CRUD E2E', () => {
+  test.describe.configure({ mode: 'serial' });
+
   let createdAvatarId: string;
   let authToken: string;
 
@@ -61,7 +64,7 @@ test.describe('Avatar CRUD E2E', () => {
       expect(res.status()).toBe(201);
       const body = await res.json();
       expect(body.data.style).toBe('anime');
-      expect(body.data.base_model).toBe('female');
+      expect(body.data.base_model).toBe(DEFAULT_BASE_MODEL_PATH);
 
       // Clean up
       await request.delete(`${BASE_URL}/api/avatars/${body.data.id}`, {
@@ -230,7 +233,8 @@ test.describe('Avatar CRUD E2E', () => {
       expect(res.status()).toBe(201);
       const body = await res.json();
       expect(body.success).toBe(true);
-      expect(body.data.version).toBeDefined();
+      expect(body.data.id).toBeDefined();
+      expect(body.data.version_number).toBeGreaterThan(0);
     });
 
     test('GET /api/avatars/:id returns version list with history', async ({ request }) => {

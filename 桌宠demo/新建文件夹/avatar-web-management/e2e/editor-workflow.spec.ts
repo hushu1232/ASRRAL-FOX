@@ -74,7 +74,7 @@ test.describe('Editor Workflow E2E', () => {
       await page.waitForTimeout(1500);
 
       // Click "新建形象" to create a new avatar
-      const createBtn = page.getByText('新建形象');
+      const createBtn = page.locator('#main-content').getByRole('button', { name: /新建形象/ }).first();
       if (await createBtn.isVisible()) {
         await createBtn.click();
         await page.waitForTimeout(2000);
@@ -140,7 +140,9 @@ test.describe('Editor Workflow E2E', () => {
       await expect(page.getByPlaceholder('搜索形象名称...')).toBeVisible();
 
       // Create button
-      await expect(page.getByText('新建形象')).toBeVisible();
+      await expect(
+        page.locator('#main-content').getByRole('button', { name: /新建形象/ }).first()
+      ).toBeVisible();
 
       await checkA11y(page);
     });
@@ -212,6 +214,8 @@ test.describe('Editor Workflow E2E', () => {
 test.describe('Approval Workflow E2E', () => {
 
   test.describe('Version Status Transitions', () => {
+    test.describe.configure({ mode: 'serial' });
+
     let testAvatarId: string;
     let testVersionId: string;
 

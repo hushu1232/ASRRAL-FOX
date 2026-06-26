@@ -58,6 +58,16 @@ export const RATE_LIMITS = {
   forgotPassword: { limit: 3, windowMs: 60_000 },
 } as const;
 
+export function isLocalRateLimitAddress(ip: string | null | undefined): boolean {
+  const normalized = (ip || '').trim().toLowerCase();
+  return normalized === 'localhost'
+    || normalized === '::1'
+    || normalized === '127.0.0.1'
+    || normalized.startsWith('127.')
+    || normalized === '::ffff:127.0.0.1'
+    || normalized.startsWith('::ffff:127.');
+}
+
 /** Result indicating the rate limiter itself failed — caller should allow the request */
 function failOpenResult(limit: number): RateLimitResult {
   return { allowed: true, remaining: limit, reset: Math.ceil(Date.now() / 1000) + 60, limit };

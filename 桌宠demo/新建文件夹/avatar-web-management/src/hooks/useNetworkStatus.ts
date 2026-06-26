@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface NetworkStatus {
   /** 浏览器报告的网络状态 */
@@ -27,19 +27,28 @@ export function useNetworkStatus(pingIntervalMs = 30_000): NetworkStatus {
   const [online, setOnline] = useState(true);
   const [checking, setChecking] = useState(false);
   const [lastPingOk, setLastPingOk] = useState<boolean | null>(null);
-  const [lastOnlineTime, setLastOnlineTime] = useState(Date.now());
+  const lastOnlineTimeRef = useRef<number | null>(null);
   const [offlineDuration, setOfflineDuration] = useState(0);
 
   // Listen to browser online/offline events
   useEffect(() => {
-    const handleOnline = () => {
+    const setOnlineNow = () => {
+      lastOnlineTimeRef.current = Date.now();
       setOnline(true);
-      setLastOnlineTime(Date.now());
       setOfflineDuration(0);
     };
-    const handleOffline = () => setOnline(false);
+    const handleOnline = () => setOnlineNow();
+    const handleOffline = () => {
+      if (lastOnlineTimeRef.current === null) lastOnlineTimeRef.current = Date.now();
+      setOnline(false);
+    };
 
-    setOnline(navigator.onLine);
+    if (navigator.onLine) {
+      setOnlineNow();
+    } else {
+      handleOffline();
+    }
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     return () => {
@@ -55,10 +64,11 @@ export function useNetworkStatus(pingIntervalMs = 30_000): NetworkStatus {
       return;
     }
     const timer = setInterval(() => {
+      const lastOnlineTime = lastOnlineTimeRef.current ?? Date.now();
       setOfflineDuration(Date.now() - lastOnlineTime);
     }, 1000);
     return () => clearInterval(timer);
-  }, [online, lastOnlineTime]);
+  }, [online]);
 
   // Active ping
   const checkConnection = useCallback(async (): Promise<boolean> => {
@@ -74,7 +84,7 @@ export function useNetworkStatus(pingIntervalMs = 30_000): NetworkStatus {
       setLastPingOk(ok);
       if (ok) {
         setOnline(true);
-        setLastOnlineTime(Date.now());
+        lastOnlineTimeRef.current = Date.now();
       }
       return ok;
     } catch {

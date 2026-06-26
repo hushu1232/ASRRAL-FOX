@@ -189,8 +189,8 @@ test.describe('Settings Flow E2E', () => {
       expect(typeof body.data.count).toBe('number');
     });
 
-    test('POST /api/notifications/read-all marks all as read', async ({ request }) => {
-      const res = await request.post(`${BASE_URL}/api/notifications/read-all`, {
+    test('PUT /api/notifications/read-all marks all as read', async ({ request }) => {
+      const res = await request.put(`${BASE_URL}/api/notifications/read-all`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       expect(res.status()).toBe(200);

@@ -20,7 +20,15 @@ export default defineConfig({
     },
     {
       name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
+      use: {
+        ...devices['Desktop Firefox'],
+        launchOptions: {
+          env: {
+            ...process.env,
+            MOZ_DISABLE_CONTENT_SANDBOX: '1',
+          },
+        },
+      },
     },
     {
       name: 'webkit',

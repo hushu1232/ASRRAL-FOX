@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { routing } from '@/i18n/routing';
-import { checkRateLimit, extractUserIdFromAuthHeader, RATE_LIMITS } from '@/lib/rate-limit';
+import { checkRateLimit, extractUserIdFromAuthHeader, isLocalRateLimitAddress, RATE_LIMITS } from '@/lib/rate-limit';
 import { validateCsrfToken, requiresCsrfCheck, validateOrigin } from '@/lib/csrf';
 import { handleCors, setCorsHeaders } from '@/lib/cors';
 import { httpRequestsInFlight, observeHttpRequest, rateLimitHits } from '@/lib/metrics';
@@ -144,7 +144,7 @@ export async function proxy(request: NextRequest) {
       const rateLimitKey = `rl:${routeKey}:${identifier}`;
 
       const isRateLimitExempt = RATE_LIMIT_EXEMPT.some((r) => pathname.startsWith(r))
-        || ip === '127.0.0.1' || ip === '::1';
+        || isLocalRateLimitAddress(ip);
       const result = isRateLimitExempt
         ? { allowed: true, remaining: 999, reset: 0, limit: 999 }
         : await checkRateLimit(rateLimitKey, rateConfig.limit, rateConfig.windowMs);
@@ -172,7 +172,7 @@ export async function proxy(request: NextRequest) {
 
       // --- CSRF validation (non-GET write operations) ---
       if (requiresCsrfCheck(request.method) && !CSRF_EXEMPT.some((r) => pathname.startsWith(r))
-          && ip !== '127.0.0.1' && ip !== '::1') {
+          && !isLocalRateLimitAddress(ip)) {
         if (!validateCsrfToken(request)) {
           const originOk = validateOrigin(request);
           if (!originOk) {

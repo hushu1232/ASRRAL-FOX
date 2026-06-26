@@ -38,6 +38,7 @@
       "registerSuccess": "Registration successful, please login",
       "registerFailed": "Registration failed",
       "hasAccount": "Already have an account? Login",
+      "login": "Login",
       "emailOnly": "Email registration only",
       "usernameRequired": "Username is required",
       "usernameMinLength": "Username must be at least 2 characters",
