@@ -66,6 +66,7 @@ describe('petSyncStatusService', () => {
     expect(status.desktopKnownVersion).toBeNull();
     expect(status.desktopAppliedVersion).toBeNull();
     expect(status.requiresLocalConfirmation).toBe(true);
+    expect(status.lastAppliedAt).toBeNull();
     expect(status.summaryKind).toBe('pendingPull');
     expect(mockPrismaClient.petConfig.findUnique).toHaveBeenCalledWith({ where: { userId } });
     expect(mockPrismaClient.petSyncStatus.findUnique).toHaveBeenCalledWith({
@@ -112,6 +113,8 @@ describe('petSyncStatusService', () => {
   it('packageApplied report updates applied version', async () => {
     const appliedConfigUpdatedAt = new Date('2026-06-27T09:00:00.000Z');
     const appliedVersion = appliedConfigUpdatedAt.getTime();
+    const appliedAt = new Date('2026-06-27T10:06:00.000Z');
+    const appliedAtIso = appliedAt.toISOString();
     mockPrismaClient.petConfig.findUnique.mockResolvedValue(
       makePetConfig({ updatedAt: appliedConfigUpdatedAt })
     );
@@ -120,13 +123,14 @@ describe('petSyncStatusService', () => {
       desktopAppliedVersion: BigInt(appliedVersion),
       packageState: 'applied',
       requiresLocalConfirmation: false,
-      lastAppliedAt: reportedAt,
+      lastSyncAt: appliedAt,
+      lastAppliedAt: appliedAt,
     }));
 
     const status = await petSyncStatusService.reportMilestone(userId, workspaceId, {
       milestone: 'packageApplied',
       packageVersion: appliedVersion,
-      reportedAt: reportedAtIso,
+      reportedAt: appliedAtIso,
     });
 
     expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith({
@@ -137,19 +141,20 @@ describe('petSyncStatusService', () => {
         desktopAppliedVersion: BigInt(appliedVersion),
         packageState: 'applied',
         requiresLocalConfirmation: false,
-        lastSyncAt: reportedAt,
-        lastAppliedAt: reportedAt,
+        lastSyncAt: appliedAt,
+        lastAppliedAt: appliedAt,
       }),
       update: expect.objectContaining({
         desktopKnownVersion: BigInt(appliedVersion),
         desktopAppliedVersion: BigInt(appliedVersion),
         packageState: 'applied',
         requiresLocalConfirmation: false,
-        lastSyncAt: reportedAt,
-        lastAppliedAt: reportedAt,
+        lastSyncAt: appliedAt,
+        lastAppliedAt: appliedAt,
       }),
     });
     expect(status.desktopAppliedVersion).toBe(appliedVersion);
+    expect(status.lastAppliedAt).toBe('2026-06-27T10:06:00.000Z');
     expect(status.packageState).toBe('applied');
     expect(status.summaryKind).toBe('upToDate');
     expect(status.isUpToDate).toBe(true);

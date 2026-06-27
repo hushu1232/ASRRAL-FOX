@@ -52,6 +52,7 @@ export interface DesktopSyncStatusInput {
   desktopAppliedVersion?: number | null;
   requiresLocalConfirmation?: boolean;
   lastSyncAt?: Date | number | string | null;
+  lastAppliedAt?: string | null;
   lastError?: DesktopSyncError | null;
   milestones?: readonly DesktopSyncMilestone[];
   now?: Date | number | string;
@@ -73,6 +74,7 @@ export interface DesktopSyncStatus {
   desktopAppliedVersion: number | null;
   requiresLocalConfirmation: boolean;
   lastSyncAt: Date | number | string | null;
+  lastAppliedAt: string | null;
   lastError: DesktopSyncError | null;
   errorMessage: DesktopSyncErrorMessage | null;
   milestones: readonly DesktopSyncMilestone[];
@@ -140,6 +142,7 @@ export function buildDesktopSyncStatus(input: DesktopSyncStatusInput): DesktopSy
     desktopAppliedVersion,
     requiresLocalConfirmation,
     lastSyncAt: input.lastSyncAt ?? null,
+    lastAppliedAt: input.lastAppliedAt ?? null,
     lastError,
     errorMessage: lastError ? DESKTOP_SYNC_ERROR_MESSAGES[lastError.code] : null,
     milestones: input.milestones ?? [],

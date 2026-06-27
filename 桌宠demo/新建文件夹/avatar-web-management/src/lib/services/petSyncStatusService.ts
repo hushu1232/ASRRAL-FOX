@@ -91,6 +91,7 @@ export const petSyncStatusService = {
         desktopKnownVersion: null,
         desktopAppliedVersion: null,
         requiresLocalConfirmation: true,
+        lastAppliedAt: null,
       });
     }
 
@@ -225,6 +226,7 @@ function statusFromRow(
     desktopAppliedVersion: numberFromBigInt(row.desktopAppliedVersion),
     requiresLocalConfirmation: row.requiresLocalConfirmation,
     lastSyncAt: row.lastSyncAt,
+    lastAppliedAt: row.lastAppliedAt?.toISOString() ?? null,
     lastError,
     now,
   });
