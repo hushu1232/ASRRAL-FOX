@@ -19,6 +19,7 @@ const workspaceId = 'workspace-1';
 const petConfigId = 'pet-config-1';
 const updatedAt = new Date('2026-06-27T10:00:00.000Z');
 const reportedAt = new Date('2026-06-27T10:01:00.000Z');
+const reportedAtIso = reportedAt.toISOString();
 
 function makePetConfig(overrides?: Record<string, unknown>) {
   return {
@@ -64,6 +65,7 @@ describe('petSyncStatusService', () => {
     expect(status.webConfigVersion).toBe(updatedAt.getTime());
     expect(status.desktopKnownVersion).toBeNull();
     expect(status.desktopAppliedVersion).toBeNull();
+    expect(status.requiresLocalConfirmation).toBe(true);
     expect(status.summaryKind).toBe('pendingPull');
     expect(mockPrismaClient.petConfig.findUnique).toHaveBeenCalledWith({ where: { userId } });
     expect(mockPrismaClient.petSyncStatus.findUnique).toHaveBeenCalledWith({
@@ -82,7 +84,7 @@ describe('petSyncStatusService', () => {
     const status = await petSyncStatusService.reportMilestone(userId, workspaceId, {
       milestone: 'packageStaged',
       packageVersion: 123,
-      reportedAt,
+      reportedAt: reportedAtIso,
     });
 
     expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith({
@@ -124,7 +126,7 @@ describe('petSyncStatusService', () => {
     const status = await petSyncStatusService.reportMilestone(userId, workspaceId, {
       milestone: 'packageApplied',
       packageVersion: appliedVersion,
-      reportedAt,
+      reportedAt: reportedAtIso,
     });
 
     expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith({
@@ -151,5 +153,25 @@ describe('petSyncStatusService', () => {
     expect(status.packageState).toBe('applied');
     expect(status.summaryKind).toBe('upToDate');
     expect(status.isUpToDate).toBe(true);
+  });
+
+  it('rejects numeric reportedAt values', async () => {
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+
+    await expect(petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'manifestFetched',
+      reportedAt: 123 as unknown as string,
+    })).rejects.toThrow('Desktop reportedAt must be an ISO string');
+    expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects parseable non-ISO reportedAt strings', async () => {
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+
+    await expect(petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'manifestFetched',
+      reportedAt: 'June 27, 2026',
+    })).rejects.toThrow('Desktop reportedAt must be an ISO string');
+    expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
   });
 });

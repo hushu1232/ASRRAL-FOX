@@ -50,6 +50,7 @@ export interface DesktopSyncStatusInput {
   desktopConnection?: DesktopConnectionState;
   desktopKnownVersion?: number | null;
   desktopAppliedVersion?: number | null;
+  requiresLocalConfirmation?: boolean;
   lastSyncAt?: Date | number | string | null;
   lastError?: DesktopSyncError | null;
   milestones?: readonly DesktopSyncMilestone[];
@@ -70,6 +71,7 @@ export interface DesktopSyncStatus {
   webConfigVersion: number;
   desktopKnownVersion: number | null;
   desktopAppliedVersion: number | null;
+  requiresLocalConfirmation: boolean;
   lastSyncAt: Date | number | string | null;
   lastError: DesktopSyncError | null;
   errorMessage: DesktopSyncErrorMessage | null;
@@ -129,12 +131,14 @@ export function buildDesktopSyncStatus(input: DesktopSyncStatusInput): DesktopSy
   const lastError = input.lastError ?? null;
   const desktopKnownVersion = input.desktopKnownVersion ?? null;
   const desktopAppliedVersion = input.desktopAppliedVersion ?? null;
+  const requiresLocalConfirmation = input.requiresLocalConfirmation ?? true;
   const statusBase = {
     desktopConnection,
     packageState,
     webConfigVersion: input.webConfigVersion,
     desktopKnownVersion,
     desktopAppliedVersion,
+    requiresLocalConfirmation,
     lastSyncAt: input.lastSyncAt ?? null,
     lastError,
     errorMessage: lastError ? DESKTOP_SYNC_ERROR_MESSAGES[lastError.code] : null,

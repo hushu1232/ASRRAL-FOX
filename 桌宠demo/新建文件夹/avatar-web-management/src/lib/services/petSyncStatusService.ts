@@ -13,7 +13,7 @@ import {
 export interface ReportPetSyncMilestoneInput {
   milestone: DesktopSyncMilestone | string;
   packageVersion?: number | null;
-  reportedAt?: Date | number | string | null;
+  reportedAt?: string | null;
   error?: {
     code?: DesktopSyncErrorCode;
     message?: string;
@@ -90,6 +90,7 @@ export const petSyncStatusService = {
         packageState: 'published',
         desktopKnownVersion: null,
         desktopAppliedVersion: null,
+        requiresLocalConfirmation: true,
       });
     }
 
@@ -185,15 +186,20 @@ function normalizePackageVersion(value: number | null | undefined): number | nul
   return value;
 }
 
-function normalizeReportedAt(value: Date | number | string | null | undefined): Date {
+function normalizeReportedAt(value: string | null | undefined): Date {
   if (value === null || value === undefined) {
     return new Date();
   }
 
-  const reportedAt = value instanceof Date ? value : new Date(value);
+  if (typeof value !== 'string') {
+    throw new ValidationError('Desktop reportedAt must be an ISO string');
+  }
 
-  if (!Number.isFinite(reportedAt.getTime())) {
-    throw new ValidationError('Desktop reportedAt must be a valid date');
+  const parsed = Date.parse(value);
+  const reportedAt = new Date(value);
+
+  if (!Number.isFinite(parsed) || reportedAt.toISOString() !== value) {
+    throw new ValidationError('Desktop reportedAt must be an ISO string');
   }
 
   return reportedAt;
@@ -217,6 +223,7 @@ function statusFromRow(
     packageState: toDesktopPackageState(row.packageState),
     desktopKnownVersion: numberFromBigInt(row.desktopKnownVersion),
     desktopAppliedVersion: numberFromBigInt(row.desktopAppliedVersion),
+    requiresLocalConfirmation: row.requiresLocalConfirmation,
     lastSyncAt: row.lastSyncAt,
     lastError,
     now,
