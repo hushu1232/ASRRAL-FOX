@@ -862,7 +862,7 @@
       "clearChat": "清空对话",
       "chat": "对话",
       "configInDashboard": "在管理后台配置",
-      "desktopStatusTip": "查看桌面端当前应用的配置状态"
+      "desktopStatusTip": "在桌面端回报已应用最新版本前，Web 预览可能与桌面端实际状态不同"
     },
     "voiceLabels": {
       "listening": "倾听中",

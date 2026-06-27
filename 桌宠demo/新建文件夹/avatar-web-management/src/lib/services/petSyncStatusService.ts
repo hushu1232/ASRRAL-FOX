@@ -77,6 +77,15 @@ const DESKTOP_PACKAGE_STATES = new Set<DesktopPackageState>([
   'failed',
 ]);
 
+const PACKAGE_STATE_RANK: Record<DesktopPackageState, number> = {
+  notPublished: 0,
+  published: 1,
+  pulled: 2,
+  staged: 3,
+  failed: 4,
+  applied: 5,
+};
+
 export const petSyncStatusService = {
   async getStatus(userId: string, workspaceId: string): Promise<DesktopSyncStatus> {
     const prisma = getPetSyncStatusPrisma();
@@ -111,6 +120,11 @@ export const petSyncStatusService = {
     const packageVersion = normalizePackageVersion(input.packageVersion);
     const effectiveVersion = BigInt(packageVersion ?? webConfigVersion);
     const packageState = MILESTONE_PACKAGE_STATES[milestone];
+    const currentRow = await prisma.petSyncStatus.findUnique({ where: { petConfigId: petConfig.id } });
+
+    if (currentRow && shouldIgnoreStaleMilestone(currentRow, effectiveVersion, packageState)) {
+      return statusFromRow(currentRow, webConfigVersion, reportedAt);
+    }
 
     const data: Record<string, unknown> = {
       desktopKnownVersion: effectiveVersion,
@@ -268,6 +282,47 @@ function statusFromRow(
     lastError,
     now,
   });
+}
+
+function shouldIgnoreStaleMilestone(
+  currentRow: PetSyncStatusRow,
+  incomingVersion: bigint,
+  incomingPackageState: DesktopPackageState
+): boolean {
+  const currentVersion = maxVersion(
+    currentRow.desktopKnownVersion,
+    currentRow.desktopAppliedVersion
+  );
+
+  if (currentVersion === null) {
+    return false;
+  }
+
+  if (incomingVersion < currentVersion) {
+    return true;
+  }
+
+  if (incomingVersion > currentVersion) {
+    return false;
+  }
+
+  const currentPackageState = toDesktopPackageState(currentRow.packageState);
+  return PACKAGE_STATE_RANK[incomingPackageState] <= PACKAGE_STATE_RANK[currentPackageState];
+}
+
+function maxVersion(
+  first: bigint | number | null,
+  second: bigint | number | null
+): bigint | null {
+  const values = [first, second]
+    .filter((value): value is bigint | number => value !== null)
+    .map((value) => (typeof value === 'bigint' ? value : BigInt(value)));
+
+  if (values.length === 0) {
+    return null;
+  }
+
+  return values.reduce((max, value) => (value > max ? value : max), values[0]);
 }
 
 function desktopSyncErrorFromRow(row: PetSyncStatusRow): DesktopSyncError | null {

@@ -88,9 +88,12 @@ export default function PetSyncStatusPanel({
           <Alert
             type="error"
             showIcon
-            title={status.lastError.message ?? status.lastError.code}
+            title={status.errorMessage?.title ?? status.lastError.message ?? status.lastError.code}
             description={
               <Space orientation="vertical" size={4}>
+                {status.errorMessage?.recovery && (
+                  <Text>{status.errorMessage.recovery}</Text>
+                )}
                 <Text code>{status.lastError.code}</Text>
                 {status.lastError.technicalDetail && (
                   <Text type="secondary">{status.lastError.technicalDetail}</Text>

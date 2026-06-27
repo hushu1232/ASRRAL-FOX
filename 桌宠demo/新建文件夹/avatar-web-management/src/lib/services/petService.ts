@@ -362,7 +362,7 @@ export const petService = {
       : [];
 
     return {
-      version: 1,
+      version: versionFromUpdatedAt(cfg.updated_at),
       petName: (cfg.pet_name as string) || '星尘',
       personality: (cfg.personality as string) || '',
       backstory: (cfg.backstory as string) || '',
@@ -395,3 +395,14 @@ export const petService = {
     };
   },
 };
+
+function versionFromUpdatedAt(value: unknown): number {
+  const date = value instanceof Date ? value : new Date(value as string | number);
+  const version = date.getTime();
+
+  if (!Number.isFinite(version)) {
+    throw new ValidationError('Pet config updatedAt must be a valid date');
+  }
+
+  return version;
+}

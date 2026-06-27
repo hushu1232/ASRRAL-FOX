@@ -862,7 +862,7 @@
       "clearChat": "Clear Chat",
       "chat": "Chat",
       "configInDashboard": "Configure in Dashboard",
-      "desktopStatusTip": "Shows the configuration status currently applied on the desktop pet."
+      "desktopStatusTip": "The Web preview may differ until the desktop pet reports the latest applied version."
     },
     "voiceLabels": {
       "listening": "Listening",

@@ -374,14 +374,15 @@ describe('petService', () => {
     });
 
     it('exports full config with decrypted keys', async () => {
-      mockPrismaClient.petConfig.findUnique.mockResolvedValue(makeRawConfig());
+      const updatedAt = new Date('2026-06-27T10:00:00.000Z');
+      mockPrismaClient.petConfig.findUnique.mockResolvedValue(makeRawConfig({ updatedAt }));
       mockPrismaClient.petAssetMapping.findMany.mockResolvedValue([
         { slotName: 'idle_animation', assetId: 'asset-1', assetType: 'animation' },
       ]);
 
       const result = await petService.exportConfig(userId, workspaceId);
 
-      expect(result.version).toBe(1);
+      expect(result.version).toBe(updatedAt.getTime());
       expect(result.petName).toBe('星尘');
       expect(result.animationModel).toBe('live2d');
       expect(result.idleTimeout).toBe(300);

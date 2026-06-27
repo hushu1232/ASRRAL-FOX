@@ -851,7 +851,7 @@
       "clearChat": "会話をクリア",
       "chat": "チャット",
       "configInDashboard": "管理画面で設定",
-      "desktopStatusTip": "デスクトップペットに現在適用されている設定状態を表示します"
+      "desktopStatusTip": "デスクトップペットが最新適用バージョンを報告するまで、Web プレビューは実際のデスクトップ状態と異なる場合があります"
     },
     "voiceLabels": {
       "listening": "聞き取り中",

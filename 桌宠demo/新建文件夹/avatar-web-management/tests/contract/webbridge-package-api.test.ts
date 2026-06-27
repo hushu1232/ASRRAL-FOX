@@ -30,7 +30,7 @@ jest.mock('@/lib/auth/middleware', () => ({
 }));
 
 const petExport = {
-  version: 1,
+  version: 1782554400000,
   petName: 'XiaYu',
   personality: 'calm',
   backstory: 'from WebBridge API tests',
@@ -80,6 +80,7 @@ describe('WebBridge package API contract', () => {
     expect(status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.data.packageId).toBe(CURRENT_PET_PACKAGE_ID);
+    expect(body.data.version).toBe(String(petExport.version));
     expect(body.data.files).toHaveLength(1);
     expect(body.data.files[0].url).toBe(
       `http://localhost/api/webbridge/packages/${CURRENT_PET_PACKAGE_ID}/files/${CHARACTER_CARD_FILE_ID}`

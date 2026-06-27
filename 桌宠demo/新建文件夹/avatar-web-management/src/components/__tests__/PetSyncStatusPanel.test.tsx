@@ -38,6 +38,7 @@ jest.mock('next-intl', () => ({
         'action.checkAgain': 'Check again',
         'action.confirmInDesktop': 'Confirm in desktop',
         'action.viewDetails': 'View details',
+        'error.recovery': 'Recovery',
       },
     };
     return (key: string) => keys[ns]?.[key] ?? key;
@@ -164,5 +165,30 @@ describe('PetSyncStatusPanel', () => {
 
     expect(screen.getByText('PACKAGE_HASH_MISMATCH')).toBeDefined();
     expect(screen.getByText('Expected sha256 abc but received def')).toBeDefined();
+  });
+
+  it('failed state shows computed recovery guidance when available', () => {
+    render(
+      <PetSyncStatusPanel
+        status={createStatus({
+          packageState: 'failed',
+          summaryKind: 'failed',
+          primaryAction: 'viewDetails',
+          lastError: {
+            code: 'PACKAGE_HASH_MISMATCH',
+          },
+          errorMessage: {
+            title: 'Package validation failed',
+            recovery: 'Re-download the package from the Web management app.',
+          },
+        })}
+        loading={false}
+        onRefresh={jest.fn()}
+      />,
+      { wrapper: Wrapper }
+    );
+
+    expect(screen.getByText('Package validation failed')).toBeDefined();
+    expect(screen.getByText('Re-download the package from the Web management app.')).toBeDefined();
   });
 });

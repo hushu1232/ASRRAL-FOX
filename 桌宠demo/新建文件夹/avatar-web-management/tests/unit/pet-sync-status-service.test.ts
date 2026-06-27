@@ -76,6 +76,7 @@ describe('petSyncStatusService', () => {
 
   it('packageStaged report updates known version and returns localConfirmationRequired', async () => {
     mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(null);
     mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
       desktopKnownVersion: BigInt(123),
       packageState: 'staged',
@@ -118,6 +119,7 @@ describe('petSyncStatusService', () => {
     mockPrismaClient.petConfig.findUnique.mockResolvedValue(
       makePetConfig({ updatedAt: appliedConfigUpdatedAt })
     );
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(null);
     mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
       desktopKnownVersion: BigInt(appliedVersion),
       desktopAppliedVersion: BigInt(appliedVersion),
@@ -158,6 +160,56 @@ describe('petSyncStatusService', () => {
     expect(status.packageState).toBe('applied');
     expect(status.summaryKind).toBe('upToDate');
     expect(status.isUpToDate).toBe(true);
+  });
+
+  it('ignores stale same-version milestones that would move applied status backward', async () => {
+    const appliedVersion = updatedAt.getTime();
+    const appliedAt = new Date('2026-06-27T10:02:00.000Z');
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(appliedVersion),
+      desktopAppliedVersion: BigInt(appliedVersion),
+      packageState: 'applied',
+      requiresLocalConfirmation: false,
+      lastSyncAt: appliedAt,
+      lastAppliedAt: appliedAt,
+    }));
+
+    const status = await petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'packageStaged',
+      packageVersion: appliedVersion,
+      reportedAt: reportedAtIso,
+    });
+
+    expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
+    expect(status.packageState).toBe('applied');
+    expect(status.desktopAppliedVersion).toBe(appliedVersion);
+    expect(status.summaryKind).toBe('upToDate');
+  });
+
+  it('ignores older package version milestones after a newer version was applied', async () => {
+    const appliedVersion = updatedAt.getTime();
+    const olderVersion = appliedVersion - 1;
+    const appliedAt = new Date('2026-06-27T10:02:00.000Z');
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(appliedVersion),
+      desktopAppliedVersion: BigInt(appliedVersion),
+      packageState: 'applied',
+      requiresLocalConfirmation: false,
+      lastSyncAt: appliedAt,
+      lastAppliedAt: appliedAt,
+    }));
+
+    const status = await petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'packageApplied',
+      packageVersion: olderVersion,
+      reportedAt: reportedAtIso,
+    });
+
+    expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
+    expect(status.desktopAppliedVersion).toBe(appliedVersion);
+    expect(status.summaryKind).toBe('upToDate');
   });
 
   it('rejects numeric reportedAt values', async () => {
@@ -202,6 +254,7 @@ describe('petSyncStatusService', () => {
 
   it('accepts no-millisecond Z reportedAt values', async () => {
     mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(null);
     mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
       desktopKnownVersion: BigInt(updatedAt.getTime()),
       packageState: 'published',
@@ -221,6 +274,7 @@ describe('petSyncStatusService', () => {
 
   it('accepts offset reportedAt values', async () => {
     mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(null);
     mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
       desktopKnownVersion: BigInt(updatedAt.getTime()),
       packageState: 'published',

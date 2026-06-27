@@ -133,6 +133,38 @@ describe('PetConfigPage desktop sync', () => {
 
     expect(mockApiGet).toHaveBeenCalledWith('/api/pet/config');
     expect(mockApiGet).toHaveBeenCalledWith('/api/pet/sync/status');
+    expect(mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/config')).toBeLessThan(
+      mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/sync/status')
+    );
+    expect(screen.getByText('wizard.title')).toBeDefined();
+    expect(screen.getByText('wizard.step5Desc')).toBeDefined();
+    expect(screen.getByText('wizard.step6Desc')).toBeDefined();
+  });
+
+  it('waits for first-run config creation before requesting desktop sync status', async () => {
+    const calls: string[] = [];
+    mockApiGet.mockImplementation(async (url: string) => {
+      calls.push(url);
+      if (url === '/api/pet/config') {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return { success: true, data: petConfig };
+      }
+
+      if (url === '/api/pet/sync/status') {
+        return { success: true, data: createStatus({ summaryKind: 'pendingPull' }) };
+      }
+
+      return { success: false, error: `Unexpected GET ${url}` };
+    });
+
+    render(<PetConfigPage />, { wrapper: Wrapper });
+    await flushPageEffects();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('sync-status-summary').textContent).toBe('pendingPull');
+    });
+
+    expect(calls).toEqual(['/api/pet/config', '/api/pet/sync/status']);
   });
 
   it('saving config calls apiPut and refreshes desktop sync status', async () => {
