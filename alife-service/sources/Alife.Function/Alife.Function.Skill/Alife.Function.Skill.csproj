@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-        <ProjectReference Include="..\Alife.Function.FunctionCaller\Alife.Function.FunctionCaller.csproj" />
-        <ProjectReference Include="..\..\Alife\Alife.Framework\Alife.Framework.csproj" />
-  </ItemGroup>
-
-</Project>

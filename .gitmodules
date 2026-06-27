@@ -1,0 +1,4 @@
+[submodule "alife-service"]
+	path = alife-service
+	url = git@github.com:hushu1232/Alife-byastralfox.git
+	branch = master

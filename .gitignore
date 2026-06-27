@@ -33,6 +33,9 @@ node_modules/
 # Local indexes
 .codegraph/
 
+# Local conversion backups
+.alife-service-residual-*/
+
 # Archives
 *.zip
 *.zip.part*
