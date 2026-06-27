@@ -180,6 +180,26 @@ describe('petSyncStatusService', () => {
     expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
   });
 
+  it('rejects invalid reportedAt calendar dates', async () => {
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+
+    await expect(petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'manifestFetched',
+      reportedAt: '2026-02-30T10:01:00Z',
+    })).rejects.toThrow('Desktop reportedAt must be an ISO string');
+    expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid reportedAt time ranges', async () => {
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+
+    await expect(petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'manifestFetched',
+      reportedAt: '2026-06-27T24:00:00Z',
+    })).rejects.toThrow('Desktop reportedAt must be an ISO string');
+    expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
+  });
+
   it('accepts no-millisecond Z reportedAt values', async () => {
     mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
     mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({

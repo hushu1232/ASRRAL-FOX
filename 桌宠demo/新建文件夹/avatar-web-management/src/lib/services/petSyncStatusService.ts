@@ -196,16 +196,58 @@ function normalizeReportedAt(value: string | null | undefined): Date {
     throw new ValidationError('Desktop reportedAt must be an ISO string');
   }
 
-  const rfc3339TimestampPattern =
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
-  const parsed = Date.parse(value);
-  const reportedAt = new Date(value);
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|([+-])(\d{2}):(\d{2}))$/
+  );
 
-  if (!rfc3339TimestampPattern.test(value) || !Number.isFinite(parsed)) {
+  if (!match) {
+    throw new ValidationError('Desktop reportedAt must be an ISO string');
+  }
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, , , offsetHourText, offsetMinuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const offsetHour = offsetHourText === undefined ? 0 : Number(offsetHourText);
+  const offsetMinute = offsetMinuteText === undefined ? 0 : Number(offsetMinuteText);
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth(year, month) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59 ||
+    second < 0 ||
+    second > 59 ||
+    offsetHour < 0 ||
+    offsetHour > 23 ||
+    offsetMinute < 0 ||
+    offsetMinute > 59
+  ) {
+    throw new ValidationError('Desktop reportedAt must be an ISO string');
+  }
+
+  const reportedAt = new Date(value);
+  if (!Number.isFinite(reportedAt.getTime())) {
     throw new ValidationError('Desktop reportedAt must be an ISO string');
   }
 
   return reportedAt;
+}
+
+function daysInMonth(year: number, month: number): number {
+  const monthLengths = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return monthLengths[month - 1];
+}
+
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 }
 
 function statusFromRow(
