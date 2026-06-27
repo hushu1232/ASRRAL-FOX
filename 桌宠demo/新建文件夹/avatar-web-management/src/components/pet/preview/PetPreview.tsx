@@ -13,12 +13,16 @@ import { useVoiceInput } from './VoiceInput';
 import { usePetPreviewStore } from '@/stores/petPreviewStore';
 import { useTimeAwareness } from '@/hooks/useTimeAwareness';
 import { useTranslations } from 'next-intl';
+import { apiGet } from '@/lib/api-client';
+import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
+import PetDesktopStatusChip from '@/components/pet/sync/PetDesktopStatusChip';
 
 export default function PetPreview() {
   const t = useTranslations('pet');
   const store = usePetPreviewStore();
   const [chatOpen, setChatOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [desktopStatus, setDesktopStatus] = useState<DesktopSyncStatus | null>(null);
 
   useEffect(() => {
     store.loadConfig();
@@ -61,6 +65,24 @@ export default function PetPreview() {
       window.SpeechRecognition || window.webkitSpeechRecognition
     );
     store.setVoiceSupported(supported);
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+
+    apiGet<DesktopSyncStatus>('/api/pet/sync/status')
+      .then((res) => {
+        if (!ignore && res.success && res.data) {
+          setDesktopStatus(res.data);
+        }
+      })
+      .catch(() => {
+        // Keep the preview usable when desktop status is unavailable.
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   useTimeAwareness();
@@ -126,6 +148,7 @@ export default function PetPreview() {
           <h1 className="text-lg font-semibold text-[var(--ds-colors-text)] m-0">
             {config.petName} · {t('preview.webPreview')}
           </h1>
+          <PetDesktopStatusChip status={desktopStatus} />
 
           {store.voiceState !== 'idle' && (
             <span

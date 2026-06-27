@@ -850,7 +850,8 @@
       "webPreview": "Web プレビュー",
       "clearChat": "会話をクリア",
       "chat": "チャット",
-      "configInDashboard": "管理画面で設定"
+      "configInDashboard": "管理画面で設定",
+      "desktopStatusTip": "デスクトップペットに現在適用されている設定状態を表示します"
     },
     "voiceLabels": {
       "listening": "聞き取り中",

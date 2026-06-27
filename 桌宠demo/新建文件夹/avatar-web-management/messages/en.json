@@ -861,7 +861,8 @@
       "webPreview": "Web Preview",
       "clearChat": "Clear Chat",
       "chat": "Chat",
-      "configInDashboard": "Configure in Dashboard"
+      "configInDashboard": "Configure in Dashboard",
+      "desktopStatusTip": "Shows the configuration status currently applied on the desktop pet."
     },
     "voiceLabels": {
       "listening": "Listening",

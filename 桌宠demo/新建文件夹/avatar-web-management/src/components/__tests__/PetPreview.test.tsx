@@ -2,9 +2,11 @@
  * @jest-environment jsdom
  */
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from 'antd';
+import { apiGet } from '@/lib/api-client';
 import PetPreview from '@/components/pet/preview/PetPreview';
+import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
 
 Element.prototype.scrollIntoView = jest.fn();
 
@@ -16,6 +18,35 @@ const mockSetVoiceText = jest.fn();
 const mockSetVoiceSupported = jest.fn();
 const mockStartVoice = jest.fn();
 const mockStopVoice = jest.fn();
+const mockApiGet = apiGet as jest.MockedFunction<typeof apiGet>;
+
+function createDesktopStatus(
+  overrides: Partial<DesktopSyncStatus> = {}
+): DesktopSyncStatus {
+  return {
+    desktopConnection: 'online',
+    packageState: 'staged',
+    summaryKind: 'localConfirmationRequired',
+    primaryAction: 'confirmInDesktop',
+    isUpToDate: false,
+    webConfigVersion: 7,
+    desktopKnownVersion: 7,
+    desktopAppliedVersion: 6,
+    requiresLocalConfirmation: true,
+    lastSyncAt: '2026-06-27T08:00:00.000Z',
+    lastAppliedAt: null,
+    lastError: null,
+    errorMessage: null,
+    milestones: [],
+    ...overrides,
+  };
+}
+
+const mockDesktopStatusChip = jest.fn(
+  ({ status }: { status: DesktopSyncStatus | null }) => (
+    <div data-testid="desktop-status-chip">{status?.summaryKind}</div>
+  )
+);
 
 let storeState: Record<string, unknown> = {
   config: { petName: 'TestPet', animationModel: 'live2d', modelPath: '/test.model3.json' },
@@ -51,6 +82,10 @@ jest.mock('next-intl', () => ({
     };
     return (key: string) => keys[ns]?.[key] ?? key;
   },
+}));
+
+jest.mock('@/lib/api-client', () => ({
+  apiGet: jest.fn(),
 }));
 
 jest.mock('@/stores/petPreviewStore', () => ({
@@ -131,6 +166,11 @@ jest.mock('@/components/pet/preview/TimeAwarenessOverlay', () => ({
   default: () => <div data-testid="time-awareness">TimeAwareness Mock</div>,
 }));
 
+jest.mock('@/components/pet/sync/PetDesktopStatusChip', () => ({
+  __esModule: true,
+  default: (props: { status: DesktopSyncStatus | null }) => mockDesktopStatusChip(props),
+}));
+
 jest.mock('@/components/pet/preview/VoiceInput', () => ({
   useVoiceInput: ({ active, onResult, onError, onStateChange }: any) => ({
     start: mockStartVoice,
@@ -155,6 +195,10 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 describe('PetPreview', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockApiGet.mockResolvedValue({
+      success: true,
+      data: createDesktopStatus(),
+    });
     storeState = {
       config: { petName: 'TestPet', animationModel: 'live2d', modelPath: '/test.model3.json' },
       configLoading: false,
@@ -212,6 +256,15 @@ describe('PetPreview', () => {
     it('renders TimeAwarenessOverlay', () => {
       render(<PetPreview />, { wrapper: Wrapper });
       expect(screen.getByTestId('time-awareness')).toBeDefined();
+    });
+
+    it('renders desktop status chip after loading sync status', async () => {
+      render(<PetPreview />, { wrapper: Wrapper });
+
+      expect(await screen.findByTestId('desktop-status-chip')).toBeDefined();
+      await waitFor(() => {
+        expect(mockApiGet).toHaveBeenCalledWith('/api/pet/sync/status');
+      });
     });
   });
 

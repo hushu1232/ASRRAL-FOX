@@ -861,7 +861,8 @@
       "webPreview": "Web 预览",
       "clearChat": "清空对话",
       "chat": "对话",
-      "configInDashboard": "在管理后台配置"
+      "configInDashboard": "在管理后台配置",
+      "desktopStatusTip": "查看桌面端当前应用的配置状态"
     },
     "voiceLabels": {
       "listening": "倾听中",
