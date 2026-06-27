@@ -73,6 +73,25 @@ function createStatus(overrides: Partial<DesktopSyncStatus> = {}): DesktopSyncSt
 }
 
 describe('PetSyncStatusPanel', () => {
+  it('shows loading text when status is unavailable and loading', () => {
+    render(<PetSyncStatusPanel status={null} loading onRefresh={jest.fn()} />, {
+      wrapper: Wrapper,
+    });
+
+    expect(screen.getByText('Checking desktop sync status...')).toBeDefined();
+  });
+
+  it('shows unavailable state and calls onRefresh from check-again action', () => {
+    const onRefresh = jest.fn();
+    render(<PetSyncStatusPanel status={null} loading={false} onRefresh={onRefresh} />, {
+      wrapper: Wrapper,
+    });
+
+    expect(screen.getByText('Desktop sync status is unavailable.')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /check again/i }));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
   it('localConfirmationRequired state shows summary and confirm button', () => {
     render(<PetSyncStatusPanel status={createStatus()} loading={false} onRefresh={jest.fn()} />, {
       wrapper: Wrapper,
