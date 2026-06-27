@@ -3,9 +3,9 @@ import { NotFoundError, ValidationError } from '@/lib/errors';
 import {
   buildDesktopSyncStatus,
   normalizeDesktopMilestone,
+  normalizeDesktopSyncErrorCode,
   type DesktopPackageState,
   type DesktopSyncError,
-  type DesktopSyncErrorCode,
   type DesktopSyncMilestone,
   type DesktopSyncStatus,
 } from '@/lib/webbridge/sync-status';
@@ -15,7 +15,7 @@ export interface ReportPetSyncMilestoneInput {
   packageVersion?: number | null;
   reportedAt?: string | null;
   error?: {
-    code?: DesktopSyncErrorCode;
+    code?: string;
     message?: string;
     detail?: string;
   } | null;
@@ -129,7 +129,7 @@ export const petSyncStatusService = {
 
     if (milestone === 'packageFailed') {
       const error = input.error ?? {};
-      data.lastErrorCode = error.code ?? 'PACKAGE_APPLY_FAILED';
+      data.lastErrorCode = normalizeDesktopSyncErrorCode(error.code ?? 'PACKAGE_APPLY_FAILED');
       data.lastErrorMessage = error.message ?? null;
       data.lastErrorDetail = error.detail ?? null;
     }
@@ -196,10 +196,12 @@ function normalizeReportedAt(value: string | null | undefined): Date {
     throw new ValidationError('Desktop reportedAt must be an ISO string');
   }
 
+  const rfc3339TimestampPattern =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
   const parsed = Date.parse(value);
   const reportedAt = new Date(value);
 
-  if (!Number.isFinite(parsed) || reportedAt.toISOString() !== value) {
+  if (!rfc3339TimestampPattern.test(value) || !Number.isFinite(parsed)) {
     throw new ValidationError('Desktop reportedAt must be an ISO string');
   }
 
@@ -211,13 +213,7 @@ function statusFromRow(
   webConfigVersion: number,
   now?: Date
 ): DesktopSyncStatus {
-  const lastError = row.lastErrorCode
-    ? ({
-        code: row.lastErrorCode,
-        message: row.lastErrorMessage ?? undefined,
-        occurredAt: row.lastSyncAt?.toISOString(),
-      } as DesktopSyncError)
-    : null;
+  const lastError = desktopSyncErrorFromRow(row);
 
   return buildDesktopSyncStatus({
     webConfigVersion,
@@ -230,6 +226,31 @@ function statusFromRow(
     lastError,
     now,
   });
+}
+
+function desktopSyncErrorFromRow(row: PetSyncStatusRow): DesktopSyncError | null {
+  if (!row.lastErrorCode) {
+    return null;
+  }
+
+  try {
+    return {
+      code: normalizeDesktopSyncErrorCode(row.lastErrorCode),
+      message: row.lastErrorMessage ?? undefined,
+      occurredAt: row.lastSyncAt?.toISOString(),
+    };
+  } catch (error) {
+    if (!(error instanceof ValidationError)) {
+      throw error;
+    }
+
+    return {
+      code: 'PACKAGE_APPLY_FAILED',
+      message: row.lastErrorMessage ?? undefined,
+      occurredAt: row.lastSyncAt?.toISOString(),
+      technicalDetail: `Unknown persisted desktop sync error code: ${row.lastErrorCode}`,
+    };
+  }
 }
 
 function toDesktopPackageState(value: string): DesktopPackageState {

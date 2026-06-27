@@ -179,4 +179,71 @@ describe('petSyncStatusService', () => {
     })).rejects.toThrow('Desktop reportedAt must be an ISO string');
     expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
   });
+
+  it('accepts no-millisecond Z reportedAt values', async () => {
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(updatedAt.getTime()),
+      packageState: 'published',
+      lastSyncAt: reportedAt,
+    }));
+
+    await petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'manifestFetched',
+      reportedAt: '2026-06-27T10:01:00Z',
+    });
+
+    expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ lastSyncAt: new Date('2026-06-27T10:01:00Z') }),
+      update: expect.objectContaining({ lastSyncAt: new Date('2026-06-27T10:01:00Z') }),
+    }));
+  });
+
+  it('accepts offset reportedAt values', async () => {
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(updatedAt.getTime()),
+      packageState: 'published',
+      lastSyncAt: reportedAt,
+    }));
+
+    await petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'manifestFetched',
+      reportedAt: '2026-06-27T18:01:00.000+08:00',
+    });
+
+    expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ lastSyncAt: reportedAt }),
+      update: expect.objectContaining({ lastSyncAt: reportedAt }),
+    }));
+  });
+
+  it('rejects unknown inbound desktop error codes', async () => {
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+
+    await expect(petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'packageFailed',
+      reportedAt: reportedAtIso,
+      error: {
+        code: 'UNKNOWN_DESKTOP_ERROR' as never,
+      },
+    })).rejects.toThrow('Unknown desktop sync error code: UNKNOWN_DESKTOP_ERROR');
+    expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
+  });
+
+  it('falls back safely for unknown persisted desktop error codes', async () => {
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(makeSyncStatusRow({
+      packageState: 'failed',
+      lastErrorCode: 'UNKNOWN_PERSISTED_ERROR',
+      lastErrorMessage: 'raw persisted message',
+    }));
+
+    const status = await petSyncStatusService.getStatus(userId, workspaceId);
+
+    expect(status.lastError?.code).toBe('PACKAGE_APPLY_FAILED');
+    expect(status.lastError?.technicalDetail).toBe(
+      'Unknown persisted desktop sync error code: UNKNOWN_PERSISTED_ERROR'
+    );
+  });
 });

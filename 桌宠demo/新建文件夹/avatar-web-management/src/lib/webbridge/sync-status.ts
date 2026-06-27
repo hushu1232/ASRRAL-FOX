@@ -42,6 +42,7 @@ export interface DesktopSyncError {
   message?: string;
   milestone?: DesktopSyncMilestone;
   occurredAt?: string;
+  technicalDetail?: string;
 }
 
 export interface DesktopSyncStatusInput {
@@ -125,6 +126,17 @@ export function normalizeDesktopMilestone(value: unknown): DesktopSyncMilestone 
   }
 
   throw new ValidationError(`Unknown desktop sync milestone: ${String(value)}`);
+}
+
+export function normalizeDesktopSyncErrorCode(value: unknown): DesktopSyncErrorCode {
+  if (
+    typeof value === 'string' &&
+    Object.prototype.hasOwnProperty.call(DESKTOP_SYNC_ERROR_MESSAGES, value)
+  ) {
+    return value as DesktopSyncErrorCode;
+  }
+
+  throw new ValidationError(`Unknown desktop sync error code: ${String(value)}`);
 }
 
 export function buildDesktopSyncStatus(input: DesktopSyncStatusInput): DesktopSyncStatus {
