@@ -1001,6 +1001,40 @@
       "typeModel": "モデル",
       "typeTexture": "テクスチャ",
       "typeAnimation": "アニメーション"
+    },
+    "syncStatus": {
+      "title": "デスクトップ同期",
+      "loading": "デスクトップ同期状態を確認しています...",
+      "unavailable": "デスクトップ同期状態を取得できません。",
+      "connection": "接続状態",
+      "webVersion": "Web バージョン",
+      "desktopAppliedVersion": "デスクトップ適用済みバージョン",
+      "lastSyncAt": "最終同期",
+      "lastAppliedAt": "最終適用",
+      "localConfirmation": "ローカル確認",
+      "required": "必要",
+      "notRequired": "不要",
+      "notApplied": "未適用",
+      "never": "なし",
+      "summary": {
+        "unknown": "不明",
+        "desktopOffline": "デスクトップがオフライン",
+        "pendingPull": "デスクトップの取得待ち",
+        "localConfirmationRequired": "デスクトップで確認が必要",
+        "upToDate": "最新です",
+        "failed": "同期に失敗しました"
+      },
+      "connectionState": {
+        "unknown": "不明",
+        "checking": "確認中",
+        "online": "オンライン",
+        "offline": "オフライン"
+      },
+      "action": {
+        "checkAgain": "再確認",
+        "confirmInDesktop": "デスクトップで確認",
+        "viewDetails": "詳細を見る"
+      }
     }
   },
   "error": {

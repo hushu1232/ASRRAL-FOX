@@ -1012,6 +1012,40 @@
       "typeModel": "模型",
       "typeTexture": "贴图",
       "typeAnimation": "动画"
+    },
+    "syncStatus": {
+      "title": "桌面同步",
+      "loading": "正在检查桌面同步状态...",
+      "unavailable": "暂时无法获取桌面同步状态。",
+      "connection": "连接状态",
+      "webVersion": "Web 版本",
+      "desktopAppliedVersion": "桌面端已应用版本",
+      "lastSyncAt": "上次同步",
+      "lastAppliedAt": "上次应用",
+      "localConfirmation": "本地确认",
+      "required": "需要",
+      "notRequired": "不需要",
+      "notApplied": "未应用",
+      "never": "从未",
+      "summary": {
+        "unknown": "状态未知",
+        "desktopOffline": "桌面端离线",
+        "pendingPull": "等待桌面端拉取",
+        "localConfirmationRequired": "需要在桌面端确认",
+        "upToDate": "已是最新",
+        "failed": "同步失败"
+      },
+      "connectionState": {
+        "unknown": "未知",
+        "checking": "检查中",
+        "online": "在线",
+        "offline": "离线"
+      },
+      "action": {
+        "checkAgain": "重新检查",
+        "confirmInDesktop": "在桌面端确认",
+        "viewDetails": "查看详情"
+      }
     }
   },
   "search": {

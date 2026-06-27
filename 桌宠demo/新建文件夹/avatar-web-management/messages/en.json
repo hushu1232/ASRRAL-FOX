@@ -1012,6 +1012,40 @@
       "typeModel": "Model",
       "typeTexture": "Texture",
       "typeAnimation": "Animation"
+    },
+    "syncStatus": {
+      "title": "Desktop sync",
+      "loading": "Checking desktop sync status...",
+      "unavailable": "Desktop sync status is unavailable.",
+      "connection": "Connection",
+      "webVersion": "Web version",
+      "desktopAppliedVersion": "Desktop applied version",
+      "lastSyncAt": "Last sync",
+      "lastAppliedAt": "Last applied",
+      "localConfirmation": "Local confirmation",
+      "required": "Required",
+      "notRequired": "Not required",
+      "notApplied": "Not applied",
+      "never": "Never",
+      "summary": {
+        "unknown": "Unknown",
+        "desktopOffline": "Desktop offline",
+        "pendingPull": "Pending pull",
+        "localConfirmationRequired": "Desktop confirmation required",
+        "upToDate": "Up to date",
+        "failed": "Sync failed"
+      },
+      "connectionState": {
+        "unknown": "Unknown",
+        "checking": "Checking",
+        "online": "Online",
+        "offline": "Offline"
+      },
+      "action": {
+        "checkAgain": "Check again",
+        "confirmInDesktop": "Confirm in desktop",
+        "viewDetails": "View details"
+      }
     }
   },
   "search": {
