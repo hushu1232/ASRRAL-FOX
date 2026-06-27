@@ -47,7 +47,7 @@ function mockRequest(method: string, url: string, body?: unknown, auth = true): 
   return new Request(`http://localhost${url}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : JSON.stringify(body),
   }) as unknown as NextRequest;
 }
 
@@ -98,6 +98,17 @@ describe('/api/pet/sync/status contract', () => {
       requiresLocalConfirmation: false,
     }));
     expect(mockPetSyncStatusService.reportMilestone).toHaveBeenCalledWith('user-1', 'ws-1', milestone);
+  });
+
+  it('POST returns 400 validation envelope for null body', async () => {
+    const { POST } = await import('@/app/api/pet/sync/status/route');
+    const res = await POST(mockRequest('POST', '/api/pet/sync/status', null));
+    const { status, body } = await parseResponse(res);
+
+    expect(status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.code).toBe('VALIDATION_ERROR');
+    expect(mockPetSyncStatusService.reportMilestone).not.toHaveBeenCalled();
   });
 
   it('GET returns 401 without auth', async () => {
