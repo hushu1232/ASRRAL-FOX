@@ -212,6 +212,84 @@ describe('petSyncStatusService', () => {
     expect(status.summaryKind).toBe('upToDate');
   });
 
+  it('refreshes lastSyncAt for same-version same-state reports', async () => {
+    const version = updatedAt.getTime();
+    const staleSyncAt = new Date('2026-06-27T09:50:00.000Z');
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(version),
+      packageState: 'published',
+      requiresLocalConfirmation: true,
+      lastSyncAt: staleSyncAt,
+    }));
+    mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(version),
+      packageState: 'published',
+      requiresLocalConfirmation: true,
+      lastSyncAt: reportedAt,
+    }));
+
+    const status = await petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'manifestFetched',
+      packageVersion: version,
+      reportedAt: reportedAtIso,
+    });
+
+    expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({
+        desktopKnownVersion: BigInt(version),
+        packageState: 'published',
+        lastSyncAt: reportedAt,
+      }),
+    }));
+    expect(status.lastSyncAt).toBe(reportedAt);
+    expect(status.desktopConnection).toBe('online');
+  });
+
+  it('refreshes packageFailed details for same-version failure reports', async () => {
+    const version = updatedAt.getTime();
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(version),
+      packageState: 'failed',
+      requiresLocalConfirmation: true,
+      lastSyncAt: new Date('2026-06-27T09:50:00.000Z'),
+      lastErrorCode: 'PACKAGE_APPLY_FAILED',
+      lastErrorMessage: 'Old failure',
+    }));
+    mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(version),
+      packageState: 'failed',
+      requiresLocalConfirmation: true,
+      lastSyncAt: reportedAt,
+      lastErrorCode: 'PACKAGE_HASH_MISMATCH',
+      lastErrorMessage: 'New failure',
+      lastErrorDetail: 'Expected abc',
+    }));
+
+    const status = await petSyncStatusService.reportMilestone(userId, workspaceId, {
+      milestone: 'packageFailed',
+      packageVersion: version,
+      reportedAt: reportedAtIso,
+      error: {
+        code: 'PACKAGE_HASH_MISMATCH',
+        message: 'New failure',
+        detail: 'Expected abc',
+      },
+    });
+
+    expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({
+        lastErrorCode: 'PACKAGE_HASH_MISMATCH',
+        lastErrorMessage: 'New failure',
+        lastErrorDetail: 'Expected abc',
+        lastSyncAt: reportedAt,
+      }),
+    }));
+    expect(status.lastError?.code).toBe('PACKAGE_HASH_MISMATCH');
+    expect(status.lastError?.message).toBe('New failure');
+  });
+
   it('rejects numeric reportedAt values', async () => {
     mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
 

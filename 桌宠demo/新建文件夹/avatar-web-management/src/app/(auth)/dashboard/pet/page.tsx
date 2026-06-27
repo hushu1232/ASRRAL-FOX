@@ -243,7 +243,7 @@ export default function PetConfigPage() {
             background: 'linear-gradient(135deg, #1a1030 0%, #12122A 100%)',
             borderColor: 'rgba(139,92,246,0.3)',
           }}
-          message={
+          title={
             <div className="flex items-center justify-between">
               <span className="text-white font-medium">{t('wizard.title')}</span>
               <Button
@@ -262,13 +262,13 @@ export default function PetConfigPage() {
           description={
             <Steps
               size="small"
-              direction="horizontal"
+              orientation="horizontal"
               current={wizardCurrent}
               className="mt-3"
               items={[
                 {
                   title: t('wizard.step1Title'),
-                  description: (
+                  content: (
                     <span className="text-gray-400 text-xs">
                       {t.rich('wizard.step1Desc', {
                         link: (chunks) => (
@@ -283,27 +283,27 @@ export default function PetConfigPage() {
                 },
                 {
                   title: t('wizard.step2Title'),
-                  description: <span className="text-gray-400 text-xs">{t('wizard.step2Desc')}</span>,
+                  content: <span className="text-gray-400 text-xs">{t('wizard.step2Desc')}</span>,
                   icon: <KeyOutlined />,
                 },
                 {
                   title: t('wizard.step3Title'),
-                  description: <span className="text-gray-400 text-xs">{t('wizard.step3Desc')}</span>,
+                  content: <span className="text-gray-400 text-xs">{t('wizard.step3Desc')}</span>,
                   icon: <RobotOutlined />,
                 },
                 {
                   title: t('wizard.step4Title'),
-                  description: <span className="text-gray-400 text-xs">{t('wizard.step4Desc')}</span>,
+                  content: <span className="text-gray-400 text-xs">{t('wizard.step4Desc')}</span>,
                   icon: <PlayCircleOutlined />,
                 },
                 {
                   title: t('wizard.step5Title'),
-                  description: <span className="text-gray-400 text-xs">{t('wizard.step5Desc')}</span>,
+                  content: <span className="text-gray-400 text-xs">{t('wizard.step5Desc')}</span>,
                   icon: <ApiOutlined />,
                 },
                 {
                   title: t('wizard.step6Title'),
-                  description: <span className="text-gray-400 text-xs">{t('wizard.step6Desc')}</span>,
+                  content: <span className="text-gray-400 text-xs">{t('wizard.step6Desc')}</span>,
                   icon: <CheckCircleOutlined />,
                 },
               ]}

@@ -307,7 +307,7 @@ function shouldIgnoreStaleMilestone(
   }
 
   const currentPackageState = toDesktopPackageState(currentRow.packageState);
-  return PACKAGE_STATE_RANK[incomingPackageState] <= PACKAGE_STATE_RANK[currentPackageState];
+  return PACKAGE_STATE_RANK[incomingPackageState] < PACKAGE_STATE_RANK[currentPackageState];
 }
 
 function maxVersion(
