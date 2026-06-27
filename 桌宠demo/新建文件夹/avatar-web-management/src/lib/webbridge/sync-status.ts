@@ -159,7 +159,11 @@ export function buildDesktopSyncStatus(input: DesktopSyncStatusInput): DesktopSy
     };
   }
 
-  if (packageState === 'applied' && desktopAppliedVersion >= input.webConfigVersion) {
+  if (
+    packageState === 'applied' &&
+    desktopAppliedVersion !== null &&
+    desktopAppliedVersion >= input.webConfigVersion
+  ) {
     return {
       ...statusBase,
       summaryKind: 'upToDate',
