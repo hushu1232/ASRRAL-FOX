@@ -1,15 +1,44 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card, Tabs, Form, Input, Select, Slider, Button, message, Modal, Table, Tag, Spin, Descriptions, Alert, Tooltip, Steps } from 'antd';
 import {
-  RobotOutlined, KeyOutlined, CloudServerOutlined, PictureOutlined,
-  PlayCircleOutlined, ExportOutlined, ApiOutlined, SaveOutlined,
-  LinkOutlined, DisconnectOutlined, ShopOutlined, InfoCircleOutlined,
-  DownloadOutlined, CheckCircleOutlined,
+  Card,
+  Tabs,
+  Form,
+  Input,
+  Select,
+  Slider,
+  Button,
+  message,
+  Modal,
+  Table,
+  Tag,
+  Spin,
+  Descriptions,
+  Alert,
+  Tooltip,
+  Steps,
+} from 'antd';
+import {
+  RobotOutlined,
+  KeyOutlined,
+  CloudServerOutlined,
+  PictureOutlined,
+  PlayCircleOutlined,
+  ExportOutlined,
+  ApiOutlined,
+  SaveOutlined,
+  LinkOutlined,
+  DisconnectOutlined,
+  ShopOutlined,
+  InfoCircleOutlined,
+  DownloadOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { apiGet, apiPut, apiPost } from '@/lib/api-client';
+import PetSyncStatusPanel from '@/components/pet/sync/PetSyncStatusPanel';
+import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
 
 const { TextArea } = Input;
 
@@ -47,28 +76,55 @@ export default function PetConfigPage() {
   const [assetFilter, setAssetFilter] = useState<string>('');
   const [showWizard, setShowWizard] = useState(false);
   const [wizardDismissed, setWizardDismissed] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<DesktopSyncStatus | null>(null);
+  const [syncStatusLoading, setSyncStatusLoading] = useState(false);
   const [form] = Form.useForm();
 
   const fetchConfig = async () => {
     setLoading(true);
-    const res = await apiGet<PetConfig>('/api/pet/config');
-    if (res.success && res.data) {
-      const d = res.data as unknown as Record<string, unknown>;
-      setConfig(res.data as PetConfig);
-      form.setFieldsValue({
-        petName: d.pet_name,
-        personality: d.personality,
-        backstory: d.backstory,
-        animationModel: d.animation_model,
-        ffmpegPath: d.ffmpeg_path,
-        idleTimeout: d.idle_timeout,
-        wanderInterval: d.wander_interval,
-      });
+    try {
+      const res = await apiGet<PetConfig>('/api/pet/config');
+      if (res.success && res.data) {
+        setConfig(res.data as PetConfig);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  useEffect(() => { fetchConfig(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const fetchSyncStatus = async () => {
+    setSyncStatusLoading(true);
+    try {
+      const res = await apiGet<DesktopSyncStatus>('/api/pet/sync/status');
+      if (res.success && res.data) {
+        setSyncStatus(res.data);
+      }
+    } finally {
+      setSyncStatusLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConfig();
+    fetchSyncStatus();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!config) {
+      return;
+    }
+
+    const d = config as unknown as Record<string, unknown>;
+    form.setFieldsValue({
+      petName: d.pet_name,
+      personality: d.personality,
+      backstory: d.backstory,
+      animationModel: d.animation_model,
+      ffmpegPath: d.ffmpeg_path,
+      idleTimeout: d.idle_timeout,
+      wanderInterval: d.wander_interval,
+    });
+  }, [config, form]);
 
   // Show setup wizard for first-time users
   useEffect(() => {
@@ -80,8 +136,15 @@ export default function PetConfigPage() {
   const handleSave = async () => {
     const values = form.getFieldsValue();
     const data: Record<string, unknown> = {};
-    const fields = ['petName', 'personality', 'backstory',
-      'animationModel', 'ffmpegPath', 'idleTimeout', 'wanderInterval'];
+    const fields = [
+      'petName',
+      'personality',
+      'backstory',
+      'animationModel',
+      'ffmpegPath',
+      'idleTimeout',
+      'wanderInterval',
+    ];
     for (const f of fields) {
       if (values[f] !== undefined) data[f] = values[f];
     }
@@ -90,7 +153,8 @@ export default function PetConfigPage() {
     const res = await apiPut<PetConfig>('/api/pet/config', data);
     if (res.success) {
       message.success(t('saveSuccess'));
-      fetchConfig();
+      await fetchConfig();
+      await fetchSyncStatus();
     } else {
       message.error(res.error || t('saveFailed'));
     }
@@ -128,8 +192,23 @@ export default function PetConfigPage() {
     animation: t('assetPicker.typeAnimation'),
   };
 
+  const wizardCurrent =
+    syncStatus?.summaryKind === 'upToDate'
+      ? 5
+      : syncStatus?.summaryKind === 'localConfirmationRequired'
+        ? 4
+        : syncStatus?.summaryKind === 'pendingPull'
+          ? 3
+          : syncStatus?.desktopConnection === 'online'
+            ? 2
+            : 0;
+
   if (loading) {
-    return <div className="min-h-[60vh] flex items-center justify-center"><Spin size="large" /></div>;
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <Spin size="large" />
+      </div>
+    );
   }
 
   return (
@@ -149,15 +228,34 @@ export default function PetConfigPage() {
         </div>
       </div>
 
+      <div className="mb-4">
+        <PetSyncStatusPanel
+          status={syncStatus}
+          loading={syncStatusLoading}
+          onRefresh={fetchSyncStatus}
+        />
+      </div>
+
       {showWizard && (
         <Alert
           type="info"
           className="mb-4"
-          style={{ background: 'linear-gradient(135deg, #1a1030 0%, #12122A 100%)', borderColor: 'rgba(139,92,246,0.3)' }}
-          message={
+          style={{
+            background: 'linear-gradient(135deg, #1a1030 0%, #12122A 100%)',
+            borderColor: 'rgba(139,92,246,0.3)',
+          }}
+          title={
             <div className="flex items-center justify-between">
               <span className="text-white font-medium">{t('wizard.title')}</span>
-              <Button size="small" type="text" style={{ color: '#9494a8' }} onClick={() => { setShowWizard(false); setWizardDismissed(true); }}>
+              <Button
+                size="small"
+                type="text"
+                style={{ color: '#9494a8' }}
+                onClick={() => {
+                  setShowWizard(false);
+                  setWizardDismissed(true);
+                }}
+              >
                 {t('wizard.skip')}
               </Button>
             </div>
@@ -165,16 +263,20 @@ export default function PetConfigPage() {
           description={
             <Steps
               size="small"
-              direction="horizontal"
-              current={0}
+              orientation="horizontal"
+              current={wizardCurrent}
               className="mt-3"
               items={[
                 {
                   title: t('wizard.step1Title'),
-                  description: (
+                  content: (
                     <span className="text-gray-400 text-xs">
                       {t.rich('wizard.step1Desc', {
-                        link: (chunks) => <a href="/downloads" className="text-purple-400 hover:text-purple-300">{chunks}</a>
+                        link: (chunks) => (
+                          <a href="/downloads" className="text-purple-400 hover:text-purple-300">
+                            {chunks}
+                          </a>
+                        ),
                       })}
                     </span>
                   ),
@@ -182,36 +284,37 @@ export default function PetConfigPage() {
                 },
                 {
                   title: t('wizard.step2Title'),
-                  description: (
-                    <span className="text-gray-400 text-xs">
-                      {t('wizard.step2Desc')}
-                    </span>
-                  ),
+                  content: <span className="text-gray-400 text-xs">{t('wizard.step2Desc')}</span>,
                   icon: <KeyOutlined />,
                 },
                 {
                   title: t('wizard.step3Title'),
-                  description: (
-                    <span className="text-gray-400 text-xs">
-                      {t('wizard.step3Desc')}
-                    </span>
-                  ),
+                  content: <span className="text-gray-400 text-xs">{t('wizard.step3Desc')}</span>,
                   icon: <RobotOutlined />,
                 },
                 {
                   title: t('wizard.step4Title'),
-                  description: (
-                    <span className="text-gray-400 text-xs">
-                      {t('wizard.step4Desc')}
-                    </span>
-                  ),
+                  content: <span className="text-gray-400 text-xs">{t('wizard.step4Desc')}</span>,
+                  icon: <PlayCircleOutlined />,
+                },
+                {
+                  title: t('wizard.step5Title'),
+                  content: <span className="text-gray-400 text-xs">{t('wizard.step5Desc')}</span>,
+                  icon: <ApiOutlined />,
+                },
+                {
+                  title: t('wizard.step6Title'),
+                  content: <span className="text-gray-400 text-xs">{t('wizard.step6Desc')}</span>,
                   icon: <CheckCircleOutlined />,
                 },
               ]}
             />
           }
           closable
-          onClose={() => { setShowWizard(false); setWizardDismissed(true); }}
+          onClose={() => {
+            setShowWizard(false);
+            setWizardDismissed(true);
+          }}
         />
       )}
 
@@ -227,26 +330,35 @@ export default function PetConfigPage() {
             alignItems: 'center',
             justifyContent: 'center',
           }}
-          bodyStyle={{ width: '100%', textAlign: 'center', padding: 48 }}
+          styles={{ body: { width: '100%', textAlign: 'center', padding: 48 } }}
         >
           <PictureOutlined style={{ fontSize: 64, color: '#5e5e7a', marginBottom: 16 }} />
           <p style={{ color: '#9494a8', fontSize: 14 }}>
             {t('preview.label', { name: config?.pet_name || t('preview.defaultName') })}
           </p>
-          <p style={{ color: '#5e5e7a', fontSize: 12 }}>
-            {t('preview.tip')}
-          </p>
+          <p style={{ color: '#5e5e7a', fontSize: 12 }}>{t('preview.tip')}</p>
           {config?.avatar_id && (
             <Tag icon={<LinkOutlined />} color="purple" style={{ marginTop: 8 }}>
               {t('preview.bound')}
             </Tag>
           )}
           {config && (
-            <Descriptions size="small" colon={false} column={1} style={{ marginTop: 16, textAlign: 'left' }}
-              labelStyle={{ color: '#9494a8' }} contentStyle={{ color: '#e8e8f0' }}>
-              <Descriptions.Item label={t('preview.system')}>{config.animation_model.toUpperCase()}</Descriptions.Item>
-              <Descriptions.Item label={t('preview.idleTimeout')}>{config.idle_timeout}s</Descriptions.Item>
-              <Descriptions.Item label={t('preview.wanderInterval')}>{config.wander_interval}s</Descriptions.Item>
+            <Descriptions
+              size="small"
+              colon={false}
+              column={1}
+              style={{ marginTop: 16, textAlign: 'left' }}
+              styles={{ label: { color: '#9494a8' }, content: { color: '#e8e8f0' } }}
+            >
+              <Descriptions.Item label={t('preview.system')}>
+                {config.animation_model.toUpperCase()}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('preview.idleTimeout')}>
+                {config.idle_timeout}s
+              </Descriptions.Item>
+              <Descriptions.Item label={t('preview.wanderInterval')}>
+                {config.wander_interval}s
+              </Descriptions.Item>
             </Descriptions>
           )}
         </Card>
@@ -278,7 +390,12 @@ export default function PetConfigPage() {
                 },
                 {
                   key: 'model',
-                  label: <span><CloudServerOutlined className="mr-1" />{t('tabs.model')}</span>,
+                  label: (
+                    <span>
+                      <CloudServerOutlined className="mr-1" />
+                      {t('tabs.model')}
+                    </span>
+                  ),
                   children: (
                     <div className="pt-4">
                       <Form.Item name="animationModel" label={t('model.systemLabel')}>
@@ -313,23 +430,24 @@ export default function PetConfigPage() {
                           >
                             {t('model.pickModel')}
                           </Button>
-                          <Button
-                            onClick={() => openAssetPicker('texture')}
-                          >
+                          <Button onClick={() => openAssetPicker('texture')}>
                             {t('model.pickTexture')}
                           </Button>
-                          <Button
-                            onClick={() => openAssetPicker('animation')}
-                          >
+                          <Button onClick={() => openAssetPicker('animation')}>
                             {t('model.pickAnimation')}
                           </Button>
                         </div>
                         {config?.avatar_id && (
                           <div className="mt-2">
-                            <Tag icon={<LinkOutlined />} color="purple" closable onClose={async () => {
-                              await apiPut('/api/pet/config', { avatarId: null });
-                              fetchConfig();
-                            }}>
+                            <Tag
+                              icon={<LinkOutlined />}
+                              color="purple"
+                              closable
+                              onClose={async () => {
+                                await apiPut('/api/pet/config', { avatarId: null });
+                                fetchConfig();
+                              }}
+                            >
                               {t('model.avatarId', { id: config.avatar_id })}
                             </Tag>
                           </div>
@@ -339,10 +457,20 @@ export default function PetConfigPage() {
                         <Input placeholder="C:\ffmpeg\bin\ffmpeg.exe" />
                       </Form.Item>
                       <Form.Item name="idleTimeout" label={t('model.idleTimeout')}>
-                        <Slider min={60} max={1800} step={30} marks={{ 60: '1m', 300: '5m', 900: '15m', 1800: '30m' }} />
+                        <Slider
+                          min={60}
+                          max={1800}
+                          step={30}
+                          marks={{ 60: '1m', 300: '5m', 900: '15m', 1800: '30m' }}
+                        />
                       </Form.Item>
                       <Form.Item name="wanderInterval" label={t('model.wanderInterval')}>
-                        <Slider min={5} max={120} step={5} marks={{ 5: '5s', 30: '30s', 60: '1m', 120: '2m' }} />
+                        <Slider
+                          min={5}
+                          max={120}
+                          step={5}
+                          marks={{ 5: '5s', 30: '30s', 60: '1m', 120: '2m' }}
+                        />
                       </Form.Item>
                     </div>
                   ),
@@ -362,29 +490,44 @@ export default function PetConfigPage() {
         width={700}
       >
         {assetLoading ? (
-          <div className="py-12 text-center"><Spin /></div>
+          <div className="py-12 text-center">
+            <Spin />
+          </div>
         ) : assets.length === 0 ? (
-          <div className="py-12 text-center" style={{ color: '#9494a8' }}>{t('assetPicker.noAssets')}</div>
+          <div className="py-12 text-center" style={{ color: '#9494a8' }}>
+            {t('assetPicker.noAssets')}
+          </div>
         ) : (
           <Table
             dataSource={assets}
             rowKey="id"
             columns={[
               { title: t('assetPicker.filename'), dataIndex: 'filename', key: 'filename' },
-              { title: t('assetPicker.type'), dataIndex: 'assetType', key: 'assetType', render: (v: string) => <Tag>{v}</Tag> },
+              {
+                title: t('assetPicker.type'),
+                dataIndex: 'assetType',
+                key: 'assetType',
+                render: (v: string) => <Tag>{v}</Tag>,
+              },
               { title: t('assetPicker.format'), dataIndex: 'format', key: 'format' },
               {
-                title: t('assetPicker.actions'), key: 'action', render: (_: unknown, record: AssetEntry) => (
-                  <Button size="small" type="primary" onClick={async () => {
-                    await apiPost('/api/pet/assets', {
-                      assetId: record.id,
-                      assetType: record.assetType,
-                      slotName: `${assetFilter}_${Date.now()}`,
-                    });
-                    message.success(t('assetPicker.attachSuccess'));
-                    setAssetModalOpen(false);
-                    fetchConfig();
-                  }}>
+                title: t('assetPicker.actions'),
+                key: 'action',
+                render: (_: unknown, record: AssetEntry) => (
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={async () => {
+                      await apiPost('/api/pet/assets', {
+                        assetId: record.id,
+                        assetType: record.assetType,
+                        slotName: `${assetFilter}_${Date.now()}`,
+                      });
+                      message.success(t('assetPicker.attachSuccess'));
+                      setAssetModalOpen(false);
+                      fetchConfig();
+                    }}
+                  >
                     {t('assetPicker.attach')}
                   </Button>
                 ),

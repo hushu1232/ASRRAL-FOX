@@ -838,7 +838,11 @@
       "step3Title": "Name Your Pet",
       "step3Desc": "Configure your pet's name in Basic Settings",
       "step4Title": "Launch",
-      "step4Desc": "After saving, launch the client to auto-sync your pet"
+      "step4Desc": "After saving, launch the client to auto-sync your pet",
+      "step5Title": "Confirm Locally",
+      "step5Desc": "Approve the staged update in the desktop client",
+      "step6Title": "Synced",
+      "step6Desc": "Your web settings and desktop pet are up to date"
     },
     "testStatus": {
       "pass": "Pass",
@@ -1278,15 +1282,44 @@
       { "key": "Delete", "action": "Delete selected part" }
     ],
     "faqs": [
-      { "q": "How do I create my first avatar?", "a": "After logging in, click \"Avatars\" in the sidebar, then click \"New Avatar\". Select a style and base model, then customize in the editor." },
-      { "q": "What 3D model formats are supported?", "a": "The primary format is GLTF/GLB. FBX is auto-converted on upload. Textures support PNG, JPG, HDR, EXR." },
-      { "q": "What formats can I export?", "a": "Export as GLB (universal 3D format), VRM 1.0 (VTuber/avatar format), and 4K PNG high-quality screenshots." },
-      { "q": "How do I apply for workspace admin permissions?", "a": "Go to \"Settings → Enterprise SSO\" to submit an application. After admin approval, you can manage workspace resources and upload templates to the marketplace." },
-      { "q": "Can marketplace templates be used commercially?", "a": "Official templates clearly indicate license types (CC0/CC-BY/Commercial). Check each template's license. Paid templates can be used commercially after purchase." },
-      { "q": "What if I forget my password?", "a": "Click \"Forgot password?\" on the login page. A reset link will be sent to your registered email. SSO users should contact their enterprise IT admin." }
+      {
+        "q": "How do I create my first avatar?",
+        "a": "After logging in, click \"Avatars\" in the sidebar, then click \"New Avatar\". Select a style and base model, then customize in the editor."
+      },
+      {
+        "q": "What 3D model formats are supported?",
+        "a": "The primary format is GLTF/GLB. FBX is auto-converted on upload. Textures support PNG, JPG, HDR, EXR."
+      },
+      {
+        "q": "What formats can I export?",
+        "a": "Export as GLB (universal 3D format), VRM 1.0 (VTuber/avatar format), and 4K PNG high-quality screenshots."
+      },
+      {
+        "q": "How do I apply for workspace admin permissions?",
+        "a": "Go to \"Settings → Enterprise SSO\" to submit an application. After admin approval, you can manage workspace resources and upload templates to the marketplace."
+      },
+      {
+        "q": "Can marketplace templates be used commercially?",
+        "a": "Official templates clearly indicate license types (CC0/CC-BY/Commercial). Check each template's license. Paid templates can be used commercially after purchase."
+      },
+      {
+        "q": "What if I forget my password?",
+        "a": "Click \"Forgot password?\" on the login page. A reset link will be sent to your registered email. SSO users should contact their enterprise IT admin."
+      }
     ],
     "updates": [
-      { "version": "v1.0.0-beta", "date": "2026-05-24", "changes": ["Initial release", "Email registration/login", "3D avatar editor", "Asset library", "Template marketplace", "Admin dashboard"] }
+      {
+        "version": "v1.0.0-beta",
+        "date": "2026-05-24",
+        "changes": [
+          "Initial release",
+          "Email registration/login",
+          "3D avatar editor",
+          "Asset library",
+          "Template marketplace",
+          "Admin dashboard"
+        ]
+      }
     ]
   },
   "apiDocs": {
