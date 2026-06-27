@@ -304,6 +304,7 @@ model PetConfig {
   avatar    Avatar?   @relation(fields: [avatarId], references: [id], onDelete: SetNull)
   assetMappings PetAssetMapping[]
   sessionLogs   PetSessionLog[]
+  syncStatus    PetSyncStatus?
 
   @@unique([userId])
   @@index([workspaceId])
@@ -342,6 +343,27 @@ model PetSessionLog {
   @@index([userId])
   @@index([petConfigId])
   @@map("pet_session_logs")
+}
+
+model PetSyncStatus {
+  id                        String   @id @default(uuid())
+  petConfigId               String   @unique @map("pet_config_id")
+  desktopKnownVersion       BigInt?  @map("desktop_known_version")
+  desktopAppliedVersion     BigInt?  @map("desktop_applied_version")
+  packageState              String   @default("notPublished") @map("package_state")
+  requiresLocalConfirmation Boolean  @default(true) @map("requires_local_confirmation")
+  lastSyncAt                DateTime? @map("last_sync_at")
+  lastAppliedAt             DateTime? @map("last_applied_at")
+  lastErrorCode             String?  @map("last_error_code")
+  lastErrorMessage          String?  @map("last_error_message")
+  lastErrorDetail           String?  @map("last_error_detail")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+  createdAt                 DateTime @default(now()) @map("created_at")
+
+  petConfig PetConfig @relation(fields: [petConfigId], references: [id], onDelete: Cascade)
+
+  @@index([packageState])
+  @@map("pet_sync_statuses")
 }
 
 // ─── Marketplace ──────────────────────────────────────────
