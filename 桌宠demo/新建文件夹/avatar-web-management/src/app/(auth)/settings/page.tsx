@@ -3,6 +3,7 @@
 import { Tabs, Card, Switch, Button, Divider } from 'antd';
 import { LinkOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import PageHeader from '@/components/layout/PageHeader';
 import ProfileTab from './ProfileTab';
 import SecurityTab from './SecurityTab';
 import ApiKeysTab from './ApiKeysTab';
@@ -15,7 +16,7 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-white mb-6">{t('title')}</h1>
+      <PageHeader title={t('title')} />
       <Tabs
         defaultActiveKey="profile"
         items={[

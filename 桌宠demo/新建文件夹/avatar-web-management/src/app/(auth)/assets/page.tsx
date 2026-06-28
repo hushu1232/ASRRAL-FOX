@@ -6,6 +6,7 @@ import { UploadOutlined, AppstoreOutlined, UnorderedListOutlined, FolderOutlined
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
+import PageHeader from '@/components/layout/PageHeader';
 import { apiGet } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/authStore';
 import type { PaginatedResponse } from '@/lib/api-client';
@@ -139,19 +140,23 @@ export default function AssetLibraryPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">{t('title')}</h1>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".glb,.gltf,.png,.jpg,.jpeg,.hdr,.exr,.fbx,.blend,.obj,.mtl,.mp4"
-          className="hidden"
-          onChange={handleFileChange}
-        />
-        <Button type="primary" icon={<UploadOutlined />} onClick={handleUploadClick} loading={uploading}>
-          {t('uploadButton')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('title')}
+        actions={
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".glb,.gltf,.png,.jpg,.jpeg,.hdr,.exr,.fbx,.blend,.obj,.mtl,.mp4"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button type="primary" icon={<UploadOutlined />} onClick={handleUploadClick} loading={uploading}>
+              {t('uploadButton')}
+            </Button>
+          </>
+        }
+      />
 
       <div className="flex gap-4">
         <Card className="!border-purple-500/10 w-52 shrink-0" title={t('upload.directory')}>

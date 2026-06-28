@@ -6,6 +6,7 @@ import { SearchOutlined, DownloadOutlined, StarFilled } from '@ant-design/icons'
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import PageHeader from '@/components/layout/PageHeader';
 import { useApiPaginated } from '@/lib/use-api';
 import type { PaginatedResponse } from '@/lib/use-api';
 
@@ -87,12 +88,18 @@ export default function MarketplacePage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">{t('title')}</h1>
-        <Button type="primary" onClick={() => router.push('/marketplace/new')} className="bg-gradient-to-r from-purple-600 to-blue-600 border-0">
-          {t('listItem')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('title')}
+        actions={
+          <Button
+            type="primary"
+            onClick={() => router.push('/marketplace/new')}
+            className="bg-gradient-to-r from-purple-600 to-blue-600 border-0"
+          >
+            {t('listItem')}
+          </Button>
+        }
+      />
 
       <div className="flex flex-wrap gap-3 mb-4">
         <Input

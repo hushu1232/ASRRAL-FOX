@@ -5,6 +5,7 @@ import { Card, Tag, Spin, Pagination, Empty, Button, App } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import PageHeader from '@/components/layout/PageHeader';
 import { useApiPaginated } from '@/lib/use-api';
 import { apiPut } from '@/lib/api-client';
 
@@ -109,16 +110,18 @@ export default function NotificationsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">{t('notificationCenter')}</h1>
-        <Button
-          icon={<CheckOutlined />}
-          onClick={handleReadAll}
-          className="!border-purple-500/20 !text-purple-400 hover:!border-purple-500/40 hover:!text-purple-300"
-        >
-          {t('markAllRead')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('notificationCenter')}
+        actions={
+          <Button
+            icon={<CheckOutlined />}
+            onClick={handleReadAll}
+            className="!border-purple-500/20 !text-purple-400 hover:!border-purple-500/40 hover:!text-purple-300"
+          >
+            {t('markAllRead')}
+          </Button>
+        }
+      />
 
       {isLoading ? (
         <div className="flex justify-center py-20"><Spin size="large" /></div>
