@@ -13,10 +13,15 @@ export interface AuthContext {
   workspaceId: string;
 }
 
-type HandlerWithUser = (req: NextRequest, user: AuthContext, ctx?: { params?: Promise<unknown> }) => Promise<NextResponse>;
+type RouteHandlerContext = { params: Promise<unknown> };
+type HandlerWithUser = (req: NextRequest, user: AuthContext, ctx?: RouteHandlerContext) => Promise<NextResponse>;
+type AuthenticatedRouteHandler = {
+  (req: NextRequest): Promise<NextResponse>;
+  (req: NextRequest, ctx: RouteHandlerContext): Promise<NextResponse>;
+};
 
-export function withAuth(handler: HandlerWithUser) {
-  return async (req: NextRequest, ctx?: { params?: Promise<unknown> }): Promise<NextResponse> => {
+export function withAuth(handler: HandlerWithUser): AuthenticatedRouteHandler {
+  const authenticatedHandler = async (req: NextRequest, ctx?: RouteHandlerContext): Promise<NextResponse> => {
     try {
       const authHeader = req.headers.get('authorization');
       if (!authHeader?.startsWith('Bearer ')) {
@@ -45,6 +50,8 @@ export function withAuth(handler: HandlerWithUser) {
       return NextResponse.json({ success: false, error: e.message || 'Internal server error', name: e.name }, { status: 500 });
     }
   };
+
+  return authenticatedHandler as AuthenticatedRouteHandler;
 }
 
 export function requireRole(requiredRole: string) {
