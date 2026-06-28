@@ -49,8 +49,11 @@ function EditorHarness({
       config={{
         id: 'cfg_1',
         pet_name: 'Nova',
+        personality: 'Curious and calm',
+        backstory: 'Created for desktop companionship.',
         animation_model: 'live2d',
         avatar_id: 'avatar_1',
+        ffmpeg_path: 'C:\\ffmpeg\\bin\\ffmpeg.exe',
         idle_timeout: 300,
         wander_interval: 30,
       }}

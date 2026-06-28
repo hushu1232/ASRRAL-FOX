@@ -17,8 +17,11 @@ const { TextArea } = Input;
 export interface PetConfigEditorConfig {
   id: string;
   pet_name: string;
+  personality: string;
+  backstory: string;
   animation_model: string;
   avatar_id?: string;
+  ffmpeg_path?: string;
   idle_timeout: number;
   wander_interval: number;
 }
@@ -44,7 +47,7 @@ export default function PetConfigEditor({
   };
 
   return (
-    <OperationPanel className="flex-1" title={t('config.editor')}>
+    <OperationPanel className="flex-1" title={t('title')}>
       <Form form={form} layout="vertical" style={{ maxWidth: 600 }}>
         <Tabs
           items={[
