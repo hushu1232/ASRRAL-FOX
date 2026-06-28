@@ -1041,7 +1041,20 @@
       "action": {
         "checkAgain": "再確認",
         "confirmInDesktop": "デスクトップで確認",
-        "viewDetails": "詳細を見る"
+        "viewDetails": "詳細を見る",
+        "openDesktop": "デスクトップを開く"
+      }
+    },
+    "runtimeSummary": {
+      "title": "ランタイム制御",
+      "unavailable": "ランタイム同期状態を取得できません。Web サービスの準備後に再確認してください。",
+      "nextAction": {
+        "label": "次の操作",
+        "none": "操作は不要です",
+        "checkAgain": "デスクトップのランタイム状態を再確認",
+        "openDesktop": "Alife デスクトップランタイムを開く",
+        "confirmInDesktop": "Alife でステージ済み更新を確認",
+        "viewDetails": "再試行前に同期詳細を確認"
       }
     }
   },

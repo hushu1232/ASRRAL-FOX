@@ -1049,7 +1049,20 @@
       "action": {
         "checkAgain": "Check again",
         "confirmInDesktop": "Confirm in desktop",
-        "viewDetails": "View details"
+        "viewDetails": "View details",
+        "openDesktop": "Open desktop"
+      }
+    },
+    "runtimeSummary": {
+      "title": "Runtime control",
+      "unavailable": "Runtime sync status is unavailable. Check again after the web service is ready.",
+      "nextAction": {
+        "label": "Next action",
+        "none": "No action required",
+        "checkAgain": "Check desktop runtime status again",
+        "openDesktop": "Open Alife desktop runtime",
+        "confirmInDesktop": "Confirm the staged update inside Alife",
+        "viewDetails": "Review the sync details before retrying"
       }
     }
   },

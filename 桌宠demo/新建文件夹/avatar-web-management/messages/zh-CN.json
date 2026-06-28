@@ -1049,7 +1049,20 @@
       "action": {
         "checkAgain": "重新检查",
         "confirmInDesktop": "在桌面端确认",
-        "viewDetails": "查看详情"
+        "viewDetails": "查看详情",
+        "openDesktop": "打开桌面端"
+      }
+    },
+    "runtimeSummary": {
+      "title": "运行控制",
+      "unavailable": "运行同步状态不可用。Web 服务就绪后再检查。",
+      "nextAction": {
+        "label": "下一步",
+        "none": "无需操作",
+        "checkAgain": "重新检查桌面端运行状态",
+        "openDesktop": "打开 Alife 桌面运行时",
+        "confirmInDesktop": "在 Alife 中确认已暂存更新",
+        "viewDetails": "重试前查看同步详情"
       }
     }
   },
