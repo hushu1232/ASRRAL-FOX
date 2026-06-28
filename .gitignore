@@ -33,6 +33,9 @@ node_modules/
 # Local indexes
 .codegraph/
 
+# Local agent settings
+**/.claude/settings.local.json
+
 # Local conversion backups
 .alife-service-residual-*/
 
