@@ -5,16 +5,16 @@
 
 ## Context
 
-The desktop pet runs in a Unity WebView on the user's machine. We need to track session lifecycle (start, interactions, crashes, end) for debugging and usage analytics. The client may go offline abruptly (user closes desktop app, system sleep) without sending an "end" event.
+The desktop pet runs through the Alife desktop runtime on the user's machine. We need to track session lifecycle (start, interactions, crashes, end) for debugging and usage analytics. The client may go offline abruptly (user closes desktop app, system sleep) without sending an "end" event.
 
 Alternatives considered:
-- **Client-side only logging (Unity PlayerPrefs)**: No visibility for platform operators; lost on reinstall
+- **Client-side only logging**: No visibility for platform operators; lost on reinstall
 - **Fire-and-forget analytics events (Amplitude/Mixpanel)**: Good for aggregate metrics, poor for debugging individual sessions
 - **Server-side session log table**: Enables per-user session history, crash forensics, and usage dashboards
 
 ## Decision
 
-**Server-side session logging via `PetSessionLog` table**, with the Unity client calling `POST /api/pet/session` for lifecycle events.
+**Server-side session logging via `PetSessionLog` table**, with the Alife WebBridge client calling `POST /api/pet/session` for lifecycle events.
 
 - `action: 'start'` — creates a new row with `startTime`
 - `action: 'update'` — increments `interactionCount` or stores `crashLog`
@@ -32,4 +32,4 @@ Session ingestion does NOT block pet operation — API returns immediately after
 **Negative:**
 - Orphaned sessions (no `end` event) accumulate; need a cleanup cron or TTL
 - Privacy: session interaction counts and crash logs are stored server-side — should be documented in privacy policy
-- Network dependency: if the user is offline, session events are lost (mitigation: Unity client could queue and retry)
+- Network dependency: if the user is offline, session events are lost (mitigation: Alife client could queue and retry)

@@ -1,7 +1,7 @@
 {
   "$id": "https://avatar-web.internal/schemas/pet-export.schema.json",
   "title": "PetConfigExport",
-  "description": "Contract for GET /api/pet/export — consumed by Unity AstralFox client",
+  "description": "Contract for GET /api/pet/export — consumed by the Alife WebBridge client",
   "type": "object",
   "required": [
     "version",

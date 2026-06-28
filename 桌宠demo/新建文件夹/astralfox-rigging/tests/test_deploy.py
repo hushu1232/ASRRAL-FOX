@@ -62,7 +62,7 @@ def test_deploy_succeeds(client, tmp_storage):
     assert res.status_code == 200
     data = res.json()
     assert data["model_id"] == ctx["image_id"]
-    assert data["reload_triggered"] is False  # no Unity client in tests
+    assert data["reload_triggered"] is False  # no Alife runtime in tests
     assert len(data["configs_written"]) > 0
     assert data["processing_time_ms"] >= 0
 

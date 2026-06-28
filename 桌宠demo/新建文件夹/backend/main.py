@@ -1,7 +1,7 @@
 """
 AstralFox Backend Gateway (BFF) — Phase 4
 ===========================================
-FastAPI WebSocket server that relays audio from the Unity client
+FastAPI WebSocket server that relays audio from the Alife runtime
 to ASR → LLM → TTS and streams results back.
 
 Phase 4: Real Azure ASR, OpenAI GPT-4o with Function Calling,

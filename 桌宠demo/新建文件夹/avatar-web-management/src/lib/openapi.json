@@ -858,8 +858,8 @@
     "/api/pet/export": {
       "get": {
         "tags": ["宠物"],
-        "summary": "导出宠物配置（Unity 客户端合同）",
-        "description": "返回蛇形命名 JSON，符合 Unity AstralFox 客户端预期的 PetConfigExport 模式。与 tests/schemas/pet-export-schema.json 保持一致。",
+        "summary": "导出宠物配置（Alife WebBridge 客户端合同）",
+        "description": "返回蛇形命名 JSON，符合 Alife WebBridge 客户端预期的 PetConfigExport 模式。与 tests/schemas/pet-export-schema.json 保持一致。",
         "responses": {
           "200": { "description": "PetConfigExport JSON（version, petName, personality, backstory, animationModel, idleTimeout, wanderInterval, params, bodyParams, equippedParts, mappedAssets）" }
         }
@@ -929,7 +929,7 @@
       "post": {
         "tags": ["宠物"],
         "summary": "桌面宠物会话生命周期",
-        "description": "管理 Unity 桌面宠物的会话：start 开始会话，update 更新交互计数/崩溃日志，end 结束会话",
+        "description": "管理 Alife 桌面运行时的宠物会话：start 开始会话，update 更新交互计数/崩溃日志，end 结束会话",
         "requestBody": {
           "content": {
             "application/json": {

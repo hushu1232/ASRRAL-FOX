@@ -5,7 +5,7 @@
 
 ## Context
 
-The AstralFox Unity desktop pet was initially an independent project. We needed to integrate it with the existing Avatar Web Management platform for user auth, asset management, and deployment.
+The Alife desktop runtime is maintained as a separate .NET agent runtime. We need to integrate it with the existing Avatar Web Management platform for user auth, asset management, configuration, and WebBridge package sync.
 
 Alternatives considered:
 - **Separate microservice**: Adds deployment complexity, auth duplication, and cross-service latency
@@ -21,9 +21,10 @@ Alternatives considered:
 - **Infrastructure**: Same Docker image, K8s deployment, Prometheus metrics, Grafana dashboards
 - **CI/CD**: Same GitHub Actions pipeline
 
-The Unity client communicates via:
-- REST API (`/api/pet/*`) for configuration and session management
-- WebSocket for real-time AI interaction streaming
+The Alife WebBridge client communicates via:
+- REST API (`/api/pet/*`) for configuration, package status, and session management
+- WebBridge package endpoints for manifest/file sync
+- Optional runtime channels for real-time AI interaction streaming
 
 ## Consequences
 
@@ -35,4 +36,4 @@ The Unity client communicates via:
 **Negative:**
 - Increased API surface in a single deployable (mitigated by rate limiting and resource quotas)
 - Pet-specific dependencies (Live2D export, FFmpeg path) are in the same `package.json`
-- Unity client must stay compatible with the REST API contract
+- Alife WebBridge client must stay compatible with the REST API and package contract

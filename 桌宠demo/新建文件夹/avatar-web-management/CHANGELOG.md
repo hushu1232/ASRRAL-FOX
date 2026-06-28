@@ -2,20 +2,20 @@
 
 All notable changes to the avatar-web API. This project follows [Semantic Versioning](https://semver.org/).
 
-Breaking changes that affect the Unity AstralFox client are marked with ⚠️.
+Breaking changes that affect the Alife WebBridge client are marked with ⚠️.
 
 ---
 
 ## [0.2.0] — 2026-05-27
 
 ### Added
-- **Pet export endpoint** `GET /api/pet/export` — returns JSON contract for Unity client
+- **Pet export endpoint** `GET /api/pet/export` — returns JSON contract for Alife WebBridge client
 - **Pet API key encryption** — AES-256-GCM + scrypt KDF (ADR-008)
 - **Circuit breaker** — per-service isolation for Azure/OpenAI
 - **Rate limiter fail-open** — 200ms timeout → in-memory fallback
 - **SLO burn-rate alerts** — Google SRE workbook multi-window rules
 - **Canary deployment** — nginx canary ingress (configurable weight/header)
-- **Unity client contract test** — JSON Schema validation for pet export
+- **Alife WebBridge client contract test** — JSON Schema validation for pet export
 - **Log aggregation** — Promtail → Loki → Grafana log panels
 - **WAF rules** — ModSecurity + OWASP CRS (22 custom rules)
 - **DR runbook** — 4 disaster scenarios with executable recovery steps

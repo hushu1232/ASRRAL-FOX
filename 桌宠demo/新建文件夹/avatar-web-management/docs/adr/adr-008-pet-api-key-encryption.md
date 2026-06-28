@@ -5,7 +5,7 @@
 
 ## Context
 
-The desktop pet module requires users to provide third-party API keys (Azure Speech, OpenAI). These keys must be stored in the database and transmitted to the Unity client during export. Plaintext storage is unacceptable.
+The desktop pet module requires users to provide third-party API keys (Azure Speech, OpenAI). These keys must be stored in the database and transmitted to the Alife WebBridge client during export/package sync. Plaintext storage is unacceptable.
 
 Alternatives considered:
 - **HashiCorp Vault**: Overkill for a single-tenant app; adds operational complexity
@@ -19,7 +19,7 @@ Alternatives considered:
 - Key derived via `crypto.scryptSync(masterKey, 'pet-config-salt', 32)`
 - Per-value random IV (96-bit), stored as `iv:authTag:ciphertext` (hex)
 - Master key from `PET_ENCRYPTION_KEY` environment variable
-- Keys decrypted only during export to Unity client or API return (with masking in UI)
+- Keys decrypted only during export/package sync to the Alife WebBridge client or API return (with masking in UI)
 
 ## Consequences
 

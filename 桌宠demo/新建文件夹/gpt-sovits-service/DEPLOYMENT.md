@@ -2,11 +2,11 @@
 
 ## 概述
 
-AstralFox 桌面宠物支持双引擎 TTS 方案：
+Alife 桌面运行时支持双引擎 TTS 方案：
 
 | 引擎 | 类型 | 特点 | 部署要求 |
 |------|------|------|----------|
-| **sherpa-onnx** | 本地离线 | 快速、低延迟、无需网络 | 预装在桌宠 StreamAssets 中 |
+| **sherpa-onnx** | 本地离线 | 快速、低延迟、无需网络 | 预装在 Alife 本地运行时资源目录中 |
 | **GPT-SoVITS** | 远程 GPU | 自定义音色、声音克隆 | Docker + NVIDIA GPU |
 
 ---
@@ -14,19 +14,19 @@ AstralFox 桌面宠物支持双引擎 TTS 方案：
 ## 1. 系统架构
 
 ```
-Unity 桌面客户端
-  └── TTSService.cs (引擎切换)
+Alife 桌面运行时
+  └── TTS service (引擎切换)
         │
         ├── sherpa-onnx (本地): tts_server.exe → 直接返回 WAV
         │
         └── gpt-sovits (远程): HTTP → Next.js BFF (:3000)
               └── /api/tts/synthesize
                     │
-                    ├── engine=sherpa-onnx: 返回 JSON → 桌宠本地合成
+                    ├── engine=sherpa-onnx: 返回 JSON → Alife 本地合成
                     └── engine=gpt-sovits:  代理 → GPT-SoVITS (:8002) → WAV
 ```
 
-**容错机制**：GPT-SoVITS 不可达时，Unity 客户端自动降级到本地 sherpa-onnx。
+**容错机制**：GPT-SoVITS 不可达时，Alife 运行时自动降级到本地 sherpa-onnx。
 
 ---
 
@@ -202,15 +202,11 @@ avatar-web-management/
     └── app/(auth)/dashboard/pet/voice/
         └── page.tsx            # /dashboard/pet/voice 页面
 
-AstralFox/Unity/
-├── Assets/Scripts/Runtime/
-│   ├── Config/
-│   │   ├── AppConfig.cs        # 新增 tts_engine/gpt_sovits_url/custom_voice_id
-│   │   └── PetApiClient.cs     # 同步 TTS 字段
-│   └── Voice/
-│       └── TTSService.cs       # 双引擎切换 + 自动降级
-└── Assets/StreamingAssets/tts/
-    └── tts_server.py           # sherpa-onnx 本地引擎（保持不变）
+alife-service/
+└── sources/
+    └── Alife.Function/
+        └── Alife.Function.WebBridge/
+            └── WebBridgeService.cs  # 同步 TTS 字段并驱动本地运行时应用
 ```
 
 ## 7. 后续规划

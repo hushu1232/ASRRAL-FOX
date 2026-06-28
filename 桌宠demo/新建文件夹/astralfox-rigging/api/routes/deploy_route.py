@@ -1,4 +1,4 @@
-"""Deploy endpoint — copy model to Unity StreamingAssets."""
+"""Deploy endpoint — copy model to the Alife runtime staging area."""
 
 from fastapi import APIRouter, HTTPException
 from loguru import logger

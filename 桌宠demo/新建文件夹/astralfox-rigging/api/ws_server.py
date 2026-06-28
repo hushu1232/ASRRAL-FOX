@@ -1,10 +1,10 @@
-"""WebSocket server bridging Unity desktop client to the web-management SSE stream.
+"""WebSocket server bridging Alife desktop runtime to the web-management SSE stream.
 
-Unity BackendClient connects to ws://localhost:8765/ws/chat.
+Alife runtime connects to ws://localhost:8765/ws/chat.
 This server:
   1. Accepts binary PCM audio → buffers & forwards to ASR (future)
   2. Forwards text messages to web-management SSE endpoint
-  3. Streams LLM tokens + TTS audio back to Unity via WebSocket
+  3. Streams LLM tokens + TTS audio back to Alife via WebSocket
 
 Run: python -m api.ws_server
 """
@@ -35,19 +35,19 @@ RE_SENTENCE_END = re.compile(r"[。！？!?.\n]")
 # ── Handlers ─────────────────────────────────────────────────
 
 async def handle_connection(websocket):
-    """Handle a Unity BackendClient connection."""
-    logger.info(f"Unity client connected from {websocket.remote_address}")
+    """Handle an Alife runtime connection."""
+    logger.info(f"Alife runtime connected from {websocket.remote_address}")
 
     try:
         async for message in websocket:
             if isinstance(message, bytes):
-                # Binary = PCM audio from Unity mic
+                # Binary = PCM audio from Alife mic
                 await handle_audio(websocket, message)
             else:
-                # Text = JSON message from Unity
+                # Text = JSON message from Alife
                 await handle_text(websocket, message)
     except websockets.exceptions.ConnectionClosed:
-        logger.info("Unity client disconnected")
+        logger.info("Alife runtime disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
 
@@ -59,7 +59,7 @@ async def handle_audio(websocket, pcm_data: bytes):
 
 
 async def handle_text(websocket, message: str):
-    """Handle JSON text messages from Unity."""
+    """Handle JSON text messages from Alife."""
     try:
         msg = json.loads(message)
     except json.JSONDecodeError:
@@ -71,11 +71,11 @@ async def handle_text(websocket, message: str):
         await websocket.send(json.dumps({"type": "pong"}))
 
     elif msg_type == "end_of_speech":
-        # Unity finished recording → transcribe + generate response
+        # Alife finished recording → transcribe + generate response
         await process_end_of_speech(websocket, msg)
 
     elif msg_type == "text_chat":
-        # Direct text chat from Unity
+        # Direct text chat from Alife
         user_text = msg.get("text", "")
         if user_text:
             await stream_llm_response(websocket, user_text, msg)
@@ -92,7 +92,7 @@ async def process_end_of_speech(websocket, msg: dict):
 
 
 async def stream_llm_response(websocket, user_message: str, context: dict):
-    """Stream LLM tokens + per-sentence TTS audio to Unity.
+    """Stream LLM tokens + per-sentence TTS audio to Alife.
 
     Try the BFF SSE endpoint first, fall back to direct Ollama + GPT-SoVITS.
     """
@@ -108,7 +108,7 @@ async def stream_llm_response(websocket, user_message: str, context: dict):
 # ── BFF SSE Proxy ────────────────────────────────────────────
 
 async def try_bff_stream(websocket, user_message: str, context: dict) -> bool:
-    """Connect to web-management SSE endpoint and relay events to Unity."""
+    """Connect to web-management SSE endpoint and relay events to Alife."""
     try:
         history = context.get("chat_history", "")
         personality = context.get("personality", "")
@@ -149,7 +149,7 @@ async def try_bff_stream(websocket, user_message: str, context: dict) -> bool:
 
 
 async def relay_sse_event(websocket, event_type: str, data: dict):
-    """Convert SSE event to WebSocket message for Unity."""
+    """Convert SSE event to WebSocket message for Alife."""
     if event_type == "token":
         await websocket.send(json.dumps({
             "type": "llm_token",
@@ -253,7 +253,7 @@ async def direct_llm_tts_stream(websocket, user_message: str, context: dict):
                         full_text += token
                         current_sentence += token
 
-                        # Send token to Unity
+                        # Send token to Alife
                         await websocket.send(json.dumps({
                             "type": "llm_token",
                             "token": token,
@@ -316,7 +316,7 @@ async def direct_llm_tts_stream(websocket, user_message: str, context: dict):
 
 
 async def synthesize_and_send(websocket, client: httpx.AsyncClient, text: str):
-    """Synthesize TTS for text and send as WAV to Unity."""
+    """Synthesize TTS for text and send as WAV to Alife."""
     if not text.strip():
         return
 

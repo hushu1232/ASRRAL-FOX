@@ -87,7 +87,7 @@ def _generate_mock_moc3() -> bytes:
     """Generate a minimal valid moc3 placeholder.
 
     Real moc3 is a proprietary binary format. This creates a placeholder
-    that Unity's Cubism SDK can detect as "needs regeneration."
+    that the runtime importer can detect as "needs regeneration."
     """
     buf = BytesIO()
     # Magic header

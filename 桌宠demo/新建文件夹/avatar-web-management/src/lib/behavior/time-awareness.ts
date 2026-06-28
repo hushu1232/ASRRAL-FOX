@@ -1,5 +1,5 @@
 // 时间感知引擎 — 平台无关核心逻辑
-// Web 端 (TypeScript) 和 Unity 端 (C#) 共用同样的算法
+// Web 端 (TypeScript) 和 Alife 运行时共用同样的算法
 
 import {
   type TimePeriod,

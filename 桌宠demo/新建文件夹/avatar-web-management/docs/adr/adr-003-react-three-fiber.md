@@ -25,7 +25,7 @@
 排除的方案：
 - **原生 Three.js**：命令式 API 与 React 组件生命周期分离，需要大量 `useEffect` 和 `useRef` 进行手动同步，容易产生 bug
 - **Babylon.js**：功能强大但学习曲线陡峭，社区规模小于 Three.js，R3F 类似的 React 绑定（`react-babylonjs`）不够成熟
-- **PlayCanvas / Unity WebGL**：封闭生态、打包体积大、自定义扩展困难，不适合作为 Web 管理平台的集成组件
+- **封闭式游戏引擎 WebGL 导出**：生态封闭、打包体积大、自定义扩展困难，不适合作为 Web 管理平台的集成组件
 
 ## 后果
 

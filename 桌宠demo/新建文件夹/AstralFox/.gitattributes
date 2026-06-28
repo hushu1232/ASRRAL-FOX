@@ -1,3 +1,0 @@
-*.wav filter=lfs diff=lfs merge=lfs -text
-
-# Large model files are NOT in git — downloaded separately

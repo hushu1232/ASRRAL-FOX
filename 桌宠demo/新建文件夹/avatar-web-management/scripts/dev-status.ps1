@@ -61,30 +61,6 @@ if (Test-Path (Join-Path $webDir ".next")) {
 
 Write-Host "  Tests:    npm test (Jest) — $((Get-ChildItem (Join-Path $webDir 'tests') -Filter *.test.ts).Count) test files found" -ForegroundColor Green
 
-# ── Unity / Tuanjie ───────────────────────────────────────
-
-Write-Host "`n[UNITY] AstralFox" -ForegroundColor Yellow
-$unityProj = Join-Path $root "AstralFox"
-if (Test-Path $unityProj) {
-    Write-Host "  Project:  $(Split-Path $unityProj -Leaf)" -ForegroundColor Green
-} else {
-    Write-Host "  Project:  MISSING" -ForegroundColor Red
-}
-
-# Count model prefabs
-$prefabDir = Join-Path $unityProj "Assets\Live2D\Models"
-if (Test-Path $prefabDir) {
-    $prefabs = Get-ChildItem -Path $prefabDir -Recurse -Filter "*.prefab" -ErrorAction SilentlyContinue
-    Write-Host "  Prefabs:  $($prefabs.Count) Live2D model prefabs" -ForegroundColor Green
-}
-
-# Count C# scripts
-$scriptsDir = Join-Path $unityProj "Assets\Scripts"
-if (Test-Path $scriptsDir) {
-    $scripts = Get-ChildItem -Path $scriptsDir -Recurse -Filter "*.cs" -ErrorAction SilentlyContinue
-    Write-Host "  Scripts:  $($scripts.Count) C# files" -ForegroundColor Green
-}
-
 # ── Quick Start Commands ──────────────────────────────────
 
 Write-Host "`n========================================" -ForegroundColor Cyan

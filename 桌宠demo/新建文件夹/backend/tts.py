@@ -6,7 +6,7 @@ Supports two backends:
   - Azure TTS (requires Azure Speech key)
 
 Output: PCM16 16kHz mono audio bytes, split into ~100ms chunks
-for streaming to the Unity client.
+for streaming to the Alife runtime.
 """
 import asyncio
 import logging

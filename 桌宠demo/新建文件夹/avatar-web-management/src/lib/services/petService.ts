@@ -17,7 +17,7 @@ export interface PetConfigData {
   ffmpegPath?: string;
   idleTimeout: number;
   wanderInterval: number;
-  // Local AI services (aligned with Unity AppConfig.cs)
+  // Local AI services (aligned with Alife WebBridge runtime config)
   ttsLocalUrl?: string;
   sttLocalUrl?: string;
   llmModelPath?: string;

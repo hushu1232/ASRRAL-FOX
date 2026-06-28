@@ -1,4 +1,4 @@
-// Rigging 一键部署 — 将生成的 Live2D 模型部署到 Unity 桌面端
+// Rigging 一键部署 — 将生成的 Live2D 模型部署到 Alife 桌面运行时
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';

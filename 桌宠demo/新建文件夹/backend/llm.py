@@ -7,7 +7,7 @@ Supports two modes:
   - chat()       : full response (backward compatible)
   - chat_stream(): async generator yielding typed streaming events
 
-The LLM responds with emotion/action tags that the Unity client parses:
+The LLM responds with emotion/action tags that the Alife runtime parses:
   [happy] / [sad] / [shy] / [angry] / [neutral]
   [action:wave] / [action:bow] / [action:nod] / [action:think]
 
@@ -147,7 +147,7 @@ class LLMService:
 
         # Build messages — chat_history is used to seed self._history on first
         # request (e.g. after BFF restart), not injected directly into the prompt.
-        # This prevents double context injection when both Unity and BFF maintain history.
+        # This prevents double context injection when both Alife and BFF maintain history.
         if chat_history and not self._history:
             self._seed_history_from_text(chat_history)
 
@@ -251,7 +251,7 @@ class LLMService:
             character_name, character_backstory, character_extra
         )
 
-        # Seed history from Unity if we have context and no local history
+        # Seed history from Alife if we have context and no local history
         if chat_history and not self._history:
             self._seed_history_from_text(chat_history)
 
@@ -360,7 +360,7 @@ class LLMService:
 
     def _seed_history_from_text(self, chat_history: str):
         """
-        Parse Unity's chat_history format into structured messages and seed
+        Parse Alife's chat_history format into structured messages and seed
         self._history. Format expected:
             用户: <user message>
             赤城: <assistant message>
@@ -376,7 +376,7 @@ class LLMService:
             role = "user" if speaker == "用户" else "assistant"
             self._history.append({"role": role, "content": text.strip()})
         if matches:
-            logger.info(f"[LLM] Seeded history with {len(matches)} messages from Unity chat_history.")
+            logger.info(f"[LLM] Seeded history with {len(matches)} messages from Alife chat_history.")
 
 
 # ── Mock LLM (fallback when no API key) ─────────────────────────

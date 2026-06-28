@@ -15,7 +15,7 @@ def deploy_model(
     """Deploy exported model to the target directory.
 
     Copies model files, writes Live2D config, and attempts to notify
-    the Unity client via WebSocket reload signal.
+    the Alife runtime via WebSocket reload signal.
     """
     start = time.perf_counter()
     storage = get_storage()
@@ -81,6 +81,6 @@ def _default_anim_params() -> dict:
 
 
 def _try_reload_signal(target_name: str) -> bool:
-    """Attempt to notify Unity client via WebSocket reload signal."""
-    logger.debug(f"reload signal queued for {target_name} (no Unity client connected)")
+    """Attempt to notify Alife runtime via WebSocket reload signal."""
+    logger.debug(f"reload signal queued for {target_name} (no Alife runtime connected)")
     return False

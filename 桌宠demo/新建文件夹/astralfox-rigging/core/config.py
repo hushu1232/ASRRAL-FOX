@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     GPU_ENABLED: bool = True
     CPU_FALLBACK: bool = True
 
-    # Unity integration
-    UNITY_WS_URL: str = "ws://localhost:3001"
+    # Runtime integration
+    RUNTIME_WS_URL: str = "ws://localhost:3001"
 
     # Logging
     LOG_LEVEL: str = "INFO"

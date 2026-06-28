@@ -82,7 +82,7 @@ User Browser
   │  crash_log (L2) → POST /api/pet/session → stored as plaintext in pet_session_logs
   │  IP, UA (L2) → every request → audit_log inserts
   │
-Unity Desktop Pet
+Alife Desktop Runtime
   │  session start/update/end (L1-L2) → POST /api/pet/session
   │  GET /api/pet/export → API keys DECRYPTED for local use (L3 → in-memory only)
   │

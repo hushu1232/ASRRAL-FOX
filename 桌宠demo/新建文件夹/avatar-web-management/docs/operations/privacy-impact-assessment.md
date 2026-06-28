@@ -18,7 +18,7 @@ The avatar-web platform processes personal data to provide a virtual avatar mana
 | Profile | bio, avatar_url, preferences | L1 — Low risk | Legitimate interest |
 | Auth | OAuth provider IDs, SSO tokens, 2FA TOTP seed | L3 — Sensitive | Consent / contractual |
 | Pet Config | pet_name, personality, backstory (user-authored) | L1 — Low risk | Consent |
-| Session | interaction_count, crash_log (Unity desktop) | L1 — Low risk | Legitimate interest |
+| Session | interaction_count, crash_log (Alife desktop runtime) | L1 — Low risk | Legitimate interest |
 | Audit | action, resource_type, old_values, new_values, IP address | L2 — PII | Legal obligation |
 | Login History | IP, user_agent, login_timestamp | L2 — PII | Legitimate interest |
 | CSP Reports | blocked_uri, source_file, user_agent | L0 — Anonymous | Legitimate interest |

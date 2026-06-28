@@ -1,6 +1,6 @@
 /**
- * Unity client contract test — validates pet export JSON against the published schema.
- * If this test fails, the Unity AstralFox client may break when consuming the export.
+ * Alife WebBridge client contract test — validates pet export JSON against the published schema.
+ * If this test fails, the Alife runtime may break when consuming the export.
  */
 
 import Ajv, { type ValidateFunction } from 'ajv';
@@ -63,7 +63,7 @@ beforeAll(async () => {
   validate = ajv.compile(schema);
 });
 
-describe('Pet Export Schema (Unity Client Contract)', () => {
+describe('Pet Export Schema (Alife WebBridge Client Contract)', () => {
   // ═══ Minimal valid export ═════════════════════════════════
   it('validates a minimal valid export', () => {
     const minimal = {
@@ -155,7 +155,7 @@ describe('Pet Export Schema (Unity Client Contract)', () => {
   });
 
   // ═══ Zero/negative idleTimeout ═════════════════════════════
-  it('allows zero timeout (Unity treats as "never idle")', () => {
+  it('allows zero timeout (runtime treats as "never idle")', () => {
     const zeroIdle = {
       version: 1,
       petName: 'test',
