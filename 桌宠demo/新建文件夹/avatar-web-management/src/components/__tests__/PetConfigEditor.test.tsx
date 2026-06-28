@@ -56,6 +56,8 @@ function EditorHarness({
         ffmpeg_path: 'C:\\ffmpeg\\bin\\ffmpeg.exe',
         idle_timeout: 300,
         wander_interval: 30,
+        created_at: '2026-06-28T08:00:00.000Z',
+        updated_at: '2026-06-28T09:00:00.000Z',
       }}
       onOpenAssetPicker={onOpenAssetPicker}
       onUnbindAvatar={onUnbindAvatar}

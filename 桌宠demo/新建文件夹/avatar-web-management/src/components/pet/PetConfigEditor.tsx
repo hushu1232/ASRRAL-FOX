@@ -24,6 +24,8 @@ export interface PetConfigEditorConfig {
   ffmpeg_path?: string;
   idle_timeout: number;
   wander_interval: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface PetConfigEditorProps {
