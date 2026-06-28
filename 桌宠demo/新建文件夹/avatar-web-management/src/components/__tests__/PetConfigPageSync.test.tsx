@@ -139,6 +139,9 @@ describe('PetConfigPage desktop sync', () => {
     expect(screen.getByText('wizard.title')).toBeDefined();
     expect(screen.getByText('wizard.step5Desc')).toBeDefined();
     expect(screen.getByText('wizard.step6Desc')).toBeDefined();
+    expect(screen.getByText('Alife .NET 9')).toBeDefined();
+    expect(screen.getByText('No live Alife calls')).toBeDefined();
+    expect(mockApiGet).toHaveBeenCalledTimes(2);
   });
 
   it('waits for first-run config creation before requesting desktop sync status', async () => {

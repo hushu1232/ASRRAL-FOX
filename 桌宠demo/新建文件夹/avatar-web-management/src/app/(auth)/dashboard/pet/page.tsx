@@ -38,6 +38,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { apiGet, apiPut, apiPost } from '@/lib/api-client';
 import PetSyncStatusPanel from '@/components/pet/sync/PetSyncStatusPanel';
+import WebBridgeMockStatusPanel from '@/components/pet/sync/WebBridgeMockStatusPanel';
 import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
 
 const { TextArea } = Input;
@@ -233,6 +234,10 @@ export default function PetConfigPage() {
           loading={syncStatusLoading}
           onRefresh={fetchSyncStatus}
         />
+      </div>
+
+      <div className="mb-4">
+        <WebBridgeMockStatusPanel />
       </div>
 
       {showWizard && (
