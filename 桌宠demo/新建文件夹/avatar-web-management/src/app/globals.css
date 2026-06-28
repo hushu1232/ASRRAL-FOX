@@ -1,9 +1,9 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
   --font-geist: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-geist-mono: 'Fira Code', Consolas, 'Liberation Mono', monospace;
-  /* ── Warm Light Palette ────────────────────────────── */
+  /* Warm Light Palette */
   --ds-colors-bg-deep: #faf7f2;
   --ds-colors-bg-card: #ffffff;
   --ds-colors-bg-cardHover: #f5f0e8;
@@ -31,7 +31,8 @@
   --ds-radii-md: 8px;
   --ds-radii-lg: 12px;
   --ds-radii-full: 9999px;
-  --ds-typography-fontFamily: var(--font-geist), 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ds-typography-fontFamily:
+    var(--font-geist), 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --ds-typography-fontMono: var(--font-geist-mono), 'Fira Code', monospace;
   --ds-typography-fontSize-xs: 0.75rem;
   --ds-typography-fontSize-sm: 0.875rem;
@@ -40,12 +41,58 @@
   --ds-typography-fontSize-xl: 1.25rem;
   --ds-typography-fontSize-2xl: 1.5rem;
   --ds-typography-fontSize-3xl: 1.875rem;
-  --ds-shadow-card: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04);
-  --ds-shadow-card-hover: 0 2px 8px rgba(0,0,0,0.06), 0 8px 32px rgba(0,0,0,0.06);
-  --ds-shadow-button: 0 2px 8px rgba(217,119,6,0.15);
+  --ds-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --ds-shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.06), 0 8px 32px rgba(0, 0, 0, 0.06);
+  --ds-shadow-button: 0 2px 8px rgba(217, 119, 6, 0.15);
   --ds-transition-fast: 150ms ease;
   --ds-transition-base: 250ms ease;
-
+  --ds-ui-typeScale-display-fontSize: 2.5rem;
+  --ds-ui-typeScale-display-lineHeight: 1.08;
+  --ds-ui-typeScale-display-fontWeight: 700;
+  --ds-ui-typeScale-pageTitle-fontSize: 2rem;
+  --ds-ui-typeScale-pageTitle-lineHeight: 1.15;
+  --ds-ui-typeScale-pageTitle-fontWeight: 700;
+  --ds-ui-typeScale-sectionTitle-fontSize: 1.25rem;
+  --ds-ui-typeScale-sectionTitle-lineHeight: 1.25;
+  --ds-ui-typeScale-sectionTitle-fontWeight: 650;
+  --ds-ui-typeScale-cardTitle-fontSize: 1rem;
+  --ds-ui-typeScale-cardTitle-lineHeight: 1.35;
+  --ds-ui-typeScale-cardTitle-fontWeight: 650;
+  --ds-ui-typeScale-body-fontSize: 0.875rem;
+  --ds-ui-typeScale-body-lineHeight: 1.55;
+  --ds-ui-typeScale-body-fontWeight: 400;
+  --ds-ui-typeScale-metadata-fontSize: 0.75rem;
+  --ds-ui-typeScale-metadata-lineHeight: 1.4;
+  --ds-ui-typeScale-metadata-fontWeight: 500;
+  --ds-ui-typeScale-button-fontSize: 0.875rem;
+  --ds-ui-typeScale-button-lineHeight: 1.2;
+  --ds-ui-typeScale-button-fontWeight: 600;
+  --ds-ui-controls-navCtaHeight: 36px;
+  --ds-ui-controls-primaryCtaHeight: 40px;
+  --ds-ui-controls-heroCtaHeight: 56px;
+  --ds-ui-controls-pillRadius: 9999px;
+  --ds-ui-controls-compactButtonHeight: 32px;
+  --ds-ui-panels-radius: 8px;
+  --ds-ui-panels-gridMinWidth: 220px;
+  --ds-ui-panels-densePadding: 16px;
+  --ds-ui-panels-comfortablePadding: 20px;
+  --ds-type-display-size: 2.5rem;
+  --ds-type-display-lineHeight: 1.08;
+  --ds-type-pageTitle-size: 2rem;
+  --ds-type-pageTitle-lineHeight: 1.15;
+  --ds-type-sectionTitle-size: 1.25rem;
+  --ds-type-cardTitle-size: 1rem;
+  --ds-type-body-size: 0.875rem;
+  --ds-type-body-lineHeight: 1.55;
+  --ds-type-metadata-size: 0.75rem;
+  --ds-control-navCta-height: 36px;
+  --ds-control-primaryCta-height: 40px;
+  --ds-control-heroCta-height: 56px;
+  --ds-control-pillRadius: 9999px;
+  --ds-panel-radius: 8px;
+  --ds-panel-gridMinWidth: 220px;
+  --ds-panel-densePadding: 16px;
+  --ds-panel-comfortablePadding: 20px;
   --bg-deep: var(--ds-colors-bg-deep);
   --bg-card: var(--ds-colors-bg-card);
   --bg-card-hover: var(--ds-colors-bg-cardHover);
@@ -65,7 +112,9 @@
   --shadow-button: var(--ds-shadow-button);
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   background: var(--ds-colors-bg-deep);
@@ -75,24 +124,39 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d6d3d1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a29e;
+}
 
 .ant-btn-primary {
   background: var(--accent);
   box-shadow: var(--shadow-button);
 }
-.ant-btn-primary:hover { background: #f59e0b; }
+.ant-btn-primary:hover {
+  background: #f59e0b;
+}
 
 .ant-input {
   background: var(--bg-card-hover) !important;
   border-color: var(--border-subtle) !important;
   color: var(--text-primary) !important;
 }
-.ant-input:hover { border-color: var(--border-default) !important; }
-.ant-input:focus, .ant-input-focused {
+.ant-input:hover {
+  border-color: var(--border-default) !important;
+}
+.ant-input:focus,
+.ant-input-focused {
   border-color: var(--accent) !important;
   box-shadow: 0 0 0 3px var(--accent-glow) !important;
 }
@@ -102,7 +166,10 @@ body {
   border-color: var(--border-subtle) !important;
 }
 
-.ant-table { background: transparent !important; color: var(--text-primary) !important; }
+.ant-table {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+}
 .ant-table-thead > tr > th {
   background: var(--bg-card-hover) !important;
   color: var(--text-secondary) !important;
@@ -112,9 +179,13 @@ body {
   border-color: var(--border-subtle) !important;
   color: var(--text-primary) !important;
 }
-.ant-table-tbody > tr:hover > td { background: var(--bg-card-hover) !important; }
+.ant-table-tbody > tr:hover > td {
+  background: var(--bg-card-hover) !important;
+}
 
-.ant-select-dropdown, .ant-dropdown-menu, .ant-picker-dropdown .ant-picker-panel-container {
+.ant-select-dropdown,
+.ant-dropdown-menu,
+.ant-picker-dropdown .ant-picker-panel-container {
   background: var(--bg-card) !important;
   border-color: var(--border-subtle) !important;
 }
@@ -124,12 +195,24 @@ body {
   color: var(--text-primary) !important;
 }
 
-.ant-divider { border-color: var(--border-subtle) !important; }
-.ant-tabs-tab { color: var(--text-secondary) !important; }
-.ant-tabs-tab-active .ant-tabs-tab-btn { color: var(--accent) !important; }
-.ant-tabs-ink-bar { background: var(--accent) !important; }
-.ant-slider-rail { background: var(--border-subtle) !important; }
-.ant-slider-track { background: var(--accent) !important; }
+.ant-divider {
+  border-color: var(--border-subtle) !important;
+}
+.ant-tabs-tab {
+  color: var(--text-secondary) !important;
+}
+.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--accent) !important;
+}
+.ant-tabs-ink-bar {
+  background: var(--accent) !important;
+}
+.ant-slider-rail {
+  background: var(--border-subtle) !important;
+}
+.ant-slider-track {
+  background: var(--accent) !important;
+}
 .ant-slider-handle {
   border-color: var(--accent) !important;
   box-shadow: var(--shadow-button) !important;
@@ -140,9 +223,17 @@ body {
   border-right: 1px solid var(--border-subtle) !important;
 }
 
-.ant-menu { background: transparent !important; border-inline-end: none !important; }
-.ant-menu-item { color: var(--text-secondary) !important; }
-.ant-menu-item:hover { background: var(--bg-card-hover) !important; color: var(--text-primary) !important; }
+.ant-menu {
+  background: transparent !important;
+  border-inline-end: none !important;
+}
+.ant-menu-item {
+  color: var(--text-secondary) !important;
+}
+.ant-menu-item:hover {
+  background: var(--bg-card-hover) !important;
+  color: var(--text-primary) !important;
+}
 .ant-menu-item-selected {
   background: var(--bg-card-hover) !important;
   color: var(--accent) !important;
@@ -153,17 +244,29 @@ body {
   border-bottom: 1px solid var(--border-subtle) !important;
 }
 
-/* ── Chat Login Animations ──────────────────────────────── */
+/* Chat Login Animations */
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @keyframes fadeInRight {
-  from { opacity: 0; transform: translateX(12px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
-/* ── Prevent text selection on all navigation / clickable elements ── */
+/* Prevent text selection on all navigation / clickable elements */
 .ant-menu-item,
 .ant-tabs-tab,
 .ant-breadcrumb-link,

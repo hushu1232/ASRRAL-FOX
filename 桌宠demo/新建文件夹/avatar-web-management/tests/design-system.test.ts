@@ -1,5 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { describe, it, expect } from '@jest/globals';
 import {
+  uiSpec,
   darkTokens,
   lightTokens,
   flattenTokens,
@@ -10,6 +14,18 @@ import {
   toAntdThemeTokens,
   createComponentTokenFactory,
 } from '@/lib/design-system';
+
+const globalsCss = fs.readFileSync(path.join(__dirname, '..', 'src/app/globals.css'), 'utf8');
+
+const parseCssCustomProperties = (css: string) =>
+  new Map(
+    Array.from(
+      css.matchAll(/(--ds-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s*:\s*([^;]+);/g),
+      ([, name, value]) => [name, value.trim()],
+    ),
+  );
+
+const cssVars = parseCssCustomProperties(globalsCss);
 
 describe('Design tokens', () => {
   it('darkTokens has all required color categories', () => {
@@ -91,5 +107,75 @@ describe('Design tokens', () => {
     const result = factory(darkTokens);
     expect(result.colorPrimary).toBe('#6d5df0');
     expect(result.customProp).toBe('#60a5fa');
+  });
+});
+
+describe('FOXD UI specification', () => {
+  it('defines the site-wide type scale inspired by the Insta360 reference', () => {
+    expect(uiSpec.typeScale.pageTitle).toEqual({
+      fontSize: '2rem',
+      lineHeight: '1.15',
+      fontWeight: '700',
+    });
+    expect(uiSpec.typeScale.cardTitle.fontSize).toBe('1rem');
+    expect(uiSpec.typeScale.metadata.fontSize).toBe('0.75rem');
+    expect(uiSpec.typeScale.body.lineHeight).toBe('1.55');
+  });
+
+  it('defines shared CTA and panel sizing rules', () => {
+    expect(uiSpec.controls.navCtaHeight).toBe('36px');
+    expect(uiSpec.controls.primaryCtaHeight).toBe('40px');
+    expect(uiSpec.controls.heroCtaHeight).toBe('56px');
+    expect(uiSpec.controls.pillRadius).toBe('9999px');
+    expect(uiSpec.panels.radius).toBe('8px');
+    expect(uiSpec.panels.gridMinWidth).toBe('220px');
+  });
+
+  it('keeps original plan-required CSS variables available', () => {
+    const legacyVariables = [
+      '--ds-type-display-size',
+      '--ds-type-display-lineHeight',
+      '--ds-type-pageTitle-size',
+      '--ds-type-pageTitle-lineHeight',
+      '--ds-type-sectionTitle-size',
+      '--ds-type-cardTitle-size',
+      '--ds-type-body-size',
+      '--ds-type-body-lineHeight',
+      '--ds-type-metadata-size',
+      '--ds-control-navCta-height',
+      '--ds-control-primaryCta-height',
+      '--ds-control-heroCta-height',
+      '--ds-control-pillRadius',
+      '--ds-panel-radius',
+      '--ds-panel-gridMinWidth',
+      '--ds-panel-densePadding',
+      '--ds-panel-comfortablePadding',
+    ];
+
+    for (const variable of legacyVariables) {
+      expect(cssVars.has(variable)).toBe(true);
+    }
+  });
+
+  it('exposes canonical CSS variables for every uiSpec leaf', () => {
+    const expectedCanonicalVars = new Map<string, string>();
+
+    for (const [token, value] of Object.entries(uiSpec.typeScale)) {
+      expectedCanonicalVars.set(`--ds-ui-typeScale-${token}-fontSize`, value.fontSize);
+      expectedCanonicalVars.set(`--ds-ui-typeScale-${token}-lineHeight`, value.lineHeight);
+      expectedCanonicalVars.set(`--ds-ui-typeScale-${token}-fontWeight`, value.fontWeight);
+    }
+
+    for (const [token, value] of Object.entries(uiSpec.controls)) {
+      expectedCanonicalVars.set(`--ds-ui-controls-${token}`, value);
+    }
+
+    for (const [token, value] of Object.entries(uiSpec.panels)) {
+      expectedCanonicalVars.set(`--ds-ui-panels-${token}`, value);
+    }
+
+    for (const [variable, value] of expectedCanonicalVars) {
+      expect(cssVars.get(variable)).toBe(value);
+    }
   });
 });
