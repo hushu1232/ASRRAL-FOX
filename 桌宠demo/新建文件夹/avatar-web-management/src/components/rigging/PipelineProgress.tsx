@@ -173,7 +173,7 @@ export default function PipelineProgress({ imageId, previewUrl, onComplete, onEr
       {hasError && (
         <Alert
           type="error"
-          message={tr('generationFailed')}
+          title={tr('generationFailed')}
           description={progress?.error || tp('unknownError')}
           showIcon
         />
@@ -182,7 +182,7 @@ export default function PipelineProgress({ imageId, previewUrl, onComplete, onEr
       {isComplete && (
         <Alert
           type="success"
-          message={tp('complete')}
+          title={tp('complete')}
           description={tp('totalTime', { seconds: Math.round((progress!.result!.totalTimeMs) / 1000) })}
           showIcon
         />

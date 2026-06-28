@@ -132,7 +132,7 @@ export default function RiggingUpload({ onPipelineStart, disabled }: RiggingUplo
       )}
 
       <Card title={t('generateOptions')} className="mt-4">
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <div>
             <Text strong>{t('skeletonTemplate')}</Text>
             <Select

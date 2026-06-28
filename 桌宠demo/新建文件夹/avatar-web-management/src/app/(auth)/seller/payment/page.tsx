@@ -133,7 +133,7 @@ export default function SellerPaymentPage() {
                 }
               >
                 {methods.length === 0 && (
-                  <Alert message="尚未添加收款方式，提现前需要先绑定收款账户" type="info" showIcon style={{ marginBottom: 16 }} />
+                  <Alert title="尚未添加收款方式，提现前需要先绑定收款账户" type="info" showIcon style={{ marginBottom: 16 }} />
                 )}
                 {methods.map(m => (
                   <Card key={m.id} size="small" style={{ marginBottom: 8 }}>

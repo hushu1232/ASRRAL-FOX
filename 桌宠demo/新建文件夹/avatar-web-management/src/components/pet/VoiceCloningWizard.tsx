@@ -239,11 +239,11 @@ export default function VoiceCloningWizard() {
 
   const renderStep1 = () => (
     <Card className="max-w-2xl mx-auto">
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <Alert
           type="info"
           showIcon
-          message={t('step1.recordingTips')}
+          title={t('step1.recordingTips')}
           description={
             <ul style={{ margin: 0, paddingLeft: 20 }}>
               <li>{t('step1.tipNoBgMusic')}</li>
@@ -262,13 +262,13 @@ export default function VoiceCloningWizard() {
           className="!p-6"
         >
           {audioFile ? (
-            <Space direction="vertical">
+            <Space orientation="vertical">
               <SoundOutlined style={{ fontSize: 40, color: '#1677ff' }} />
               <Text strong>{audioFile.name}</Text>
               <Text type="secondary">{(audioFile.size / (1024 * 1024)).toFixed(1)} MB</Text>
             </Space>
           ) : (
-            <Space direction="vertical">
+            <Space orientation="vertical">
               <InboxOutlined style={{ fontSize: 48, color: '#1677ff' }} />
               <Text strong>{t('step1.dragText')}</Text>
               <Text type="secondary">{t('step1.dragHint')}</Text>
@@ -314,7 +314,7 @@ export default function VoiceCloningWizard() {
 
   const renderStep2 = () => (
     <Card className="max-w-2xl mx-auto">
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <Descriptions bordered size="small" column={1}>
           <Descriptions.Item label={t('step2.audioFile')}>{audioFile?.name}</Descriptions.Item>
           <Descriptions.Item label={t('step2.voiceName')}>{voiceName}</Descriptions.Item>
@@ -391,11 +391,11 @@ export default function VoiceCloningWizard() {
 
   const renderStep3 = () => (
     <Card className="max-w-2xl mx-auto">
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <Alert
           type="success"
           showIcon
-          message={t('step3.alertTitle')}
+          title={t('step3.alertTitle')}
           description={t('step3.alertDesc')}
         />
 
@@ -448,7 +448,7 @@ export default function VoiceCloningWizard() {
                     </Space>
                   }
                   description={
-                    <Space direction="vertical" size={0}>
+                    <Space orientation="vertical" size={0}>
                       <Text type="secondary">
                         {t('step3.promptText', { text: voice.prompt_text?.slice(0, 50) || t('step3.noPromptText') })}
                       </Text>

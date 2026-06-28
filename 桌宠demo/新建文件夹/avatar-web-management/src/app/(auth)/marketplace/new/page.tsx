@@ -117,7 +117,7 @@ export default function NewMarketItemPage() {
           <Alert
             type="info"
             icon={<InfoCircleOutlined />}
-            message={t('fromAvatarTitle')}
+            title={t('fromAvatarTitle')}
             description={t('fromAvatarDesc', { name: avatarTitle, id: avatarId })}
             className="mb-4"
             showIcon
@@ -128,7 +128,7 @@ export default function NewMarketItemPage() {
           <Alert
             type="info"
             icon={<InfoCircleOutlined />}
-            message={t('fromAssetTitle')}
+            title={t('fromAssetTitle')}
             description={t('fromAssetDesc', { name: assetFilename || assetId })}
             className="mb-4"
             showIcon
