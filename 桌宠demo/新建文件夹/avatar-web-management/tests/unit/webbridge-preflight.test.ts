@@ -11,6 +11,59 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function preflightFetchWithPackageManifest(manifestData: Record<string, unknown>): WebBridgePreflightFetch {
+  return async (url) => {
+    if (String(url).endsWith('/api/health')) {
+      return jsonResponse({ status: 'ok' });
+    }
+    if (String(url).endsWith('/api/auth/login')) {
+      return new Response(JSON.stringify({ success: true, data: { accessToken: 'access-token' } }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'set-cookie': 'refreshToken=refresh-token; Path=/; HttpOnly',
+        },
+      });
+    }
+    if (String(url).endsWith('/api/auth/refresh')) {
+      return jsonResponse({ success: true, data: { accessToken: 'refreshed-token' } });
+    }
+    if (String(url).endsWith('/api/pet/config')) {
+      return jsonResponse({ success: true, data: { id: 'pet-config-1' } });
+    }
+    if (String(url).endsWith('/api/pet/sync')) {
+      return jsonResponse({
+        success: true,
+        data: {
+          version: 1,
+          petName: 'Pet',
+          animationModel: 'live2d',
+          mappedAssets: [],
+        },
+      });
+    }
+    if (String(url).endsWith('/api/pet/export')) {
+      return jsonResponse({
+        success: true,
+        data: {
+          version: 1,
+          petName: 'Pet',
+          animationModel: 'live2d',
+          params: [],
+          bodyParams: [],
+          equippedParts: [],
+          mappedAssets: [],
+        },
+      });
+    }
+    if (String(url).endsWith('/api/webbridge/packages/current-pet-character-bundle/manifest')) {
+      return jsonResponse({ success: true, data: manifestData });
+    }
+
+    return jsonResponse({ success: false }, 404);
+  };
+}
+
 describe('webbridge preflight', () => {
   it('uses local defaults that match the seeded demo account', () => {
     const config = createWebBridgePreflightConfig({});
@@ -125,5 +178,47 @@ describe('webbridge preflight', () => {
       clientVersion: 'desktop-webbridge-preflight',
       capabilities: ['config', 'assets', 'avatar'],
     });
+  });
+
+  it('fails package manifest preflight when the manifest can auto-apply', async () => {
+    const fetchImpl = preflightFetchWithPackageManifest({
+      packageId: 'current-pet-character-bundle',
+      packageType: 'characterBundle',
+      files: [{ id: 'character-card', sha256: 'hash' }],
+      activationPolicy: {
+        autoApply: true,
+        requiresLocalConfirmation: true,
+      },
+    });
+
+    const result = await runWebBridgePreflight(createWebBridgePreflightConfig({}), fetchImpl);
+
+    expect(result.ok).toBe(false);
+    expect(result.checks.at(-1)).toEqual(expect.objectContaining({
+      name: 'package manifest',
+      ok: false,
+      detail: 'activationPolicy.autoApply must be false',
+    }));
+  });
+
+  it('fails package manifest preflight when file hash metadata is missing', async () => {
+    const fetchImpl = preflightFetchWithPackageManifest({
+      packageId: 'current-pet-character-bundle',
+      packageType: 'characterBundle',
+      files: [{ id: 'character-card' }],
+      activationPolicy: {
+        autoApply: false,
+        requiresLocalConfirmation: true,
+      },
+    });
+
+    const result = await runWebBridgePreflight(createWebBridgePreflightConfig({}), fetchImpl);
+
+    expect(result.ok).toBe(false);
+    expect(result.checks.at(-1)).toEqual(expect.objectContaining({
+      name: 'package manifest',
+      ok: false,
+      detail: 'package file missing sha256',
+    }));
   });
 });

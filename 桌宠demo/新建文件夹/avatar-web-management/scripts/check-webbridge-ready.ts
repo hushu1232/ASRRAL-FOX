@@ -272,6 +272,24 @@ async function checkPackageManifest(
   if (!Array.isArray(data.files) || data.files.length === 0) {
     return failCheck('package manifest', response.status, 'missing files');
   }
+  const [firstFile] = data.files;
+  if (!firstFile || typeof firstFile !== 'object' || Array.isArray(firstFile)) {
+    return failCheck('package manifest', response.status, 'invalid package file');
+  }
+  if (!hasString(firstFile as JsonObject, 'sha256')) {
+    return failCheck('package manifest', response.status, 'package file missing sha256');
+  }
+  const activationPolicy = data.activationPolicy;
+  if (!activationPolicy || typeof activationPolicy !== 'object' || Array.isArray(activationPolicy)) {
+    return failCheck('package manifest', response.status, 'missing activationPolicy');
+  }
+  const policy = activationPolicy as JsonObject;
+  if (policy.autoApply !== false) {
+    return failCheck('package manifest', response.status, 'activationPolicy.autoApply must be false');
+  }
+  if (policy.requiresLocalConfirmation !== true) {
+    return failCheck('package manifest', response.status, 'activationPolicy.requiresLocalConfirmation must be true');
+  }
 
   return okCheck('package manifest', response.status);
 }
