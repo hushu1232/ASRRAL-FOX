@@ -63,21 +63,22 @@ All smoke-test output should stay inside that directory.
 
 ## Repository State Requirement
 
-The WebBridge package download fix is split across two repositories:
+The current WebBridge package download fix is published through the Alife submodule model:
 
-- Alife submodule commit:
-  - `e96e82f fix: authenticate WebBridge package downloads`
-- FOXD parent commit:
-  - `70fa192 chore: advance Alife WebBridge submodule`
+- Alife repository commit:
+  - `b95422f4 fix: authenticate WebBridge package downloads`
+- FOXD parent repository commit:
+  - `b86b775 chore: update Alife submodule pointer`
 
-If pushing before another machine or CI runs the smoke test, push in this order:
+`D:\FOXD\alife-service` must remain a Git submodule that points at a commit in `git@github.com:hushu1232/Alife-byastralfox.git`.
 
-```powershell
-git -C D:\FOXD\alife-service push origin master
-git -C D:\FOXD push origin master
+Do not upload Alife into FOXD as a copied source snapshot. Push Alife changes to `Alife-byastralfox` first, then update the FOXD `alife-service` gitlink.
+
+Canonical upload and version snapshot rules are documented in:
+
+```text
+D:\FOXD\docs\alife-submodule-upload-rules.md
 ```
-
-The parent repository records only the submodule commit pointer. The Alife commit must exist on the Alife remote before the FOXD parent commit is pushed.
 
 ## FOXD Web Preflight
 
