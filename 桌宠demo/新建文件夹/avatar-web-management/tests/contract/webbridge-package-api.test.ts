@@ -1,8 +1,5 @@
 import type { NextRequest } from 'next/server';
-import {
-  CHARACTER_CARD_FILE_ID,
-  CURRENT_PET_PACKAGE_ID,
-} from '@/lib/webbridge/package-service';
+import { CHARACTER_CARD_FILE_ID, CURRENT_PET_PACKAGE_ID } from '@/lib/webbridge/package-service';
 
 export {};
 
@@ -11,7 +8,9 @@ const mockPetService = {
 };
 
 jest.mock('@/lib/services/petService', () => ({ petService: mockPetService }));
-jest.mock('@/lib/logger', () => ({ createLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }) }));
+jest.mock('@/lib/logger', () => ({
+  createLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
+}));
 
 const testUser = { sub: 'user-1', email: 'test@example.com', role: 'user', workspaceId: 'ws-1' };
 
@@ -19,10 +18,13 @@ jest.mock('@/lib/auth/middleware', () => ({
   withAuth: jest.fn((handler: Function) => {
     return async (req: Request, ctx?: unknown) => {
       if (!req.headers.get('authorization')) {
-        return new Response(JSON.stringify({ success: false, error: 'Missing authorization header' }), {
-          status: 401,
-          headers: { 'content-type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({ success: false, error: 'Missing authorization header' }),
+          {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
       }
       return handler(req, testUser, ctx);
     };
@@ -45,11 +47,20 @@ const petExport = {
   mappedAssets: [],
 };
 
-function mockRequest(method: string, url: string, auth = true): NextRequest {
+function mockRequest(
+  method: string,
+  url: string,
+  auth = true,
+  extraHeaders: Record<string, string> = {},
+): NextRequest {
   const headers = new Headers();
   if (auth) headers.set('authorization', 'Bearer test-token');
+  for (const [key, value] of Object.entries(extraHeaders)) {
+    headers.set(key, value);
+  }
 
-  return new Request(`http://localhost${url}`, {
+  const requestUrl = url.startsWith('http') ? url : `http://localhost${url}`;
+  return new Request(requestUrl, {
     method,
     headers,
   }) as unknown as NextRequest;
@@ -73,7 +84,7 @@ describe('WebBridge package API contract', () => {
     const { GET } = await import('@/app/api/webbridge/packages/[id]/manifest/route');
     const res = await GET(
       mockRequest('GET', `/api/webbridge/packages/${CURRENT_PET_PACKAGE_ID}/manifest`),
-      params({ id: CURRENT_PET_PACKAGE_ID })
+      params({ id: CURRENT_PET_PACKAGE_ID }),
     );
     const { status, body } = await parseJsonResponse(res);
 
@@ -83,17 +94,38 @@ describe('WebBridge package API contract', () => {
     expect(body.data.version).toBe(String(petExport.version));
     expect(body.data.files).toHaveLength(1);
     expect(body.data.files[0].url).toBe(
-      `http://localhost/api/webbridge/packages/${CURRENT_PET_PACKAGE_ID}/files/${CHARACTER_CARD_FILE_ID}`
+      `http://localhost/api/webbridge/packages/${CURRENT_PET_PACKAGE_ID}/files/${CHARACTER_CARD_FILE_ID}`,
     );
     expect(body.data.activationPolicy.autoApply).toBe(false);
     expect(mockPetService.exportConfig).toHaveBeenCalledWith('user-1', 'ws-1');
+  });
+  it('uses the request host instead of an unspecified standalone bind host for package file URLs', async () => {
+    const { GET } = await import('@/app/api/webbridge/packages/[id]/manifest/route');
+    const res = await GET(
+      mockRequest(
+        'GET',
+        `http://0.0.0.0:3000/api/webbridge/packages/${CURRENT_PET_PACKAGE_ID}/manifest`,
+        true,
+        { host: 'localhost:3000' },
+      ),
+      params({ id: CURRENT_PET_PACKAGE_ID }),
+    );
+    const { status, body } = await parseJsonResponse(res);
+
+    expect(status).toBe(200);
+    expect(body.data.files[0].url).toBe(
+      `http://localhost:3000/api/webbridge/packages/${CURRENT_PET_PACKAGE_ID}/files/${CHARACTER_CARD_FILE_ID}`,
+    );
   });
 
   it('returns downloadable character-card bytes', async () => {
     const { GET } = await import('@/app/api/webbridge/packages/[id]/files/[fileId]/route');
     const res = await GET(
-      mockRequest('GET', `/api/webbridge/packages/${CURRENT_PET_PACKAGE_ID}/files/${CHARACTER_CARD_FILE_ID}`),
-      params({ id: CURRENT_PET_PACKAGE_ID, fileId: CHARACTER_CARD_FILE_ID })
+      mockRequest(
+        'GET',
+        `/api/webbridge/packages/${CURRENT_PET_PACKAGE_ID}/files/${CHARACTER_CARD_FILE_ID}`,
+      ),
+      params({ id: CURRENT_PET_PACKAGE_ID, fileId: CHARACTER_CARD_FILE_ID }),
     );
     const body = JSON.parse(Buffer.from(await res.arrayBuffer()).toString('utf8'));
 
@@ -106,7 +138,7 @@ describe('WebBridge package API contract', () => {
     const { GET } = await import('@/app/api/webbridge/packages/[id]/manifest/route');
     const res = await GET(
       mockRequest('GET', '/api/webbridge/packages/unknown-package/manifest'),
-      params({ id: 'unknown-package' })
+      params({ id: 'unknown-package' }),
     );
     const { status, body } = await parseJsonResponse(res);
 
@@ -119,7 +151,7 @@ describe('WebBridge package API contract', () => {
     const { GET } = await import('@/app/api/webbridge/packages/[id]/files/[fileId]/route');
     const res = await GET(
       mockRequest('GET', `/api/webbridge/packages/${CURRENT_PET_PACKAGE_ID}/files/unknown-file`),
-      params({ id: CURRENT_PET_PACKAGE_ID, fileId: 'unknown-file' })
+      params({ id: CURRENT_PET_PACKAGE_ID, fileId: 'unknown-file' }),
     );
     const { status, body } = await parseJsonResponse(res);
 
