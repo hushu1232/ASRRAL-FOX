@@ -1,6 +1,7 @@
 'use client';
 
-import { Alert, Card, Descriptions, Space, Steps, Tag, Typography } from 'antd';
+import { useMemo, useState } from 'react';
+import { Alert, Card, Descriptions, Segmented, Space, Steps, Tag, Typography } from 'antd';
 import {
   ApiOutlined,
   CheckCircleOutlined,
@@ -14,44 +15,147 @@ const { Text, Title } = Typography;
 
 const PACKAGE_ROOT = 'D:\\tmp\\alife-webbridge-integration';
 
+type MockScenarioKey = 'pendingActivation' | 'unauthorized' | 'hashMismatch' | 'securityBlocked';
+
+type CheckState = 'ready' | 'waiting' | 'failed' | 'blocked';
+
 const mockChecks = [
   {
     key: 'preflight',
     label: 'Preflight',
     detail: 'WebBridge readiness',
-    color: 'green',
     icon: <CloudServerOutlined />,
   },
   {
     key: 'manifest',
     label: 'Package manifest',
     detail: 'current-pet-character-bundle',
-    color: 'green',
     icon: <ApiOutlined />,
   },
   {
     key: 'hash',
     label: 'SHA-256 validation',
     detail: 'character-card',
-    color: 'green',
     icon: <SafetyCertificateOutlined />,
   },
   {
     key: 'pending',
     label: 'Pending activation',
     detail: 'Local confirmation',
-    color: 'orange',
     icon: <ClockCircleOutlined />,
   },
 ];
 
-const failureReasons = [
-  '401 package file',
-  'PACKAGE_HASH_MISMATCH',
-  'PACKAGE_SECURITY_BLOCKED',
-];
+const mockScenarios: Record<
+  MockScenarioKey,
+  {
+    label: string;
+    packageState: string;
+    tagColor: string;
+    activeStep: number;
+    nextAction: string;
+    detail: string;
+    alertType: 'success' | 'warning' | 'error';
+    checks: Record<string, CheckState>;
+  }
+> = {
+  pendingActivation: {
+    label: 'Ready package',
+    packageState: 'pendingActivation',
+    tagColor: 'orange',
+    activeStep: 3,
+    nextAction: 'Local operator review before apply',
+    detail: 'Package passed preflight, manifest, and SHA-256 checks. Activation is held locally.',
+    alertType: 'success',
+    checks: {
+      preflight: 'ready',
+      manifest: 'ready',
+      hash: 'ready',
+      pending: 'waiting',
+    },
+  },
+  unauthorized: {
+    label: 'Auth failure',
+    packageState: '401 package file',
+    tagColor: 'red',
+    activeStep: 1,
+    nextAction: 'Refresh package bearer token before download',
+    detail: 'The manifest can be reached, but a package file request is rejected by authorization.',
+    alertType: 'error',
+    checks: {
+      preflight: 'ready',
+      manifest: 'failed',
+      hash: 'blocked',
+      pending: 'blocked',
+    },
+  },
+  hashMismatch: {
+    label: 'Hash mismatch',
+    packageState: 'PACKAGE_HASH_MISMATCH',
+    tagColor: 'red',
+    activeStep: 2,
+    nextAction: 'Reject package and re-download bundle',
+    detail: 'The downloaded file digest does not match the signed package manifest.',
+    alertType: 'error',
+    checks: {
+      preflight: 'ready',
+      manifest: 'ready',
+      hash: 'failed',
+      pending: 'blocked',
+    },
+  },
+  securityBlocked: {
+    label: 'Security block',
+    packageState: 'PACKAGE_SECURITY_BLOCKED',
+    tagColor: 'red',
+    activeStep: 0,
+    nextAction: 'Keep activation disabled until path validation passes',
+    detail: 'A path traversal or unsafe package file target is blocked before activation.',
+    alertType: 'error',
+    checks: {
+      preflight: 'failed',
+      manifest: 'blocked',
+      hash: 'blocked',
+      pending: 'blocked',
+    },
+  },
+};
+
+const checkStateLabels: Record<CheckState, string> = {
+  ready: 'Ready',
+  waiting: 'Waiting',
+  failed: 'Failed',
+  blocked: 'Blocked',
+};
+
+const checkStateColors: Record<CheckState, string> = {
+  ready: 'green',
+  waiting: 'orange',
+  failed: 'red',
+  blocked: 'default',
+};
+
+const failureReasons = ['401 package file', 'PACKAGE_HASH_MISMATCH', 'PACKAGE_SECURITY_BLOCKED'];
+
+const metricCardStyle = {
+  border: '1px solid var(--border-subtle)',
+  borderRadius: 8,
+  padding: 14,
+  background: 'var(--bg-card-hover)',
+};
 
 export default function WebBridgeMockStatusPanel() {
+  const [scenarioKey, setScenarioKey] = useState<MockScenarioKey>('pendingActivation');
+  const scenario = mockScenarios[scenarioKey];
+  const scenarioOptions = useMemo(
+    () =>
+      Object.entries(mockScenarios).map(([value, item]) => ({
+        label: item.label,
+        value,
+      })),
+    [],
+  );
+
   return (
     <Card
       title={
@@ -61,8 +165,20 @@ export default function WebBridgeMockStatusPanel() {
           <Tag color="blue">Mock</Tag>
         </Space>
       }
+      styles={{ body: { background: 'var(--bg-card)' } }}
     >
       <Space orientation="vertical" size="large" style={{ width: '100%' }}>
+        <div>
+          <Text strong>Mock scenario</Text>
+          <div style={{ marginTop: 8 }}>
+            <Segmented
+              options={scenarioOptions}
+              value={scenarioKey}
+              onChange={(value) => setScenarioKey(value as MockScenarioKey)}
+            />
+          </div>
+        </div>
+
         <div
           style={{
             display: 'grid',
@@ -70,37 +186,25 @@ export default function WebBridgeMockStatusPanel() {
             gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
           }}
         >
-          <div
-            style={{
-              border: '1px solid rgba(148, 163, 184, 0.22)',
-              borderRadius: 8,
-              padding: 14,
-            }}
-          >
+          <div style={metricCardStyle}>
             <Text type="secondary">Runtime</Text>
             <Title level={5} style={{ margin: '6px 0 0' }}>
               Alife .NET 9
             </Title>
           </div>
-          <div
-            style={{
-              border: '1px solid rgba(148, 163, 184, 0.22)',
-              borderRadius: 8,
-              padding: 14,
-            }}
-          >
+          <div style={metricCardStyle}>
             <Text type="secondary">Package state</Text>
             <div style={{ marginTop: 8 }}>
-              <Tag color="orange">pendingActivation</Tag>
+              <Tag color={scenario.tagColor}>{scenario.packageState}</Tag>
             </div>
           </div>
-          <div
-            style={{
-              border: '1px solid rgba(148, 163, 184, 0.22)',
-              borderRadius: 8,
-              padding: 14,
-            }}
-          >
+          <div style={metricCardStyle}>
+            <Text type="secondary">Next action</Text>
+            <div style={{ marginTop: 8 }}>
+              <Text>{scenario.nextAction}</Text>
+            </div>
+          </div>
+          <div style={metricCardStyle}>
             <Text type="secondary">Isolation</Text>
             <div style={{ marginTop: 8 }}>
               <Tag color="default">No live Alife calls</Tag>
@@ -110,13 +214,16 @@ export default function WebBridgeMockStatusPanel() {
 
         <Steps
           size="small"
-          current={3}
+          current={scenario.activeStep}
           items={mockChecks.map((check) => ({
             title: check.label,
+            status: toStepStatus(scenario.checks[check.key]),
             content: (
               <Space orientation="vertical" size={2}>
                 <Text type="secondary">{check.detail}</Text>
-                <Tag color={check.color}>{check.key === 'pending' ? 'Waiting' : 'Ready'}</Tag>
+                <Tag color={checkStateColors[scenario.checks[check.key]]}>
+                  {checkStateLabels[scenario.checks[check.key]]}
+                </Tag>
               </Space>
             ),
             icon: check.icon,
@@ -127,12 +234,9 @@ export default function WebBridgeMockStatusPanel() {
           <Descriptions.Item label="Package root">
             <Text code>{PACKAGE_ROOT}</Text>
           </Descriptions.Item>
-          <Descriptions.Item label="Manifest">
-            current-pet-character-bundle
-          </Descriptions.Item>
-          <Descriptions.Item label="File">
-            characters/current-pet/card.json
-          </Descriptions.Item>
+          <Descriptions.Item label="Manifest">current-pet-character-bundle</Descriptions.Item>
+          <Descriptions.Item label="File">characters/current-pet/card.json</Descriptions.Item>
+          <Descriptions.Item label="Scenario detail">{scenario.detail}</Descriptions.Item>
         </Descriptions>
 
         <Alert
@@ -152,13 +256,34 @@ export default function WebBridgeMockStatusPanel() {
         />
 
         <Alert
-          type="success"
+          type={scenario.alertType}
           showIcon
           icon={<CheckCircleOutlined />}
           title="Activation guard"
-          description="autoApply=false, requiresLocalConfirmation=true"
+          description={
+            <Space orientation="vertical" size={4}>
+              <Text>{scenario.nextAction}</Text>
+              <Text code>autoApply=false, requiresLocalConfirmation=true</Text>
+            </Space>
+          }
         />
       </Space>
     </Card>
   );
+}
+
+function toStepStatus(state: CheckState): 'finish' | 'process' | 'wait' | 'error' {
+  if (state === 'failed') {
+    return 'error';
+  }
+
+  if (state === 'ready') {
+    return 'finish';
+  }
+
+  if (state === 'waiting') {
+    return 'process';
+  }
+
+  return 'wait';
 }

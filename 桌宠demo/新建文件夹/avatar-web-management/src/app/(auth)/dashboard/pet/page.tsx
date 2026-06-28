@@ -16,7 +16,6 @@ import {
   Spin,
   Descriptions,
   Alert,
-  Tooltip,
   Steps,
 } from 'antd';
 import {
@@ -29,9 +28,7 @@ import {
   ApiOutlined,
   SaveOutlined,
   LinkOutlined,
-  DisconnectOutlined,
   ShopOutlined,
-  InfoCircleOutlined,
   DownloadOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons';
@@ -107,7 +104,7 @@ export default function PetConfigPage() {
 
   useEffect(() => {
     fetchConfig().then(() => fetchSyncStatus());
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!config) {
@@ -214,7 +211,7 @@ export default function PetConfigPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">
+        <h1 className="text-2xl font-bold m-0" style={{ color: 'var(--text-primary)' }}>
           <RobotOutlined className="mr-3" />
           {t('title')}
         </h1>
@@ -245,16 +242,18 @@ export default function PetConfigPage() {
           type="info"
           className="mb-4"
           style={{
-            background: 'linear-gradient(135deg, #1a1030 0%, #12122A 100%)',
-            borderColor: 'rgba(139,92,246,0.3)',
+            background: 'var(--bg-card)',
+            borderColor: 'var(--border-subtle)',
           }}
           title={
             <div className="flex items-center justify-between">
-              <span className="text-white font-medium">{t('wizard.title')}</span>
+              <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                {t('wizard.title')}
+              </span>
               <Button
                 size="small"
                 type="text"
-                style={{ color: '#9494a8' }}
+                style={{ color: 'var(--text-muted)' }}
                 onClick={() => {
                   setShowWizard(false);
                   setWizardDismissed(true);
@@ -274,10 +273,10 @@ export default function PetConfigPage() {
                 {
                   title: t('wizard.step1Title'),
                   content: (
-                    <span className="text-gray-400 text-xs">
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                       {t.rich('wizard.step1Desc', {
                         link: (chunks) => (
-                          <a href="/downloads" className="text-purple-400 hover:text-purple-300">
+                          <a href="/downloads" style={{ color: 'var(--accent)' }}>
                             {chunks}
                           </a>
                         ),
@@ -288,27 +287,47 @@ export default function PetConfigPage() {
                 },
                 {
                   title: t('wizard.step2Title'),
-                  content: <span className="text-gray-400 text-xs">{t('wizard.step2Desc')}</span>,
+                  content: (
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      {t('wizard.step2Desc')}
+                    </span>
+                  ),
                   icon: <KeyOutlined />,
                 },
                 {
                   title: t('wizard.step3Title'),
-                  content: <span className="text-gray-400 text-xs">{t('wizard.step3Desc')}</span>,
+                  content: (
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      {t('wizard.step3Desc')}
+                    </span>
+                  ),
                   icon: <RobotOutlined />,
                 },
                 {
                   title: t('wizard.step4Title'),
-                  content: <span className="text-gray-400 text-xs">{t('wizard.step4Desc')}</span>,
+                  content: (
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      {t('wizard.step4Desc')}
+                    </span>
+                  ),
                   icon: <PlayCircleOutlined />,
                 },
                 {
                   title: t('wizard.step5Title'),
-                  content: <span className="text-gray-400 text-xs">{t('wizard.step5Desc')}</span>,
+                  content: (
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      {t('wizard.step5Desc')}
+                    </span>
+                  ),
                   icon: <ApiOutlined />,
                 },
                 {
                   title: t('wizard.step6Title'),
-                  content: <span className="text-gray-400 text-xs">{t('wizard.step6Desc')}</span>,
+                  content: (
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      {t('wizard.step6Desc')}
+                    </span>
+                  ),
                   icon: <CheckCircleOutlined />,
                 },
               ]}
@@ -328,19 +347,19 @@ export default function PetConfigPage() {
           className="flex-shrink-0"
           style={{
             width: 360,
-            background: '#12122A',
-            borderColor: 'rgba(139,92,246,0.15)',
+            background: 'var(--bg-card)',
+            borderColor: 'var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}
           styles={{ body: { width: '100%', textAlign: 'center', padding: 48 } }}
         >
-          <PictureOutlined style={{ fontSize: 64, color: '#5e5e7a', marginBottom: 16 }} />
-          <p style={{ color: '#9494a8', fontSize: 14 }}>
+          <PictureOutlined style={{ fontSize: 64, color: 'var(--text-muted)', marginBottom: 16 }} />
+          <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
             {t('preview.label', { name: config?.pet_name || t('preview.defaultName') })}
           </p>
-          <p style={{ color: '#5e5e7a', fontSize: 12 }}>{t('preview.tip')}</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('preview.tip')}</p>
           {config?.avatar_id && (
             <Tag icon={<LinkOutlined />} color="purple" style={{ marginTop: 8 }}>
               {t('preview.bound')}
@@ -352,7 +371,10 @@ export default function PetConfigPage() {
               colon={false}
               column={1}
               style={{ marginTop: 16, textAlign: 'left' }}
-              styles={{ label: { color: '#9494a8' }, content: { color: '#e8e8f0' } }}
+              styles={{
+                label: { color: 'var(--text-secondary)' },
+                content: { color: 'var(--text-primary)' },
+              }}
             >
               <Descriptions.Item label={t('preview.system')}>
                 {config.animation_model.toUpperCase()}
@@ -370,7 +392,7 @@ export default function PetConfigPage() {
         {/* Right: Config Tabs */}
         <Card
           className="flex-1"
-          style={{ background: '#12122A', borderColor: 'rgba(139,92,246,0.15)' }}
+          style={{ background: 'var(--bg-card)', borderColor: 'var(--border-subtle)' }}
         >
           <Form form={form} layout="vertical" style={{ maxWidth: 600 }}>
             <Tabs
@@ -417,7 +439,6 @@ export default function PetConfigPage() {
                             icon={<ShopOutlined />}
                             type="primary"
                             onClick={() => window.open('/marketplace', '_blank')}
-                            className="bg-gradient-to-r from-purple-600 to-blue-600 border-0"
                           >
                             {t('model.browseMarket')}
                           </Button>
@@ -498,7 +519,7 @@ export default function PetConfigPage() {
             <Spin />
           </div>
         ) : assets.length === 0 ? (
-          <div className="py-12 text-center" style={{ color: '#9494a8' }}>
+          <div className="py-12 text-center" style={{ color: 'var(--text-muted)' }}>
             {t('assetPicker.noAssets')}
           </div>
         ) : (
