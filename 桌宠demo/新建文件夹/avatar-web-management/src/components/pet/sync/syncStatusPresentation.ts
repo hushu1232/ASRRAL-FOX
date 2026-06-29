@@ -113,10 +113,6 @@ function getStagedLifecycleState(status: DesktopSyncStatus): SyncLifecycleStep['
     return 'process';
   }
 
-  if (status.summaryKind === 'pendingPull') {
-    return 'process';
-  }
-
   return 'wait';
 }
 
@@ -127,10 +123,6 @@ function getAppliedLifecycleState(status: DesktopSyncStatus): SyncLifecycleStep[
 
   if (status.isUpToDate || status.packageState === 'applied') {
     return 'finish';
-  }
-
-  if (status.requiresLocalConfirmation) {
-    return 'process';
   }
 
   return 'wait';

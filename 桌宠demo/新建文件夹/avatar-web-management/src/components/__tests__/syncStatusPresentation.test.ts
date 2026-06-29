@@ -54,6 +54,32 @@ describe('syncStatusPresentation', () => {
     ]);
   });
 
+  it('keeps staged and applied waiting when published package is pending pull', () => {
+    const steps = getLifecycleSteps(
+      createStatus({
+        packageState: 'published',
+        summaryKind: 'pendingPull',
+        requiresLocalConfirmation: false,
+        milestones: ['manifestFetched'],
+      }),
+    );
+
+    expect(steps.map((step) => step.state)).toEqual(['finish', 'wait', 'wait']);
+  });
+
+  it('keeps applied waiting while staged package needs local confirmation', () => {
+    const steps = getLifecycleSteps(
+      createStatus({
+        packageState: 'staged',
+        summaryKind: 'localConfirmationRequired',
+        requiresLocalConfirmation: true,
+        milestones: ['packageStaged', 'confirmationRequested'],
+      }),
+    );
+
+    expect(steps.map((step) => step.state)).toEqual(['finish', 'process', 'wait']);
+  });
+
   it('keeps pulled package in staged process even without local confirmation', () => {
     const steps = getLifecycleSteps(
       createStatus({
