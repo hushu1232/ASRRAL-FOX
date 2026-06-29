@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <RootNamespace>AlifeWebBridgeSmoke</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AlifeRoot Condition="'$(AlifeRoot)' == ''">D:\Alife</AlifeRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(AlifeRoot)\sources\Alife.Function\Alife.Function.WebBridge\Alife.Function.WebBridge.csproj" />
+  </ItemGroup>
+
+</Project>

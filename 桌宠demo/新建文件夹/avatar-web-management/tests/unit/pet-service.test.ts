@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { petService } from '@/lib/services/petService';
 
 // ── Mocks ──────────────────────────────────────────────────
@@ -54,6 +56,15 @@ const userId = 'user-1';
 const workspaceId = 'ws-1';
 const configId = 'config-1';
 
+function readPetConfigModel(): string {
+  const schema = readFileSync(join(process.cwd(), 'prisma', 'schema.prisma'), 'utf8');
+  const match = schema.match(/model PetConfig \{(?<body>[\s\S]*?)\n\}/);
+  if (!match?.groups?.body) {
+    throw new Error('PetConfig model not found in Prisma schema.');
+  }
+  return match.groups.body;
+}
+
 function makeRawConfig(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
     id: configId, userId, workspaceId,
@@ -68,6 +79,27 @@ function makeRawConfig(overrides?: Record<string, unknown>): Record<string, unkn
 // ── Tests ──────────────────────────────────────────────────
 describe('petService', () => {
   beforeEach(() => { jest.clearAllMocks(); });
+
+  it('keeps Prisma PetConfig columns aligned with WebBridge desktop config fields', () => {
+    const petConfigModel = readPetConfigModel();
+
+    for (const field of [
+      'characterExtra',
+      'ttsLocalUrl',
+      'sttLocalUrl',
+      'llmModelPath',
+      'sovitsUrl',
+      'sovitsReferenceVoiceId',
+      'enableWakeWord',
+      'wakeWord',
+      'wakeSensitivity',
+      'autoStartServices',
+      'pipelineTimeout',
+      'modelPath',
+    ]) {
+      expect(petConfigModel).toContain(field);
+    }
+  });
 
   // ═══ getConfig ════════════════════════════════════════════
   describe('getConfig', () => {

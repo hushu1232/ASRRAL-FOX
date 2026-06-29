@@ -22,7 +22,13 @@ export type IntegrationLocalRunConfig = {
   test: NodeScriptCommand;
 };
 
-export type LocalServerMode = 'integration' | 'contracts-live' | 'e2e' | 'e2e-api' | 'webbridge';
+export type LocalServerMode =
+  | 'integration'
+  | 'contracts-live'
+  | 'e2e'
+  | 'e2e-api'
+  | 'webbridge'
+  | 'webbridge-smoke';
 
 const INTEGRATION_TEST_ARGS = [
   '--verbose',
@@ -136,6 +142,13 @@ function createTestCommand(
       return {
         command: resolvePackageFile('tsx', 'dist/cli.mjs'),
         args: ['scripts/check-webbridge-ready.ts', ...extraArgs],
+        cwd: rootDir,
+        env: process.env,
+      };
+    case 'webbridge-smoke':
+      return {
+        command: resolvePackageFile('tsx', 'dist/cli.mjs'),
+        args: ['scripts/check-webbridge-staged-applied.ts', ...extraArgs],
         cwd: rootDir,
         env: process.env,
       };
@@ -275,7 +288,8 @@ function parseMode(argv: string[]): LocalServerMode {
     raw === 'contracts-live' ||
     raw === 'e2e' ||
     raw === 'e2e-api' ||
-    raw === 'webbridge'
+    raw === 'webbridge' ||
+    raw === 'webbridge-smoke'
   ) {
     return raw;
   }

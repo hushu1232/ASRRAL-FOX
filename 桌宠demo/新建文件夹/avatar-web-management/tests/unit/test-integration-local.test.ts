@@ -82,4 +82,11 @@ describe('test:integration:local runner', () => {
     expect(config.test.command).toContain('tsx');
     expect(config.test.args).toEqual(['scripts/check-webbridge-ready.ts']);
   });
+
+  it('supports Alife .NET WebBridge staged-to-applied smoke checks against the local standalone server', () => {
+    const config = createLocalServerRunConfig('webbridge-smoke');
+
+    expect(config.test.command).toContain('tsx');
+    expect(config.test.args).toEqual(['scripts/check-webbridge-staged-applied.ts']);
+  });
 });

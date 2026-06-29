@@ -30,6 +30,10 @@ node_modules/
 .env.local
 桌宠demo/新建文件夹/avatar-web-management/public/uploads/
 
+# .NET generated outputs
+[Bb]in/
+[Oo]bj/
+
 # Local indexes
 .codegraph/
 

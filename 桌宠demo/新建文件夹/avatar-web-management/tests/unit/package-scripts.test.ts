@@ -36,4 +36,12 @@ describe('package test scripts', () => {
 
     expect(pkg.scripts['check:webbridge']).toBe('tsx scripts/test-integration-local.ts webbridge');
   });
+
+  it('exposes a local Alife .NET staged-to-applied WebBridge smoke check', () => {
+    const pkg = readPackageJson();
+
+    expect(pkg.scripts['check:webbridge:smoke']).toBe(
+      'tsx scripts/test-integration-local.ts webbridge-smoke',
+    );
+  });
 });
