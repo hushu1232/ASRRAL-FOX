@@ -48,6 +48,8 @@ describe('PetPreviewCard', () => {
     );
 
     expect(screen.getByText('preview.webPreview')).toBeInTheDocument();
+    const panel = screen.getByText('preview.webPreview').closest('.ant-card') as HTMLElement;
+    expect(panel).toHaveStyle({ maxWidth: '100%' });
     expect(screen.getByTestId('icon-picture')).toBeInTheDocument();
     expect(screen.getByText('preview.label:Nova')).toBeInTheDocument();
     expect(screen.getByText('preview.tip')).toBeInTheDocument();

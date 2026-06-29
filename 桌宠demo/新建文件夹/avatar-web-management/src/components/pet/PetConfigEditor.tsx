@@ -14,6 +14,8 @@ import OperationPanel from '@/components/ui/OperationPanel';
 
 const { TextArea } = Input;
 
+export type PetAssetPickerType = 'model' | 'texture' | 'animation';
+
 export interface PetConfigEditorConfig {
   id: string;
   pet_name: string;
@@ -31,7 +33,7 @@ export interface PetConfigEditorConfig {
 export interface PetConfigEditorProps {
   form: FormInstance;
   config: PetConfigEditorConfig | null;
-  onOpenAssetPicker: (type: string) => void;
+  onOpenAssetPicker: (type: PetAssetPickerType) => void;
   onUnbindAvatar: () => void | Promise<void>;
 }
 

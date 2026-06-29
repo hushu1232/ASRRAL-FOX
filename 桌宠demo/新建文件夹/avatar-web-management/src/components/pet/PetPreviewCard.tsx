@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { Descriptions, Tag } from 'antd';
 import { LinkOutlined, PictureOutlined } from '@ant-design/icons';
@@ -27,6 +27,7 @@ export default function PetPreviewCard({ config }: PetPreviewCardProps) {
       title={t('preview.webPreview')}
       style={{
         width: 360,
+        maxWidth: '100%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
