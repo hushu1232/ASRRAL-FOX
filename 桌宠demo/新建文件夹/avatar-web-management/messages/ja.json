@@ -809,6 +809,7 @@
   },
   "pet": {
     "title": "ペット設定",
+    "consoleSubtitle": "ここで Web ペット設定を準備し、検証します。Alife はローカル確認後にのみステージ済みの変更を適用します。",
     "testConnection": "接続テスト",
     "exportConfig": "設定をエクスポート",
     "saveConfig": "設定を保存",

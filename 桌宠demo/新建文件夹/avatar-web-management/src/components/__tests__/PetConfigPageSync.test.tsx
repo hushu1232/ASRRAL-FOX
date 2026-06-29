@@ -58,6 +58,12 @@ jest.mock('@/components/pet/sync/PetSyncStatusPanel', () => ({
   ),
 }));
 
+jest.mock('next/navigation', () => ({
+  usePathname: () => '/dashboard/pet',
+  useRouter: () => ({ push: jest.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const PetConfigPage = require('@/app/(auth)/dashboard/pet/page').default;
 
 function Wrapper({ children }: { children: ReactNode }) {
@@ -134,11 +140,14 @@ describe('PetConfigPage desktop sync', () => {
     expect(mockApiGet).toHaveBeenCalledWith('/api/pet/config');
     expect(mockApiGet).toHaveBeenCalledWith('/api/pet/sync/status');
     expect(mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/config')).toBeLessThan(
-      mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/sync/status')
+      mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/sync/status'),
     );
     expect(screen.getByText('wizard.title')).toBeDefined();
     expect(screen.getByText('wizard.step5Desc')).toBeDefined();
     expect(screen.getByText('wizard.step6Desc')).toBeDefined();
+    expect(screen.getByText('runtimeSummary.title')).toBeDefined();
+    expect(screen.getByText('runtimeSummary.nextAction.label')).toBeDefined();
+    expect(screen.getByText('preview.webPreview')).toBeDefined();
     expect(screen.getByText('Alife .NET 9')).toBeDefined();
     expect(screen.getByText('No live Alife calls')).toBeDefined();
     expect(mockApiGet).toHaveBeenCalledTimes(2);

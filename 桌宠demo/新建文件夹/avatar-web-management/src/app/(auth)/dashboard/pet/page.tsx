@@ -1,44 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import {
-  Card,
-  Tabs,
-  Form,
-  Input,
-  Select,
-  Slider,
-  Button,
-  message,
-  Modal,
-  Table,
-  Tag,
-  Spin,
-  Descriptions,
-  Alert,
-  Steps,
-} from 'antd';
-import {
-  RobotOutlined,
-  KeyOutlined,
-  CloudServerOutlined,
-  PictureOutlined,
-  PlayCircleOutlined,
-  ExportOutlined,
-  ApiOutlined,
-  SaveOutlined,
-  LinkOutlined,
-  ShopOutlined,
-  DownloadOutlined,
-  CheckCircleOutlined,
-} from '@ant-design/icons';
+import { Form, Button, message, Modal, Table, Tag, Spin } from 'antd';
+import { ExportOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { apiGet, apiPut, apiPost } from '@/lib/api-client';
+import PageHeader from '@/components/layout/PageHeader';
+import PetRuntimeSummary from '@/components/pet/PetRuntimeSummary';
+import PetSetupReadiness from '@/components/pet/PetSetupReadiness';
+import PetPreviewCard from '@/components/pet/PetPreviewCard';
+import PetConfigEditor, { type PetAssetPickerType } from '@/components/pet/PetConfigEditor';
 import PetSyncStatusPanel from '@/components/pet/sync/PetSyncStatusPanel';
 import WebBridgeMockStatusPanel from '@/components/pet/sync/WebBridgeMockStatusPanel';
 import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
-
-const { TextArea } = Input;
 
 interface PetConfig {
   id: string;
@@ -123,7 +97,6 @@ export default function PetConfigPage() {
     });
   }, [config, form]);
 
-  // Show setup wizard for first-time users
   useEffect(() => {
     if (config && !wizardDismissed) {
       setShowWizard(true);
@@ -174,7 +147,7 @@ export default function PetConfigPage() {
     }
   };
 
-  const openAssetPicker = async (type: string) => {
+  const openAssetPicker = async (type: PetAssetPickerType) => {
     setAssetFilter(type);
     setAssetModalOpen(true);
     setAssetLoading(true);
@@ -210,300 +183,62 @@ export default function PetConfigPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold m-0" style={{ color: 'var(--text-primary)' }}>
-          <RobotOutlined className="mr-3" />
-          {t('title')}
-        </h1>
-        <div className="flex gap-3">
-          <Button icon={<ExportOutlined />} onClick={handleExport}>
-            {t('exportConfig')}
-          </Button>
-          <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
-            {t('saveConfig')}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={t('title')}
+        subtitle={t('consoleSubtitle')}
+        actions={
+          <>
+            <Button icon={<ExportOutlined />} onClick={handleExport}>
+              {t('exportConfig')}
+            </Button>
+            <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
+              {t('saveConfig')}
+            </Button>
+          </>
+        }
+      />
 
-      <div className="mb-4">
-        <PetSyncStatusPanel
+      <div className="space-y-4">
+        <PetRuntimeSummary
           status={syncStatus}
           loading={syncStatusLoading}
           onRefresh={fetchSyncStatus}
         />
-      </div>
 
-      <div className="mb-4">
-        <WebBridgeMockStatusPanel />
-      </div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <PetSyncStatusPanel
+            status={syncStatus}
+            loading={syncStatusLoading}
+            onRefresh={fetchSyncStatus}
+          />
+          <WebBridgeMockStatusPanel />
+        </div>
 
-      {showWizard && (
-        <Alert
-          type="info"
-          className="mb-4"
-          style={{
-            background: 'var(--bg-card)',
-            borderColor: 'var(--border-subtle)',
-          }}
-          title={
-            <div className="flex items-center justify-between">
-              <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                {t('wizard.title')}
-              </span>
-              <Button
-                size="small"
-                type="text"
-                style={{ color: 'var(--text-muted)' }}
-                onClick={() => {
-                  setShowWizard(false);
-                  setWizardDismissed(true);
-                }}
-              >
-                {t('wizard.skip')}
-              </Button>
-            </div>
-          }
-          description={
-            <Steps
-              size="small"
-              orientation="horizontal"
-              current={wizardCurrent}
-              className="mt-3"
-              items={[
-                {
-                  title: t('wizard.step1Title'),
-                  content: (
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {t.rich('wizard.step1Desc', {
-                        link: (chunks) => (
-                          <a href="/downloads" style={{ color: 'var(--accent)' }}>
-                            {chunks}
-                          </a>
-                        ),
-                      })}
-                    </span>
-                  ),
-                  icon: <DownloadOutlined />,
-                },
-                {
-                  title: t('wizard.step2Title'),
-                  content: (
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {t('wizard.step2Desc')}
-                    </span>
-                  ),
-                  icon: <KeyOutlined />,
-                },
-                {
-                  title: t('wizard.step3Title'),
-                  content: (
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {t('wizard.step3Desc')}
-                    </span>
-                  ),
-                  icon: <RobotOutlined />,
-                },
-                {
-                  title: t('wizard.step4Title'),
-                  content: (
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {t('wizard.step4Desc')}
-                    </span>
-                  ),
-                  icon: <PlayCircleOutlined />,
-                },
-                {
-                  title: t('wizard.step5Title'),
-                  content: (
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {t('wizard.step5Desc')}
-                    </span>
-                  ),
-                  icon: <ApiOutlined />,
-                },
-                {
-                  title: t('wizard.step6Title'),
-                  content: (
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      {t('wizard.step6Desc')}
-                    </span>
-                  ),
-                  icon: <CheckCircleOutlined />,
-                },
-              ]}
-            />
-          }
-          closable
-          onClose={() => {
-            setShowWizard(false);
-            setWizardDismissed(true);
-          }}
-        />
-      )}
+        {showWizard && (
+          <PetSetupReadiness
+            current={wizardCurrent}
+            onDismiss={() => {
+              setShowWizard(false);
+              setWizardDismissed(true);
+            }}
+          />
+        )}
 
-      <div className="flex gap-6" style={{ minHeight: '70vh' }}>
-        {/* Left: Preview */}
-        <Card
-          className="flex-shrink-0"
-          style={{
-            width: 360,
-            background: 'var(--bg-card)',
-            borderColor: 'var(--border-subtle)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          styles={{ body: { width: '100%', textAlign: 'center', padding: 48 } }}
+        <div
+          className="grid grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)] gap-4"
+          style={{ minHeight: '60vh' }}
         >
-          <PictureOutlined style={{ fontSize: 64, color: 'var(--text-muted)', marginBottom: 16 }} />
-          <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-            {t('preview.label', { name: config?.pet_name || t('preview.defaultName') })}
-          </p>
-          <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('preview.tip')}</p>
-          {config?.avatar_id && (
-            <Tag icon={<LinkOutlined />} color="purple" style={{ marginTop: 8 }}>
-              {t('preview.bound')}
-            </Tag>
-          )}
-          {config && (
-            <Descriptions
-              size="small"
-              colon={false}
-              column={1}
-              style={{ marginTop: 16, textAlign: 'left' }}
-              styles={{
-                label: { color: 'var(--text-secondary)' },
-                content: { color: 'var(--text-primary)' },
-              }}
-            >
-              <Descriptions.Item label={t('preview.system')}>
-                {config.animation_model.toUpperCase()}
-              </Descriptions.Item>
-              <Descriptions.Item label={t('preview.idleTimeout')}>
-                {config.idle_timeout}s
-              </Descriptions.Item>
-              <Descriptions.Item label={t('preview.wanderInterval')}>
-                {config.wander_interval}s
-              </Descriptions.Item>
-            </Descriptions>
-          )}
-        </Card>
-
-        {/* Right: Config Tabs */}
-        <Card
-          className="flex-1"
-          style={{ background: 'var(--bg-card)', borderColor: 'var(--border-subtle)' }}
-        >
-          <Form form={form} layout="vertical" style={{ maxWidth: 600 }}>
-            <Tabs
-              items={[
-                {
-                  key: 'basic',
-                  label: t('tabs.basic'),
-                  children: (
-                    <div className="pt-4">
-                      <Form.Item name="petName" label={t('basic.name')}>
-                        <Input placeholder={t('basic.namePlaceholder')} />
-                      </Form.Item>
-                      <Form.Item name="personality" label={t('basic.personality')}>
-                        <TextArea rows={3} placeholder={t('basic.personalityPlaceholder')} />
-                      </Form.Item>
-                      <Form.Item name="backstory" label={t('basic.backstory')}>
-                        <TextArea rows={4} placeholder={t('basic.backstoryPlaceholder')} />
-                      </Form.Item>
-                    </div>
-                  ),
-                },
-                {
-                  key: 'model',
-                  label: (
-                    <span>
-                      <CloudServerOutlined className="mr-1" />
-                      {t('tabs.model')}
-                    </span>
-                  ),
-                  children: (
-                    <div className="pt-4">
-                      <Form.Item name="animationModel" label={t('model.systemLabel')}>
-                        <Select
-                          options={[
-                            { value: 'live2d', label: t('model.live2D') },
-                            { value: 'dragonbones', label: t('model.dragonBones') },
-                            { value: 'vrm', label: t('model.vrm') },
-                          ]}
-                        />
-                      </Form.Item>
-                      <Form.Item label={t('model.fromMarket')}>
-                        <div className="flex gap-2">
-                          <Button
-                            icon={<ShopOutlined />}
-                            type="primary"
-                            onClick={() => window.open('/marketplace', '_blank')}
-                          >
-                            {t('model.browseMarket')}
-                          </Button>
-                          <span className="text-gray-500 text-xs self-center">
-                            {t('model.browseMarketTip')}
-                          </span>
-                        </div>
-                      </Form.Item>
-                      <Form.Item label={t('model.bindAvatar')}>
-                        <div className="flex gap-2">
-                          <Button
-                            icon={<PictureOutlined />}
-                            onClick={() => openAssetPicker('model')}
-                          >
-                            {t('model.pickModel')}
-                          </Button>
-                          <Button onClick={() => openAssetPicker('texture')}>
-                            {t('model.pickTexture')}
-                          </Button>
-                          <Button onClick={() => openAssetPicker('animation')}>
-                            {t('model.pickAnimation')}
-                          </Button>
-                        </div>
-                        {config?.avatar_id && (
-                          <div className="mt-2">
-                            <Tag
-                              icon={<LinkOutlined />}
-                              color="purple"
-                              closable
-                              onClose={async () => {
-                                await apiPut('/api/pet/config', { avatarId: null });
-                                fetchConfig();
-                              }}
-                            >
-                              {t('model.avatarId', { id: config.avatar_id })}
-                            </Tag>
-                          </div>
-                        )}
-                      </Form.Item>
-                      <Form.Item name="ffmpegPath" label={t('model.ffmpegPath')}>
-                        <Input placeholder="C:\ffmpeg\bin\ffmpeg.exe" />
-                      </Form.Item>
-                      <Form.Item name="idleTimeout" label={t('model.idleTimeout')}>
-                        <Slider
-                          min={60}
-                          max={1800}
-                          step={30}
-                          marks={{ 60: '1m', 300: '5m', 900: '15m', 1800: '30m' }}
-                        />
-                      </Form.Item>
-                      <Form.Item name="wanderInterval" label={t('model.wanderInterval')}>
-                        <Slider
-                          min={5}
-                          max={120}
-                          step={5}
-                          marks={{ 5: '5s', 30: '30s', 60: '1m', 120: '2m' }}
-                        />
-                      </Form.Item>
-                    </div>
-                  ),
-                },
-              ]}
-            />
-          </Form>
-        </Card>
+          <PetPreviewCard config={config} />
+          <PetConfigEditor
+            form={form}
+            config={config}
+            onOpenAssetPicker={openAssetPicker}
+            onUnbindAvatar={async () => {
+              await apiPut('/api/pet/config', { avatarId: null });
+              await fetchConfig();
+            }}
+          />
+        </div>
       </div>
 
       {/* Asset Picker Modal */}

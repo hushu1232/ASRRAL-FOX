@@ -820,6 +820,7 @@
   },
   "pet": {
     "title": "桌宠设置",
+    "consoleSubtitle": "在此准备并验证 Web 桌宠配置。Alife 仅会在本地确认后应用暂存变更。",
     "testConnection": "测试连接",
     "exportConfig": "导出配置",
     "saveConfig": "保存配置",

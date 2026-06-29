@@ -820,6 +820,7 @@
   },
   "pet": {
     "title": "Desktop Pet Settings",
+    "consoleSubtitle": "Prepare and validate the Web pet configuration here. Alife applies staged changes only after local confirmation.",
     "testConnection": "Test Connection",
     "exportConfig": "Export Config",
     "saveConfig": "Save Config",
