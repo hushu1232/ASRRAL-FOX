@@ -12,6 +12,7 @@ The initial audit was read-only for `D:\Alife`. The follow-up A-path fix was mad
 - The Alife source change was limited to `WebApiClient.PullAssets()` and focused WebBridge tests.
 - No live Alife long task was interrupted.
 - No Unity workflow was used. Unity is treated as legacy/deprecated context only.
+- A staging-only `InstallPackage` smoke was run against the local FOXD Web server with an isolated package root under `D:\FOXD\.worktrees`.
 
 The current runtime direction is:
 
@@ -200,6 +201,53 @@ Pull manifest -> download file -> validate hash -> stage files -> write config d
 
 It does not support live activation yet.
 
+## Isolated Smoke Result
+
+The staging-only smoke was run after the Alife asset-envelope fix and FOXD runbook update.
+
+Runtime boundaries:
+
+- FOXD Web server was started by the local integration runner and stopped after the smoke.
+- Alife runtime was not started.
+- Alife default storage was not used.
+- Output stayed under an ignored local root:
+
+```text
+D:\FOXD\.worktrees\_alife-webbridge-integration\20260629045125
+```
+
+Smoke command path:
+
+```text
+FOXD local server -> login -> WebBridgeService.InstallPackage("current-pet-character-bundle")
+```
+
+Observed result:
+
+```text
+PackageId: current-pet-character-bundle
+Status: pendingActivation
+InstalledFiles: 1
+```
+
+Observed files:
+
+```text
+D:\FOXD\.worktrees\_alife-webbridge-integration\20260629045125\Packages\current-pet-character-bundle
+D:\FOXD\.worktrees\_alife-webbridge-integration\20260629045125\Manifests\current-pet-character-bundle.json
+D:\FOXD\.worktrees\_alife-webbridge-integration\20260629045125\ConfigDrafts\current-pet-character-bundle.json
+D:\FOXD\.worktrees\_alife-webbridge-integration\20260629045125\catalog.json
+```
+
+Catalog status was confirmed as:
+
+```json
+{
+  "packageId": "current-pet-character-bundle",
+  "status": "pendingActivation"
+}
+```
+
 ## Important Gaps
 
 1. `docs/webbridge-alife-local-integration.md` has been updated to use the current canonical Alife path `D:\Alife`. Any remaining `D:\FOXD\alife-service` mention should be treated as historical context, not the active workflow.
@@ -212,7 +260,7 @@ It does not support live activation yet.
    Current local Alife behavior: unwraps success envelope data
    ```
 
-   This is fixed in Alife commit `89023518 Fix WebBridge asset envelope parsing`, and `alife-byastralfox/master` has been confirmed at that commit. Keep `SyncAssetsEnabled=false` until an isolated smoke proves package staging remains clean.
+   This is fixed in Alife commit `89023518 Fix WebBridge asset envelope parsing`, and `alife-byastralfox/master` has been confirmed at that commit. The first staging-only smoke kept `SyncAssetsEnabled=false` and completed with `pendingActivation`.
 
 3. Alife `PushState()` exists, but Web `/api/pet/sync` currently ignores POST body. This means "push desktop state back to Web" is not a real persisted state update yet.
 
@@ -220,18 +268,18 @@ It does not support live activation yet.
 
 5. Alife local management API exists, but Web does not yet clearly consume `/api/alife/*` as a real live status source. Current Web UI should continue to present mock/local-only states unless live integration is explicitly started.
 
-6. No fresh live isolated Alife smoke was run in this pass. The findings are source-level and test-coverage-level only.
+6. Live activation is still intentionally not implemented or exercised. The smoke only proved package staging, not local activation/apply.
 
 ## Recommended Next Sequence
 
 ### Phase 1: Contract Cleanup Without Starting Alife
 
 1. Record Alife commit `89023518` as the current tested WebBridge asset-envelope fix.
-2. Keep `SyncAssetsEnabled=false` for the first isolated package smoke; only enable asset sync after the staging-only package path is proven.
+2. Keep the package install path staging-only until local confirmation and milestone reporting are implemented.
 
 ### Phase 2: Isolated Package Install Smoke
 
-Run only after confirming no active Alife long task will be affected.
+Completed once locally with no active Alife runtime start.
 
 Use:
 
@@ -283,10 +331,10 @@ Only after Phase 2 or Phase 3 has evidence:
 
 ## Current Recommendation
 
-Do not start broad UI/UX changes before the staging-only package smoke and milestone gap are clarified.
+Do not start broad UI/UX changes before the milestone gap is clarified.
 
 The best next engineering task is:
 
 ```text
-Run an isolated InstallPackage smoke against D:\Alife using the user-local .NET 9 SDK.
+Add Alife milestone reporting to /api/pet/sync/status, then expose the live/mock distinction in FOXD Web UI.
 ```
