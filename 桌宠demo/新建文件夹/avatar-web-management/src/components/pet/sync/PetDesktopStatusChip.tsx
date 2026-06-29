@@ -3,6 +3,7 @@
 import { CheckCircleOutlined, ClockCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { Tag, Tooltip } from 'antd';
 import { useTranslations } from 'next-intl';
+import { getPreviewChipLabelKey } from '@/components/pet/sync/syncStatusPresentation';
 import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
 
 interface PetDesktopStatusChipProps {
@@ -15,16 +16,18 @@ export default function PetDesktopStatusChip({ status }: PetDesktopStatusChipPro
   if (!status) {
     return (
       <Tooltip title={t('preview.desktopStatusTip')}>
-        <Tag>{t('syncStatus.summary.unknown')}</Tag>
+        <Tag>{t('syncStatus.previewChip.unknown')}</Tag>
       </Tooltip>
     );
   }
+
+  const label = t(`syncStatus.${getPreviewChipLabelKey(status.summaryKind)}`);
 
   if (status.isUpToDate) {
     return (
       <Tooltip title={t('preview.desktopStatusTip')}>
         <Tag color="green" icon={<CheckCircleOutlined />}>
-          {t('syncStatus.summary.upToDate')}
+          {label}
         </Tag>
       </Tooltip>
     );
@@ -34,7 +37,7 @@ export default function PetDesktopStatusChip({ status }: PetDesktopStatusChipPro
     return (
       <Tooltip title={t('preview.desktopStatusTip')}>
         <Tag color="red" icon={<ExclamationCircleOutlined />}>
-          {t('syncStatus.summary.failed')}
+          {label}
         </Tag>
       </Tooltip>
     );
@@ -42,8 +45,11 @@ export default function PetDesktopStatusChip({ status }: PetDesktopStatusChipPro
 
   return (
     <Tooltip title={t('preview.desktopStatusTip')}>
-      <Tag color="blue" icon={<ClockCircleOutlined />}>
-        {t(`syncStatus.summary.${status.summaryKind}`)}
+      <Tag
+        color={status.summaryKind === 'desktopOffline' ? 'orange' : 'blue'}
+        icon={<ClockCircleOutlined />}
+      >
+        {label}
       </Tag>
     </Tooltip>
   );

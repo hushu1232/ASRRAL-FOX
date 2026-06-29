@@ -1047,6 +1047,14 @@
         "upToDate": "Applied in Alife .NET",
         "failed": "Sync failed"
       },
+      "previewChip": {
+        "unknown": "Unknown",
+        "desktopOffline": "Offline",
+        "pendingPull": "Pending pull",
+        "localConfirmationRequired": "Confirm locally",
+        "upToDate": "Synced",
+        "failed": "Sync failed"
+      },
       "detail": {
         "unknown": "Status is incomplete. Check again after Alife .NET reports.",
         "desktopOffline": "Alife .NET is offline or has not reported recently.",

@@ -1039,6 +1039,14 @@
         "upToDate": "Alife .NET に適用済み",
         "failed": "同期に失敗しました"
       },
+      "previewChip": {
+        "unknown": "不明",
+        "desktopOffline": "オフライン",
+        "pendingPull": "取得待ち",
+        "localConfirmationRequired": "確認待ち",
+        "upToDate": "同期済み",
+        "failed": "同期失敗"
+      },
       "detail": {
         "unknown": "状態情報が不足しています。Alife .NET の報告後に再確認してください。",
         "desktopOffline": "Alife .NET はオフライン、または最近状態を報告していません。",

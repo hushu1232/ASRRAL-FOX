@@ -1047,6 +1047,14 @@
         "upToDate": "已应用到 Alife .NET",
         "failed": "同步失败"
       },
+      "previewChip": {
+        "unknown": "未知",
+        "desktopOffline": "离线",
+        "pendingPull": "待拉取",
+        "localConfirmationRequired": "待本地确认",
+        "upToDate": "已同步",
+        "failed": "同步失败"
+      },
       "detail": {
         "unknown": "状态信息不完整。请在 Alife .NET 上报后重新检查。",
         "desktopOffline": "Alife .NET 离线或最近没有上报状态。",

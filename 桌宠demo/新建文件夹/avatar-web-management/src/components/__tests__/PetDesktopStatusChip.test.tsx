@@ -15,6 +15,12 @@ jest.mock('next-intl', () => ({
       'syncStatus.summary.failed': 'Sync failed',
       'syncStatus.summary.pendingPull': 'Pending pull',
       'syncStatus.summary.unknown': 'Unknown',
+      'syncStatus.previewChip.upToDate': 'Synced',
+      'syncStatus.previewChip.failed': 'Sync failed',
+      'syncStatus.previewChip.pendingPull': 'Pending pull',
+      'syncStatus.previewChip.localConfirmationRequired': 'Confirm locally',
+      'syncStatus.previewChip.desktopOffline': 'Offline',
+      'syncStatus.previewChip.unknown': 'Unknown',
     };
     return keys[key] ?? key;
   },
@@ -66,5 +72,47 @@ describe('PetDesktopStatusChip', () => {
       )
     ).toBeDefined();
     expect(screen.getByText('Pending pull')).toBeDefined();
+  });
+
+  it('uses compact labels for preview states', () => {
+    render(
+      <div>
+        <PetDesktopStatusChip status={createStatus({ summaryKind: 'pendingPull' })} />
+        <PetDesktopStatusChip
+          status={createStatus({
+            packageState: 'staged',
+            summaryKind: 'localConfirmationRequired',
+            primaryAction: 'confirmInDesktop',
+            requiresLocalConfirmation: true,
+          })}
+        />
+        <PetDesktopStatusChip
+          status={createStatus({
+            packageState: 'applied',
+            summaryKind: 'upToDate',
+            primaryAction: 'none',
+            isUpToDate: true,
+          })}
+        />
+      </div>
+    );
+
+    expect(screen.getByText('Pending pull')).toBeDefined();
+    expect(screen.getByText('Confirm locally')).toBeDefined();
+    expect(screen.getByText('Synced')).toBeDefined();
+  });
+
+  it('shows offline as a compact state when Alife .NET has not reported recently', () => {
+    render(
+      <PetDesktopStatusChip
+        status={createStatus({
+          desktopConnection: 'offline',
+          summaryKind: 'desktopOffline',
+          primaryAction: 'checkAgain',
+        })}
+      />
+    );
+
+    expect(screen.getByText('Offline')).toBeDefined();
   });
 });
