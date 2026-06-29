@@ -45,6 +45,46 @@ describe('test:integration:local runner', () => {
       rmSync(rootDir, { recursive: true, force: true });
     }
   });
+
+  it('injects local-only RSA keys when no RSA environment or file keys are available', () => {
+    const previousPrivateKey = process.env.JWT_PRIVATE_KEY;
+    const previousPublicKey = process.env.JWT_PUBLIC_KEY;
+    const previousKeyId = process.env.JWT_KEY_ID;
+    const rootDir = mkdtempSync(join(tmpdir(), 'foxd-local-runner-'));
+
+    delete process.env.JWT_PRIVATE_KEY;
+    delete process.env.JWT_PUBLIC_KEY;
+    delete process.env.JWT_KEY_ID;
+
+    try {
+      const config = createLocalServerRunConfig('webbridge-smoke', rootDir);
+
+      expect(config.server.env?.JWT_PRIVATE_KEY).toContain('BEGIN PRIVATE KEY');
+      expect(config.server.env?.JWT_PUBLIC_KEY).toContain('BEGIN PUBLIC KEY');
+      expect(config.server.env?.JWT_KEY_ID).toBeTruthy();
+    } finally {
+      if (previousPrivateKey === undefined) {
+        delete process.env.JWT_PRIVATE_KEY;
+      } else {
+        process.env.JWT_PRIVATE_KEY = previousPrivateKey;
+      }
+
+      if (previousPublicKey === undefined) {
+        delete process.env.JWT_PUBLIC_KEY;
+      } else {
+        process.env.JWT_PUBLIC_KEY = previousPublicKey;
+      }
+
+      if (previousKeyId === undefined) {
+        delete process.env.JWT_KEY_ID;
+      } else {
+        process.env.JWT_KEY_ID = previousKeyId;
+      }
+
+      rmSync(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it('supports live contract snapshots as an explicit server-backed mode', () => {
     const config = createLocalServerRunConfig('contracts-live');
 

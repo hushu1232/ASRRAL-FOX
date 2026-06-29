@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -101,7 +102,51 @@ function loadLocalEnv(rootDir: string): EnvMap {
     env.JWT_SECRET = LOCAL_RUNNER_JWT_SECRET;
   }
 
+  ensureLocalRunnerRsaKeys(rootDir, env);
+
   return env;
+}
+
+function ensureLocalRunnerRsaKeys(rootDir: string, env: EnvMap): void {
+  if (env.JWT_PRIVATE_KEY && env.JWT_PUBLIC_KEY) {
+    return;
+  }
+
+  const fileKeys = readLocalFileRsaKeys(rootDir);
+  if (fileKeys) {
+    env.JWT_PRIVATE_KEY = fileKeys.privateKey;
+    env.JWT_PUBLIC_KEY = fileKeys.publicKey;
+    env.JWT_KEY_ID = env.JWT_KEY_ID || fileKeys.keyId;
+    return;
+  }
+
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+
+  env.JWT_PRIVATE_KEY = privateKey;
+  env.JWT_PUBLIC_KEY = publicKey;
+  env.JWT_KEY_ID = env.JWT_KEY_ID || `local-integration-runner-${randomUUID()}`;
+}
+
+function readLocalFileRsaKeys(
+  rootDir: string,
+): { privateKey: string; publicKey: string; keyId: string } | null {
+  const privateKeyPath = join(rootDir, 'keys', 'private.pem');
+  const publicKeyPath = join(rootDir, 'keys', 'public.pem');
+
+  if (!existsSync(privateKeyPath) || !existsSync(publicKeyPath)) {
+    return null;
+  }
+
+  const kidPath = join(rootDir, 'keys', 'kid');
+  return {
+    privateKey: readFileSync(privateKeyPath, 'utf8'),
+    publicKey: readFileSync(publicKeyPath, 'utf8'),
+    keyId: existsSync(kidPath) ? readFileSync(kidPath, 'utf8').trim() : 'local-integration-runner',
+  };
 }
 
 function createTestCommand(
