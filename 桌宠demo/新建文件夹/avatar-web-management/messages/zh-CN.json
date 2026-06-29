@@ -1037,6 +1037,8 @@
       "notApplied": "未应用",
       "none": "无",
       "never": "从未",
+      "rawState": "原始状态",
+      "localActionNotice": "请在 Alife .NET 中确认这个已暂存的包。",
       "summary": {
         "unknown": "状态未知",
         "desktopOffline": "桌面端离线",
@@ -1052,6 +1054,36 @@
         "localConfirmationRequired": "包已在本地暂存。应用前请在 Alife .NET 中确认。",
         "upToDate": "Alife .NET 正在运行当前 Web 版本。",
         "failed": "重试前请先查看同步错误。"
+      },
+      "lifecycle": {
+        "published": {
+          "title": "Web 已发布",
+          "description": "Web 已准备当前包。"
+        },
+        "staged": {
+          "title": "Alife 已暂存",
+          "description": "Alife .NET 已拉取并验证该包。"
+        },
+        "applied": {
+          "title": "已应用",
+          "description": "Alife .NET 正在运行当前版本。"
+        }
+      },
+      "packageStateLabel": {
+        "notPublished": "未发布",
+        "published": "已发布，等待拉取",
+        "pulled": "Alife .NET 已拉取",
+        "staged": "已在本地暂存",
+        "applied": "已应用到 Alife .NET",
+        "failed": "包处理失败"
+      },
+      "packageStateDescription": {
+        "notPublished": "先发布 Web 包，Alife .NET 才能拉取。",
+        "published": "Web 已准备好可供 Alife .NET 拉取的包。",
+        "pulled": "Alife .NET 已下载该包，正在准备暂存。",
+        "staged": "Alife .NET 正在等待本地确认。",
+        "applied": "Alife .NET 已应用当前包。",
+        "failed": "重试前请先查看失败原因。"
       },
       "connectionState": {
         "unknown": "未知",

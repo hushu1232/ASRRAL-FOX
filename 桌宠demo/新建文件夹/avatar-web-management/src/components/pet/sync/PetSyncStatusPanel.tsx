@@ -1,15 +1,21 @@
 'use client';
 
-import { Alert, Button, Descriptions, Space, Spin, Tag, Tooltip, Typography } from 'antd';
+import { Alert, Button, Descriptions, Space, Spin, Steps, Tag, Tooltip, Typography } from 'antd';
 import { DesktopOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import OperationPanel from '@/components/ui/OperationPanel';
 import StatusChip from '@/components/ui/StatusChip';
-import type { StatusChipTone } from '@/components/ui/StatusChip';
+import {
+  getLifecycleSteps,
+  getPackageStateDescriptionKey,
+  getPackageStateLabelKey,
+  getRuntimeDetailKey,
+  PACKAGE_STATE_TONES,
+  SUMMARY_TONES,
+} from '@/components/pet/sync/syncStatusPresentation';
 import type {
   DesktopConnectionState,
   DesktopPrimaryAction,
-  DesktopSummaryKind,
   DesktopSyncStatus,
 } from '@/lib/webbridge/sync-status';
 
@@ -20,15 +26,6 @@ interface PetSyncStatusPanelProps {
   loading: boolean;
   onRefresh: () => void;
 }
-
-const SUMMARY_TONES: Record<DesktopSummaryKind, StatusChipTone> = {
-  unknown: 'neutral',
-  desktopOffline: 'warning',
-  pendingPull: 'processing',
-  localConfirmationRequired: 'warning',
-  upToDate: 'success',
-  failed: 'error',
-};
 
 export default function PetSyncStatusPanel({
   status,
@@ -59,18 +56,38 @@ export default function PetSyncStatusPanel({
     );
   }
 
+  const lifecycleSteps = getLifecycleSteps(status);
+  const currentLifecycleIndex = lifecycleSteps.findIndex((step) => step.state === 'process');
+
   return (
     <OperationPanel
       title={t('title')}
       extra={renderAction(status.primaryAction, loading, onRefresh, t)}
     >
       <Space vertical size="middle" style={{ width: '100%' }}>
-        <Space size="small" wrap>
-          <StatusChip tone={SUMMARY_TONES[status.summaryKind]}>
-            {t(`summary.${status.summaryKind}`)}
-          </StatusChip>
-          <StatusChip tone="success">{t('source.live')}</StatusChip>
+        <Space vertical size={4}>
+          <Space size="small" wrap>
+            <StatusChip tone={SUMMARY_TONES[status.summaryKind]}>
+              {t(`summary.${status.summaryKind}`)}
+            </StatusChip>
+            <StatusChip tone="success">{t('source.live')}</StatusChip>
+          </Space>
+          <Text type="secondary">{t(getRuntimeDetailKey(status.summaryKind))}</Text>
         </Space>
+
+        <Steps
+          size="small"
+          current={currentLifecycleIndex >= 0 ? currentLifecycleIndex : undefined}
+          items={lifecycleSteps.map((step) => ({
+            title: t(step.titleKey),
+            content: t(step.descriptionKey),
+            status: step.state,
+          }))}
+        />
+
+        {status.primaryAction === 'confirmInDesktop' && (
+          <Alert type="warning" showIcon title={t('localActionNotice')} />
+        )}
 
         <Descriptions column={1} size="small">
           <Descriptions.Item label={t('connection')}>
@@ -78,7 +95,15 @@ export default function PetSyncStatusPanel({
           </Descriptions.Item>
           <Descriptions.Item label={t('webVersion')}>{status.webConfigVersion}</Descriptions.Item>
           <Descriptions.Item label={t('packageState')}>
-            <Text code>{status.packageState}</Text>
+            <Space vertical size={2}>
+              <StatusChip tone={PACKAGE_STATE_TONES[status.packageState]}>
+                {t(getPackageStateLabelKey(status.packageState))}
+              </StatusChip>
+              <Text type="secondary">{t(getPackageStateDescriptionKey(status.packageState))}</Text>
+              <Text type="secondary">
+                <span>{t('rawState')}</span>: <Text code>{status.packageState}</Text>
+              </Text>
+            </Space>
           </Descriptions.Item>
           <Descriptions.Item label={t('desktopKnownVersion')}>
             {status.desktopKnownVersion ?? t('notApplied')}

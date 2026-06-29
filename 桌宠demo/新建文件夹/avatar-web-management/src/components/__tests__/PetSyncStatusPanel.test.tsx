@@ -32,10 +32,39 @@ jest.mock('next-intl', () => ({
         never: 'Never',
         'summary.unknown': 'Unknown',
         'summary.desktopOffline': 'Desktop offline',
-        'summary.pendingPull': 'Pending pull',
-        'summary.localConfirmationRequired': 'Desktop confirmation required',
+        'summary.pendingPull': 'Waiting for Alife .NET pull',
+        'summary.localConfirmationRequired': 'Awaiting local confirmation',
         'summary.upToDate': 'Up to date',
         'summary.failed': 'Sync failed',
+        'detail.pendingPull': 'Web has a newer package waiting for Alife .NET to pull.',
+        'detail.localConfirmationRequired':
+          'Package staged locally. Confirm it in Alife .NET before apply.',
+        'detail.upToDate': 'Alife .NET is running the current Web version.',
+        'detail.desktopOffline': 'Alife .NET is offline or has not reported recently.',
+        'detail.failed': 'Review the sync error before retrying.',
+        'detail.unknown': 'Status is incomplete. Check again after Alife .NET reports.',
+        'lifecycle.published.title': 'Web published',
+        'lifecycle.published.description': 'Web has prepared the current package.',
+        'lifecycle.staged.title': 'Alife staged',
+        'lifecycle.staged.description': 'Alife .NET has pulled and validated the package.',
+        'lifecycle.applied.title': 'Applied',
+        'lifecycle.applied.description': 'Alife .NET is running the current version.',
+        'packageStateLabel.notPublished': 'Not published',
+        'packageStateLabel.published': 'Published, waiting for pull',
+        'packageStateLabel.pulled': 'Pulled by Alife .NET',
+        'packageStateLabel.staged': 'Staged locally',
+        'packageStateLabel.applied': 'Applied in Alife .NET',
+        'packageStateLabel.failed': 'Package failed',
+        'packageStateDescription.notPublished':
+          'Publish a Web package before Alife .NET can pull.',
+        'packageStateDescription.published': 'Web has a package ready for Alife .NET.',
+        'packageStateDescription.pulled':
+          'Alife .NET downloaded the package and is preparing it.',
+        'packageStateDescription.staged': 'Alife .NET is waiting for local confirmation.',
+        'packageStateDescription.applied': 'Alife .NET applied the current package.',
+        'packageStateDescription.failed': 'Review the failure before retrying.',
+        rawState: 'Raw state',
+        localActionNotice: 'Confirm this staged package inside Alife .NET.',
         'connectionState.unknown': 'Unknown',
         'connectionState.checking': 'Checking',
         'connectionState.online': 'Online',
@@ -107,19 +136,55 @@ describe('PetSyncStatusPanel', () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it('localConfirmationRequired state shows summary and confirm button', () => {
+  it('localConfirmationRequired state shows lifecycle rail and staged package detail', () => {
     render(<PetSyncStatusPanel status={createStatus()} loading={false} onRefresh={jest.fn()} />, {
       wrapper: Wrapper,
     });
 
-    expect(screen.getByText('Desktop confirmation required')).toBeDefined();
+    expect(screen.getByText('Awaiting local confirmation')).toBeDefined();
     expect(screen.getByText('Live API')).toBeDefined();
+    expect(
+      screen.getByText('Package staged locally. Confirm it in Alife .NET before apply.'),
+    ).toBeDefined();
+    expect(screen.getByText('Web published')).toBeDefined();
+    expect(screen.getByText('Alife staged')).toBeDefined();
+    expect(screen.getByText('Applied')).toBeDefined();
+    expect(screen.getByText('Staged locally')).toBeDefined();
+    expect(screen.getByText('Alife .NET is waiting for local confirmation.')).toBeDefined();
+    expect(screen.getByText('Raw state')).toBeDefined();
     expect(screen.getByText('staged')).toBeDefined();
+    expect(screen.getByText('Confirm this staged package inside Alife .NET.')).toBeDefined();
     expect(screen.getAllByText('7').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('manifestFetched')).toBeDefined();
     expect(screen.getByText('confirmationRequested')).toBeDefined();
     expect(screen.getByRole('button', { name: /confirm in desktop/i })).toBeDisabled();
     expect(screen.getByText('Required')).toBeDefined();
+  });
+
+  it('pendingPull state shows lifecycle rail and published package detail', () => {
+    render(
+      <PetSyncStatusPanel
+        status={createStatus({
+          packageState: 'published',
+          summaryKind: 'pendingPull',
+          primaryAction: 'checkAgain',
+          desktopKnownVersion: 6,
+          desktopAppliedVersion: 6,
+          requiresLocalConfirmation: false,
+          milestones: ['manifestFetched'],
+        })}
+        loading={false}
+        onRefresh={jest.fn()}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    expect(screen.getByText('Waiting for Alife .NET pull')).toBeDefined();
+    expect(screen.getByText('Published, waiting for pull')).toBeDefined();
+    expect(screen.getByText('Web has a package ready for Alife .NET.')).toBeDefined();
+    expect(screen.getByText('Web published')).toBeDefined();
+    expect(screen.getByText('Alife staged')).toBeDefined();
+    expect(screen.getByText('Applied')).toBeDefined();
   });
 
   it('upToDate state shows summary and no check-again action', () => {

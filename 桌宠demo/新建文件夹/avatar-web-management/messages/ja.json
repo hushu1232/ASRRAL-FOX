@@ -1029,6 +1029,8 @@
       "notApplied": "未適用",
       "none": "なし",
       "never": "なし",
+      "rawState": "内部状態",
+      "localActionNotice": "ステージ済みパッケージは Alife .NET で確認してください。",
       "summary": {
         "unknown": "不明",
         "desktopOffline": "デスクトップがオフライン",
@@ -1044,6 +1046,36 @@
         "localConfirmationRequired": "パッケージはローカルでステージ済みです。適用前に Alife .NET で確認してください。",
         "upToDate": "Alife .NET は現在の Web バージョンを実行しています。",
         "failed": "再試行前に同期エラーを確認してください。"
+      },
+      "lifecycle": {
+        "published": {
+          "title": "Web 公開済み",
+          "description": "Web は現在のパッケージを準備済みです。"
+        },
+        "staged": {
+          "title": "Alife ステージ済み",
+          "description": "Alife .NET はパッケージを取得し検証しました。"
+        },
+        "applied": {
+          "title": "適用済み",
+          "description": "Alife .NET は現在のバージョンを実行しています。"
+        }
+      },
+      "packageStateLabel": {
+        "notPublished": "未公開",
+        "published": "公開済み、取得待ち",
+        "pulled": "Alife .NET 取得済み",
+        "staged": "ローカルでステージ済み",
+        "applied": "Alife .NET に適用済み",
+        "failed": "パッケージ失敗"
+      },
+      "packageStateDescription": {
+        "notPublished": "Alife .NET が取得できるように Web パッケージを公開してください。",
+        "published": "Web は Alife .NET が取得できるパッケージを準備済みです。",
+        "pulled": "Alife .NET はパッケージをダウンロードし、準備中です。",
+        "staged": "Alife .NET はローカル確認を待っています。",
+        "applied": "Alife .NET は現在のパッケージを適用しました。",
+        "failed": "再試行前に失敗理由を確認してください。"
       },
       "connectionState": {
         "unknown": "不明",

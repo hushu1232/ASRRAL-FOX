@@ -1037,6 +1037,8 @@
       "notApplied": "Not applied",
       "none": "None",
       "never": "Never",
+      "rawState": "Raw state",
+      "localActionNotice": "Confirm this staged package inside Alife .NET.",
       "summary": {
         "unknown": "Unknown",
         "desktopOffline": "Desktop offline",
@@ -1052,6 +1054,36 @@
         "localConfirmationRequired": "Package staged locally. Confirm it in Alife .NET before apply.",
         "upToDate": "Alife .NET is running the current Web version.",
         "failed": "Review the sync error before retrying."
+      },
+      "lifecycle": {
+        "published": {
+          "title": "Web published",
+          "description": "Web has prepared the current package."
+        },
+        "staged": {
+          "title": "Alife staged",
+          "description": "Alife .NET has pulled and validated the package."
+        },
+        "applied": {
+          "title": "Applied",
+          "description": "Alife .NET is running the current version."
+        }
+      },
+      "packageStateLabel": {
+        "notPublished": "Not published",
+        "published": "Published, waiting for pull",
+        "pulled": "Pulled by Alife .NET",
+        "staged": "Staged locally",
+        "applied": "Applied in Alife .NET",
+        "failed": "Package failed"
+      },
+      "packageStateDescription": {
+        "notPublished": "Publish a Web package before Alife .NET can pull.",
+        "published": "Web has a package ready for Alife .NET.",
+        "pulled": "Alife .NET downloaded the package and is preparing it.",
+        "staged": "Alife .NET is waiting for local confirmation.",
+        "applied": "Alife .NET applied the current package.",
+        "failed": "Review the failure before retrying."
       },
       "connectionState": {
         "unknown": "Unknown",
