@@ -10,33 +10,23 @@ let cachedPublicKey: string | null = null;
 let cachedKid: string | null = null;
 
 function getKeysDir(): string {
-  const keysDir = process.env.JWT_KEYS_DIR;
-  return keysDir ? path.resolve(/*turbopackIgnore: true*/ keysDir) : path.join(process.cwd(), 'keys');
-}
-
-function getKeyFilePath(envPath: string | undefined, fileName: string): string {
-  if (envPath) {
-    return path.resolve(/*turbopackIgnore: true*/ envPath);
-  }
-
-  const keysDir = process.env.JWT_KEYS_DIR;
-  if (keysDir) {
-    return path.join(/*turbopackIgnore: true*/ path.resolve(keysDir), fileName);
-  }
-
-  return path.join(process.cwd(), 'keys', fileName);
+  return path.join(process.cwd(), 'keys');
 }
 
 function getPrivateKeyPath(): string {
-  return getKeyFilePath(process.env.JWT_PRIVATE_KEY_PATH, 'private.pem');
+  return path.join(process.cwd(), 'keys', 'private.pem');
 }
 
 function getPublicKeyPath(): string {
-  return getKeyFilePath(process.env.JWT_PUBLIC_KEY_PATH, 'public.pem');
+  return path.join(process.cwd(), 'keys', 'public.pem');
 }
 
 function getKidPath(): string {
-  return getKeyFilePath(undefined, 'kid');
+  return path.join(process.cwd(), 'keys', 'kid');
+}
+
+function shouldDisableFileKeysForTests(): boolean {
+  return process.env.NODE_ENV === 'test' && process.env.JWT_DISABLE_FILE_KEYS === '1';
 }
 
 export function generateRsaKeyPair(): { publicKey: string; privateKey: string } {
@@ -70,6 +60,10 @@ export function generateAndSaveKeys(): { publicKey: string; privateKey: string; 
 }
 
 function loadKeys(): { privateKey: string; publicKey: string; kid: string } | null {
+  if (shouldDisableFileKeysForTests()) {
+    return null;
+  }
+
   const privPath = getPrivateKeyPath();
   const pubPath = getPublicKeyPath();
   const kidPath = getKidPath();
@@ -103,7 +97,9 @@ export function getPrivateKey(): string | null {
   if (loaded) return loaded.privateKey;
 
   if (process.env.NODE_ENV === 'production') {
-    throw new Error('FATAL: No RSA private key found. Set JWT_PRIVATE_KEY or run scripts/generate-keys.ts');
+    throw new Error(
+      'FATAL: No RSA private key found. Set JWT_PRIVATE_KEY or run scripts/generate-keys.ts',
+    );
   }
 
   log.warn('No RSA keys found — using HS256 fallback for development');

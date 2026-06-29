@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createLocalServerRunConfig } from '../../scripts/test-integration-local';
 
 describe('test:integration:local runner', () => {
@@ -21,6 +24,27 @@ describe('test:integration:local runner', () => {
     ]);
   });
 
+  it('provides a local-only JWT secret when no environment file defines one', () => {
+    const previousSecret = process.env.JWT_SECRET;
+    const rootDir = mkdtempSync(join(tmpdir(), 'foxd-local-runner-'));
+
+    delete process.env.JWT_SECRET;
+
+    try {
+      const config = createLocalServerRunConfig('integration', rootDir);
+
+      expect(config.server.env?.JWT_SECRET).toBe(
+        'local-integration-runner-secret-do-not-use-in-production',
+      );
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env.JWT_SECRET;
+      } else {
+        process.env.JWT_SECRET = previousSecret;
+      }
+      rmSync(rootDir, { recursive: true, force: true });
+    }
+  });
   it('supports live contract snapshots as an explicit server-backed mode', () => {
     const config = createLocalServerRunConfig('contracts-live');
 
@@ -49,11 +73,7 @@ describe('test:integration:local runner', () => {
       'e2e/approval-flow.spec.ts',
     ]);
 
-    expect(config.test.args).toEqual([
-      'test',
-      '--project=chromium',
-      'e2e/approval-flow.spec.ts',
-    ]);
+    expect(config.test.args).toEqual(['test', '--project=chromium', 'e2e/approval-flow.spec.ts']);
   });
 
   it('supports WebBridge preflight checks against the local standalone server', () => {

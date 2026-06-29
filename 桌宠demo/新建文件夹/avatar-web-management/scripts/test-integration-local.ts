@@ -40,6 +40,8 @@ const CONTRACTS_LIVE_TEST_ARGS = [
   '**/tests/contracts/response-snapshots.test.ts',
 ];
 
+const LOCAL_RUNNER_JWT_SECRET = 'local-integration-runner-secret-do-not-use-in-production';
+
 function resolvePackageFile(packageName: string, relativePath: string): string {
   return join(dirname(require.resolve(`${packageName}/package.json`)), relativePath);
 }
@@ -83,11 +85,17 @@ function parseEnvFile(filePath: string): EnvMap {
 }
 
 function loadLocalEnv(rootDir: string): EnvMap {
-  return {
+  const env = {
     ...parseEnvFile(join(rootDir, '.env')),
     ...parseEnvFile(join(rootDir, '.env.local')),
     ...process.env,
   };
+
+  if (!env.JWT_SECRET) {
+    env.JWT_SECRET = LOCAL_RUNNER_JWT_SECRET;
+  }
+
+  return env;
 }
 
 function createTestCommand(
@@ -158,7 +166,9 @@ export function createLocalServerRunConfig(
   };
 }
 
-export function createIntegrationLocalRunConfig(rootDir = process.cwd()): IntegrationLocalRunConfig {
+export function createIntegrationLocalRunConfig(
+  rootDir = process.cwd(),
+): IntegrationLocalRunConfig {
   return createLocalServerRunConfig('integration', rootDir);
 }
 
@@ -187,7 +197,11 @@ function runNodeScript(command: NodeScriptCommand): Promise<number> {
   });
 }
 
-async function waitForServer(server: ChildProcess, healthUrl: string, timeoutMs: number): Promise<void> {
+async function waitForServer(
+  server: ChildProcess,
+  healthUrl: string,
+  timeoutMs: number,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError = 'server did not respond';
 
@@ -248,7 +262,9 @@ export async function runWithLocalServer(config = createLocalServerRunConfig()):
   }
 }
 
-export async function runIntegrationLocal(config = createIntegrationLocalRunConfig()): Promise<number> {
+export async function runIntegrationLocal(
+  config = createIntegrationLocalRunConfig(),
+): Promise<number> {
   return runWithLocalServer(config);
 }
 
@@ -270,7 +286,9 @@ function parseMode(argv: string[]): LocalServerMode {
 if (require.main === module) {
   const mode = parseMode(process.argv);
   const extraArgs = process.argv.slice(3);
-  runWithLocalServer(createLocalServerRunConfig(mode, process.cwd(), extraArgs)).then((exitCode) => {
-    process.exitCode = exitCode;
-  });
+  runWithLocalServer(createLocalServerRunConfig(mode, process.cwd(), extraArgs)).then(
+    (exitCode) => {
+      process.exitCode = exitCode;
+    },
+  );
 }

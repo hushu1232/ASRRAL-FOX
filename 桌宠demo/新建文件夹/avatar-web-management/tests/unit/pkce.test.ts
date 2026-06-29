@@ -24,7 +24,9 @@ describe('PKCE Session Store', () => {
 
   it('returns null for tampered ciphertext', () => {
     const sealed = sealPkceSession(data);
-    const tampered = sealed.value.substring(0, 10) + 'X' + sealed.value.substring(11);
+    const replacement = sealed.value[10] === 'A' ? 'B' : 'A';
+    const tampered = sealed.value.substring(0, 10) + replacement + sealed.value.substring(11);
+    expect(tampered).not.toBe(sealed.value);
     expect(unsealPkceSession(tampered)).toBeNull();
   });
 

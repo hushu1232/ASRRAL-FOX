@@ -20,7 +20,9 @@ jest.mock('@/lib/db', () => ({
     refreshToken: mockRefreshToken,
   }),
   isPostgres: () => true,
-  getDb: () => { throw new Error('getDb should not be called in refresh token tests'); },
+  getDb: () => {
+    throw new Error('getDb should not be called in refresh token tests');
+  },
 }));
 jest.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
@@ -64,7 +66,7 @@ describe('JWT Access Token — RS256', () => {
       JWT_PUBLIC_KEY: testKeys.publicKey,
       JWT_KEY_ID: 'test-kid-rs256',
       JWT_SECRET: undefined,
-      JWT_KEYS_DIR: undefined,
+      JWT_DISABLE_FILE_KEYS: undefined,
     };
   }
 
@@ -138,7 +140,7 @@ describe('JWT Access Token — HS256 fallback', () => {
       JWT_PRIVATE_KEY: undefined,
       JWT_PUBLIC_KEY: undefined,
       JWT_KEY_ID: undefined,
-      JWT_KEYS_DIR: '/nonexistent/path',
+      JWT_DISABLE_FILE_KEYS: '1',
       JWT_SECRET: 'test-hs256-secret',
     };
   }
@@ -156,7 +158,7 @@ describe('JWT Access Token — HS256 fallback', () => {
     const legacyToken = require('jsonwebtoken').sign(
       { sub: 'legacy', email: 'old@t.com', role: 'user', ws: 'w1' },
       'old-secret',
-      { algorithm: 'HS256' }
+      { algorithm: 'HS256' },
     );
 
     const mod = loadJwtWithEnv({ ...hs256Env(), JWT_SECRET: 'old-secret' });
@@ -172,7 +174,7 @@ describe('Refresh Token — HS256', () => {
       JWT_PRIVATE_KEY: undefined,
       JWT_PUBLIC_KEY: undefined,
       JWT_KEY_ID: undefined,
-      JWT_KEYS_DIR: '/nonexistent/path',
+      JWT_DISABLE_FILE_KEYS: '1',
       JWT_SECRET: 'refresh-test-secret',
     };
   }
@@ -190,7 +192,10 @@ describe('Refresh Token — HS256', () => {
   it('verifyRefreshToken returns payload for valid token', async () => {
     const mod = loadJwtWithEnv(hs256Env());
     const { token } = await mod.signRefreshToken('user-456');
-    mockRefreshToken.findFirst.mockResolvedValue({ id: 'jti-1', expiresAt: new Date(Date.now() + 86400000) });
+    mockRefreshToken.findFirst.mockResolvedValue({
+      id: 'jti-1',
+      expiresAt: new Date(Date.now() + 86400000),
+    });
 
     const payload = await mod.verifyRefreshToken(token);
     expect(payload).not.toBeNull();
@@ -213,7 +218,10 @@ describe('Refresh Token — HS256', () => {
   it('verifyRefreshToken returns null for expired token', async () => {
     const mod = loadJwtWithEnv(hs256Env());
     const { token } = await mod.signRefreshToken('user-exp');
-    mockRefreshToken.findFirst.mockResolvedValue({ id: 'jti-2', expiresAt: new Date(Date.now() - 1000) });
+    mockRefreshToken.findFirst.mockResolvedValue({
+      id: 'jti-2',
+      expiresAt: new Date(Date.now() - 1000),
+    });
     expect(await mod.verifyRefreshToken(token)).toBeNull();
   });
 
@@ -235,6 +243,7 @@ describe('signAccessToken — HS256 with custom expiry', () => {
       JWT_PRIVATE_KEY: undefined,
       JWT_PUBLIC_KEY: undefined,
       JWT_ACCESS_EXPIRY: '30m',
+      JWT_DISABLE_FILE_KEYS: '1',
     });
     const token = mod.signAccessToken(payload);
     expect(token).toBeDefined();
@@ -249,6 +258,7 @@ describe('getCurrentAlgorithm', () => {
       JWT_SECRET: 'test-secret',
       JWT_PRIVATE_KEY: undefined,
       JWT_PUBLIC_KEY: undefined,
+      JWT_DISABLE_FILE_KEYS: '1',
     });
     expect(mod.getCurrentAlgorithm()).toBe('HS256');
   });
@@ -263,13 +273,11 @@ describe('RSA Key Management', () => {
 
   it('exportJwk works with in-memory keys', () => {
     const keys = generateTestKeyPair();
-    const mod = loadJwtWithEnv({
+    loadJwtWithEnv({
       JWT_PRIVATE_KEY: keys.privateKey,
       JWT_PUBLIC_KEY: keys.publicKey,
       JWT_KEY_ID: 'test-kid-1',
     });
-    // Check that keys module's functions work
-    const keysMod = require('@/lib/auth/keys');
     // Re-load keys module fresh
     jest.resetModules();
     const freshKeys = require('@/lib/auth/keys');

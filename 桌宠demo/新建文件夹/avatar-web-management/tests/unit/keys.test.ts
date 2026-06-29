@@ -68,13 +68,15 @@ describe('auth keys', () => {
     });
 
     it('handles escaped newlines in env var', async () => {
-      process.env.JWT_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\\ntest\\n-----END PRIVATE KEY-----';
+      process.env.JWT_PRIVATE_KEY =
+        '-----BEGIN PRIVATE KEY-----\\ntest\\n-----END PRIVATE KEY-----';
       const mod = await loadKeys();
       expect(mod.getPrivateKey()).toContain('test\n');
     });
 
     it('caches the env var key for subsequent calls', async () => {
-      process.env.JWT_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\ncached\n-----END PRIVATE KEY-----';
+      process.env.JWT_PRIVATE_KEY =
+        '-----BEGIN PRIVATE KEY-----\ncached\n-----END PRIVATE KEY-----';
       const mod = await loadKeys();
       mod.getPrivateKey();
       delete process.env.JWT_PRIVATE_KEY;
@@ -85,8 +87,10 @@ describe('auth keys', () => {
     it('loads keys from filesystem when no env var', async () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes('private.pem')) return '-----BEGIN PRIVATE KEY-----\nfile-key\n-----END PRIVATE KEY-----';
-        if (path.includes('public.pem')) return '-----BEGIN PUBLIC KEY-----\nfile-pub\n-----END PUBLIC KEY-----';
+        if (path.includes('private.pem'))
+          return '-----BEGIN PRIVATE KEY-----\nfile-key\n-----END PRIVATE KEY-----';
+        if (path.includes('public.pem'))
+          return '-----BEGIN PUBLIC KEY-----\nfile-pub\n-----END PUBLIC KEY-----';
         if (path.includes('kid')) return 'file-kid-123';
         return '';
       });
@@ -208,5 +212,21 @@ describe('auth keys', () => {
       expect(jwk!.use).toBe('sig');
       expect(jwk!.alg).toBe('RS256');
     });
+  });
+});
+
+describe('auth keys Turbopack tracing hints', () => {
+  it('keeps filesystem key loading statically scoped to the project keys directory', () => {
+    const actualFs = jest.requireActual<typeof import('node:fs')>('node:fs');
+    const actualPath = jest.requireActual<typeof import('node:path')>('node:path');
+    const sourcePath = actualPath.join(process.cwd(), 'src', 'lib', 'auth', 'keys.ts');
+    const source = actualFs.readFileSync(sourcePath, 'utf8');
+
+    expect(source).toContain("path.join(process.cwd(), 'keys')");
+    expect(source).toContain("path.join(process.cwd(), 'keys', 'private.pem')");
+    expect(source).toContain("path.join(process.cwd(), 'keys', 'public.pem')");
+    expect(source).toContain("path.join(process.cwd(), 'keys', 'kid')");
+    expect(source).not.toMatch(/JWT_(?:PRIVATE|PUBLIC)_KEY_PATH|JWT_KEYS_DIR/);
+    expect(source).not.toContain('path.resolve(');
   });
 });
