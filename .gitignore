@@ -36,6 +36,7 @@ node_modules/
 
 # Local indexes
 .codegraph/
+.superpowers/
 
 # Local agent settings
 **/.claude/settings.local.json
