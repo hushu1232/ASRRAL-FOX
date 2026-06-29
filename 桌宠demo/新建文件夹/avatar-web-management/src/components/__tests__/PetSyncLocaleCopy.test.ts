@@ -20,7 +20,14 @@ describe('pet sync locale copy', () => {
       'Confirm the staged package inside Alife .NET',
     );
     expect(en.pet.syncStatus.previewChip.localConfirmationRequired).toBe('Confirm locally');
+    expect(en.pet.syncStatus.previewChip.upToDate).toBe('Synced');
     expect(en.pet.syncStatus.lifecycle.staged.title).toBe('Alife staged');
+    expect(en.pet.syncStatus.lifecycle.staged.description).toBe(
+      'Alife .NET has pulled and validated the package.',
+    );
+    expect(en.pet.syncStatus.lifecycle.applied.description).toBe(
+      'Alife .NET is running the current version.',
+    );
   });
 
   it('uses Alife .NET wording in Simplified Chinese sync copy', () => {
@@ -36,6 +43,14 @@ describe('pet sync locale copy', () => {
     expect(zh.pet.runtimeSummary.nextAction.openDesktop).toBe('打开 Alife .NET 运行时');
     expect(zh.pet.runtimeSummary.nextAction.confirmInDesktop).toBe(
       '在 Alife .NET 中确认已暂存的包',
+    );
+    expect(zh.pet.syncStatus.previewChip.localConfirmationRequired).toBe('待本地确认');
+    expect(zh.pet.syncStatus.previewChip.upToDate).toBe('已同步');
+    expect(zh.pet.syncStatus.lifecycle.staged.description).toBe(
+      'Alife .NET 已拉取并验证该包。',
+    );
+    expect(zh.pet.syncStatus.lifecycle.applied.description).toBe(
+      'Alife .NET 正在运行当前版本。',
     );
   });
 
@@ -54,6 +69,14 @@ describe('pet sync locale copy', () => {
     expect(ja.pet.runtimeSummary.nextAction.openDesktop).toBe('Alife .NET ランタイムを開く');
     expect(ja.pet.runtimeSummary.nextAction.confirmInDesktop).toBe(
       'ステージ済みパッケージを Alife .NET で確認',
+    );
+    expect(ja.pet.syncStatus.previewChip.localConfirmationRequired).toBe('確認待ち');
+    expect(ja.pet.syncStatus.previewChip.upToDate).toBe('同期済み');
+    expect(ja.pet.syncStatus.lifecycle.staged.description).toBe(
+      'Alife .NET はパッケージを取得し検証しました。',
+    );
+    expect(ja.pet.syncStatus.lifecycle.applied.description).toBe(
+      'Alife .NET は現在のバージョンを実行しています。',
     );
   });
 });
