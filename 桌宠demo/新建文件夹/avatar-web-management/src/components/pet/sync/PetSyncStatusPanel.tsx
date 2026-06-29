@@ -1,7 +1,7 @@
 'use client';
 
-import { Alert, Button, Descriptions, Space, Spin, Typography } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { Alert, Button, Descriptions, Space, Spin, Tag, Tooltip, Typography } from 'antd';
+import { DesktopOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import OperationPanel from '@/components/ui/OperationPanel';
 import StatusChip from '@/components/ui/StatusChip';
@@ -65,15 +65,24 @@ export default function PetSyncStatusPanel({
       extra={renderAction(status.primaryAction, loading, onRefresh, t)}
     >
       <Space vertical size="middle" style={{ width: '100%' }}>
-        <StatusChip tone={SUMMARY_TONES[status.summaryKind]}>
-          {t(`summary.${status.summaryKind}`)}
-        </StatusChip>
+        <Space size="small" wrap>
+          <StatusChip tone={SUMMARY_TONES[status.summaryKind]}>
+            {t(`summary.${status.summaryKind}`)}
+          </StatusChip>
+          <StatusChip tone="success">{t('source.live')}</StatusChip>
+        </Space>
 
         <Descriptions column={1} size="small">
           <Descriptions.Item label={t('connection')}>
             {formatConnection(status.desktopConnection, t)}
           </Descriptions.Item>
           <Descriptions.Item label={t('webVersion')}>{status.webConfigVersion}</Descriptions.Item>
+          <Descriptions.Item label={t('packageState')}>
+            <Text code>{status.packageState}</Text>
+          </Descriptions.Item>
+          <Descriptions.Item label={t('desktopKnownVersion')}>
+            {status.desktopKnownVersion ?? t('notApplied')}
+          </Descriptions.Item>
           <Descriptions.Item label={t('desktopAppliedVersion')}>
             {status.desktopAppliedVersion ?? t('notApplied')}
           </Descriptions.Item>
@@ -85,6 +94,15 @@ export default function PetSyncStatusPanel({
           </Descriptions.Item>
           <Descriptions.Item label={t('localConfirmation')}>
             {status.requiresLocalConfirmation ? t('required') : t('notRequired')}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('milestones')}>
+            <Space size={[6, 6]} wrap>
+              {status.milestones.length > 0 ? (
+                status.milestones.map((milestone) => <Tag key={milestone}>{milestone}</Tag>)
+              ) : (
+                <Text type="secondary">{t('none')}</Text>
+              )}
+            </Space>
           </Descriptions.Item>
         </Descriptions>
 
@@ -120,7 +138,13 @@ function renderAction(
   }
 
   if (primaryAction === 'confirmInDesktop') {
-    return <Button type="primary">{t('action.confirmInDesktop')}</Button>;
+    return (
+      <Tooltip title={t('actionHint.confirmInDesktop')}>
+        <Button type="primary" icon={<DesktopOutlined />} disabled>
+          {t('action.confirmInDesktop')}
+        </Button>
+      </Tooltip>
+    );
   }
 
   if (primaryAction === 'viewDetails') {

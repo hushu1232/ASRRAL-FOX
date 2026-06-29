@@ -25,13 +25,13 @@ describe('WebBridgeMockStatusPanel', () => {
     render(<WebBridgeMockStatusPanel />, { wrapper: Wrapper });
 
     expect(screen.getByText('Alife .NET 9')).toBeDefined();
-    expect(screen.getByText('Mock')).toBeDefined();
+    expect(screen.getByText('Mock simulation')).toBeDefined();
     expect(screen.getByText('Preflight')).toBeDefined();
     expect(screen.getByText('Package manifest')).toBeDefined();
     expect(screen.getByText('SHA-256 validation')).toBeDefined();
     expect(screen.getByText('Pending activation')).toBeDefined();
     expect(screen.getByText('pendingActivation')).toBeDefined();
-    expect(screen.getByText('D:\\tmp\\alife-webbridge-integration')).toBeDefined();
+    expect(screen.getByText('D:\\FOXD\\.worktrees\\_alife-webbridge-integration')).toBeDefined();
   });
 
   it('surfaces expected failure reasons without connecting to the runtime', () => {

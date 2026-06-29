@@ -15,7 +15,7 @@ import OperationPanel from '@/components/ui/OperationPanel';
 
 const { Text } = Typography;
 
-const PACKAGE_ROOT = 'D:\\tmp\\alife-webbridge-integration';
+const PACKAGE_ROOT = 'D:\\FOXD\\.worktrees\\_alife-webbridge-integration';
 
 type MockScenarioKey = 'pendingActivation' | 'unauthorized' | 'hashMismatch' | 'securityBlocked';
 
@@ -157,7 +157,7 @@ export default function WebBridgeMockStatusPanel() {
         <Space size="small" wrap>
           <ApiOutlined />
           <span>WebBridge package install</span>
-          <Tag color="blue">Mock</Tag>
+          <Tag color="default">Mock simulation</Tag>
         </Space>
       }
     >

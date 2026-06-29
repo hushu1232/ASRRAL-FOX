@@ -1026,12 +1026,16 @@
       "connection": "连接状态",
       "webVersion": "Web 版本",
       "desktopAppliedVersion": "桌面端已应用版本",
+      "desktopKnownVersion": "桌面端已知版本",
+      "packageState": "包状态",
       "lastSyncAt": "上次同步",
       "lastAppliedAt": "上次应用",
+      "milestones": "已上报里程碑",
       "localConfirmation": "本地确认",
       "required": "需要",
       "notRequired": "不需要",
       "notApplied": "未应用",
+      "none": "无",
       "never": "从未",
       "summary": {
         "unknown": "状态未知",
@@ -1052,6 +1056,12 @@
         "confirmInDesktop": "在桌面端确认",
         "viewDetails": "查看详情",
         "openDesktop": "打开桌面端"
+      },
+      "source": {
+        "live": "Live API"
+      },
+      "actionHint": {
+        "confirmInDesktop": "请在 Alife 中确认已暂存的更新。Web 端暂不提供激活操作。"
       }
     },
     "runtimeSummary": {

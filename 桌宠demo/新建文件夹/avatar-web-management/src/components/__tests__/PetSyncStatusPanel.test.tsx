@@ -18,12 +18,17 @@ jest.mock('next-intl', () => ({
         connection: 'Connection',
         webVersion: 'Web version',
         desktopAppliedVersion: 'Desktop applied version',
+        desktopKnownVersion: 'Desktop known version',
+        packageState: 'Package state',
         lastSyncAt: 'Last sync',
         lastAppliedAt: 'Last applied',
+        milestones: 'Reported milestones',
         localConfirmation: 'Local confirmation',
         required: 'Required',
         notRequired: 'Not required',
         notApplied: 'Not applied',
+        none: 'None',
+        'source.live': 'Live API',
         never: 'Never',
         'summary.unknown': 'Unknown',
         'summary.desktopOffline': 'Desktop offline',
@@ -38,6 +43,8 @@ jest.mock('next-intl', () => ({
         'action.checkAgain': 'Check again',
         'action.confirmInDesktop': 'Confirm in desktop',
         'action.viewDetails': 'View details',
+        'actionHint.confirmInDesktop':
+          'Confirm the staged package inside Alife. Web activation is not available yet.',
         'error.recovery': 'Recovery',
       },
     };
@@ -46,6 +53,7 @@ jest.mock('next-intl', () => ({
 }));
 
 jest.mock('@ant-design/icons', () => ({
+  DesktopOutlined: () => <span data-testid="icon-desktop" />,
   ReloadOutlined: () => <span data-testid="icon-reload" />,
 }));
 
@@ -68,7 +76,13 @@ function createStatus(overrides: Partial<DesktopSyncStatus> = {}): DesktopSyncSt
     lastAppliedAt: null,
     lastError: null,
     errorMessage: null,
-    milestones: [],
+    milestones: [
+      'manifestFetched',
+      'filesDownloaded',
+      'hashValidated',
+      'packageStaged',
+      'confirmationRequested',
+    ],
     ...overrides,
   };
 }
@@ -99,7 +113,12 @@ describe('PetSyncStatusPanel', () => {
     });
 
     expect(screen.getByText('Desktop confirmation required')).toBeDefined();
-    expect(screen.getByRole('button', { name: /confirm in desktop/i })).toBeDefined();
+    expect(screen.getByText('Live API')).toBeDefined();
+    expect(screen.getByText('staged')).toBeDefined();
+    expect(screen.getAllByText('7').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('manifestFetched')).toBeDefined();
+    expect(screen.getByText('confirmationRequested')).toBeDefined();
+    expect(screen.getByRole('button', { name: /confirm in desktop/i })).toBeDisabled();
     expect(screen.getByText('Required')).toBeDefined();
   });
 

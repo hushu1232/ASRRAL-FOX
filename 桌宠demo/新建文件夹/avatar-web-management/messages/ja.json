@@ -1018,12 +1018,16 @@
       "connection": "接続状態",
       "webVersion": "Web バージョン",
       "desktopAppliedVersion": "デスクトップ適用済みバージョン",
+      "desktopKnownVersion": "デスクトップ既知バージョン",
+      "packageState": "パッケージ状態",
       "lastSyncAt": "最終同期",
       "lastAppliedAt": "最終適用",
+      "milestones": "報告済みマイルストーン",
       "localConfirmation": "ローカル確認",
       "required": "必要",
       "notRequired": "不要",
       "notApplied": "未適用",
+      "none": "なし",
       "never": "なし",
       "summary": {
         "unknown": "不明",
@@ -1044,6 +1048,12 @@
         "confirmInDesktop": "デスクトップで確認",
         "viewDetails": "詳細を見る",
         "openDesktop": "デスクトップを開く"
+      },
+      "source": {
+        "live": "Live API"
+      },
+      "actionHint": {
+        "confirmInDesktop": "ステージ済みパッケージは Alife 内で確認してください。Web からの有効化はまだ利用できません。"
       }
     },
     "runtimeSummary": {

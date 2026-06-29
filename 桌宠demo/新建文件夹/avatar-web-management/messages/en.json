@@ -1026,12 +1026,16 @@
       "connection": "Connection",
       "webVersion": "Web version",
       "desktopAppliedVersion": "Desktop applied version",
+      "desktopKnownVersion": "Desktop known version",
+      "packageState": "Package state",
       "lastSyncAt": "Last sync",
       "lastAppliedAt": "Last applied",
+      "milestones": "Reported milestones",
       "localConfirmation": "Local confirmation",
       "required": "Required",
       "notRequired": "Not required",
       "notApplied": "Not applied",
+      "none": "None",
       "never": "Never",
       "summary": {
         "unknown": "Unknown",
@@ -1052,6 +1056,12 @@
         "confirmInDesktop": "Confirm in desktop",
         "viewDetails": "View details",
         "openDesktop": "Open desktop"
+      },
+      "source": {
+        "live": "Live API"
+      },
+      "actionHint": {
+        "confirmInDesktop": "Confirm the staged package inside Alife. Web activation is not available yet."
       }
     },
     "runtimeSummary": {
