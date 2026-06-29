@@ -809,7 +809,7 @@
   },
   "pet": {
     "title": "ペット設定",
-    "consoleSubtitle": "ここで Web ペット設定を準備し、検証します。Alife はローカル確認後にのみステージ済みの変更を適用します。",
+    "consoleSubtitle": "ここで Web ペット設定を準備し、検証します。Alife .NET はローカル確認後にのみステージ済みの変更を適用します。",
     "testConnection": "接続テスト",
     "exportConfig": "設定をエクスポート",
     "saveConfig": "設定を保存",
@@ -1093,15 +1093,15 @@
       },
       "action": {
         "checkAgain": "再確認",
-        "confirmInDesktop": "デスクトップで確認",
+        "confirmInDesktop": "Alife .NET で確認",
         "viewDetails": "詳細を見る",
-        "openDesktop": "デスクトップを開く"
+        "openDesktop": "Alife .NET を開く"
       },
       "source": {
         "live": "Live API"
       },
       "actionHint": {
-        "confirmInDesktop": "ステージ済みパッケージは Alife 内で確認してください。Web からの有効化はまだ利用できません。"
+        "confirmInDesktop": "ステージ済みパッケージは Alife .NET で確認してください。Web からのローカル適用はできません。"
       }
     },
     "runtimeSummary": {
@@ -1111,9 +1111,9 @@
       "nextAction": {
         "label": "次の操作",
         "none": "操作は不要です",
-        "checkAgain": "デスクトップのランタイム状態を再確認",
-        "openDesktop": "Alife デスクトップランタイムを開く",
-        "confirmInDesktop": "Alife でステージ済み更新を確認",
+        "checkAgain": "Alife .NET ランタイム状態を再確認",
+        "openDesktop": "Alife .NET ランタイムを開く",
+        "confirmInDesktop": "ステージ済みパッケージを Alife .NET で確認",
         "viewDetails": "再試行前に同期詳細を確認"
       }
     }

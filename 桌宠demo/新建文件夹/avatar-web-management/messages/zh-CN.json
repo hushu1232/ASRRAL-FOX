@@ -820,7 +820,7 @@
   },
   "pet": {
     "title": "桌宠设置",
-    "consoleSubtitle": "在此准备并验证 Web 桌宠配置。Alife 仅会在本地确认后应用暂存变更。",
+    "consoleSubtitle": "在此准备并验证 Web 桌宠配置。Alife .NET 只会在本地确认后应用暂存变更。",
     "testConnection": "测试连接",
     "exportConfig": "导出配置",
     "saveConfig": "保存配置",
@@ -1101,15 +1101,15 @@
       },
       "action": {
         "checkAgain": "重新检查",
-        "confirmInDesktop": "在桌面端确认",
+        "confirmInDesktop": "在 Alife .NET 中确认",
         "viewDetails": "查看详情",
-        "openDesktop": "打开桌面端"
+        "openDesktop": "打开 Alife .NET"
       },
       "source": {
         "live": "Live API"
       },
       "actionHint": {
-        "confirmInDesktop": "请在 Alife 中确认已暂存的更新。Web 端暂不提供激活操作。"
+        "confirmInDesktop": "请在 Alife .NET 中确认已暂存的包。Web 不提供本地激活操作。"
       }
     },
     "runtimeSummary": {
@@ -1119,9 +1119,9 @@
       "nextAction": {
         "label": "下一步",
         "none": "无需操作",
-        "checkAgain": "重新检查桌面端运行状态",
-        "openDesktop": "打开 Alife 桌面运行时",
-        "confirmInDesktop": "在 Alife 中确认已暂存更新",
+        "checkAgain": "重新检查 Alife .NET 运行状态",
+        "openDesktop": "打开 Alife .NET 运行时",
+        "confirmInDesktop": "在 Alife .NET 中确认已暂存的包",
         "viewDetails": "重试前查看同步详情"
       }
     }

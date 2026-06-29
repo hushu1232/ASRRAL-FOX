@@ -820,7 +820,7 @@
   },
   "pet": {
     "title": "Desktop Pet Settings",
-    "consoleSubtitle": "Prepare and validate the Web pet configuration here. Alife applies staged changes only after local confirmation.",
+    "consoleSubtitle": "Prepare and validate the Web pet configuration here. Alife .NET applies staged changes only after local confirmation.",
     "testConnection": "Test Connection",
     "exportConfig": "Export Config",
     "saveConfig": "Save Config",
@@ -1101,15 +1101,15 @@
       },
       "action": {
         "checkAgain": "Check again",
-        "confirmInDesktop": "Confirm in desktop",
+        "confirmInDesktop": "Confirm in Alife .NET",
         "viewDetails": "View details",
-        "openDesktop": "Open desktop"
+        "openDesktop": "Open Alife .NET"
       },
       "source": {
         "live": "Live API"
       },
       "actionHint": {
-        "confirmInDesktop": "Confirm the staged package inside Alife. Web activation is not available yet."
+        "confirmInDesktop": "Confirm the staged package inside Alife .NET. Web activation is not available."
       }
     },
     "runtimeSummary": {
@@ -1119,9 +1119,9 @@
       "nextAction": {
         "label": "Next action",
         "none": "No action required",
-        "checkAgain": "Check desktop runtime status again",
-        "openDesktop": "Open Alife desktop runtime",
-        "confirmInDesktop": "Confirm the staged update inside Alife",
+        "checkAgain": "Check Alife .NET runtime status again",
+        "openDesktop": "Open Alife .NET runtime",
+        "confirmInDesktop": "Confirm the staged package inside Alife .NET",
         "viewDetails": "Review the sync details before retrying"
       }
     }

@@ -148,6 +148,7 @@ describe('PetConfigPage desktop sync', () => {
     expect(screen.getByText('runtimeSummary.title')).toBeDefined();
     expect(screen.getByText('runtimeSummary.nextAction.label')).toBeDefined();
     expect(screen.getByText('preview.webPreview')).toBeDefined();
+    expect(screen.getByText('WebBridge package simulation')).toBeDefined();
     expect(screen.getByText('Alife .NET 9')).toBeDefined();
     expect(screen.getByText('No live Alife calls')).toBeDefined();
     expect(mockApiGet).toHaveBeenCalledTimes(2);
