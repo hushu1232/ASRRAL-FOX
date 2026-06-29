@@ -20,7 +20,7 @@ It must not activate or apply the package.
 
 The active desktop/runtime side is Alife .NET, not Unity.
 
-The target framework is inherited from `D:\FOXD\alife-service\Directory.Build.props`:
+The target framework is inherited from `D:\Alife\Directory.Build.props`:
 
 ```xml
 <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
@@ -63,21 +63,32 @@ All smoke-test output should stay inside that directory.
 
 ## Repository State Requirement
 
-The current WebBridge package download fix is published through the Alife submodule model:
+The current canonical Alife checkout is:
 
-- Alife repository commit:
-  - `b95422f4 fix: authenticate WebBridge package downloads`
-- FOXD parent repository commit:
-  - `b86b775 chore: update Alife submodule pointer`
+```text
+D:\Alife
+```
 
-`D:\FOXD\alife-service` must remain a Git submodule that points at a commit in `git@github.com:hushu1232/Alife-byastralfox.git`.
+It tracks the upload remote:
 
-Do not upload Alife into FOXD as a copied source snapshot. Push Alife changes to `Alife-byastralfox` first, then update the FOXD `alife-service` gitlink.
+```text
+alife-byastralfox git@github.com:hushu1232/Alife-byastralfox.git
+```
+
+The current WebBridge package and asset contract fixes are published in the Alife repository:
+
+- `b95422f4 fix: authenticate WebBridge package downloads`
+- `89023518 Fix WebBridge asset envelope parsing`
+
+Old references to `D:\FOXD\alife-service` are historical unless a future task explicitly restores a submodule workflow.
+
+Do not upload Alife into FOXD as a copied source snapshot. Push Alife changes from `D:\Alife` to `alife-byastralfox` first, then record the tested Alife commit in FOXD docs or a future gitlink only if the submodule workflow is explicitly restored.
 
 Canonical upload and version snapshot rules are documented in:
 
 ```text
-D:\FOXD\docs\alife-submodule-upload-rules.md
+D:\Alife\AGENTS.md
+D:\Alife\docs\alife-upload-rules.md
 ```
 
 ## FOXD Web Preflight
@@ -112,19 +123,19 @@ The package manifest preflight must reject unsafe manifest shapes:
 Run focused WebBridge tests with the .NET 9 SDK:
 
 ```powershell
-& "C:\Users\hu shu\.dotnet\dotnet.exe" test "D:\FOXD\alife-service\Tests\Alife.Test.Framework\Alife.Test.Framework.csproj" --filter "WebBridge"
+& "C:\Users\hu shu\.dotnet\dotnet.exe" test "D:\Alife\Tests\Alife.Test.Framework\Alife.Test.Framework.csproj" --filter "WebBridge"
 ```
 
 Expected result:
 
 ```text
-Failed: 0, Passed: 19, Skipped: 0
+Failed: 0, Passed: 20, Skipped: 0
 ```
 
 Build the WebBridge function project:
 
 ```powershell
-& "C:\Users\hu shu\.dotnet\dotnet.exe" build "D:\FOXD\alife-service\sources\Alife.Function\Alife.Function.WebBridge\Alife.Function.WebBridge.csproj" --no-restore
+& "C:\Users\hu shu\.dotnet\dotnet.exe" build "D:\Alife\sources\Alife.Function\Alife.Function.WebBridge\Alife.Function.WebBridge.csproj" --no-restore
 ```
 
 Expected result:
@@ -195,8 +206,20 @@ Expected fixed behavior:
 Regression test:
 
 ```powershell
-& "C:\Users\hu shu\.dotnet\dotnet.exe" test "D:\FOXD\alife-service\Tests\Alife.Test.Framework\Alife.Test.Framework.csproj" --filter "WebBridgeServiceDownloadsPackageFilesWithBearerToken"
+& "C:\Users\hu shu\.dotnet\dotnet.exe" test "D:\Alife\Tests\Alife.Test.Framework\Alife.Test.Framework.csproj" --filter "WebBridgeServiceDownloadsPackageFilesWithBearerToken"
 ```
+
+### Empty Asset Manifest After `/api/pet/assets`
+
+Likely cause:
+
+- Alife is running a revision before `89023518 Fix WebBridge asset envelope parsing`.
+- The Web route returns the standard `{ success, data }` envelope but the client expects raw `{ files: [...] }`.
+
+Expected fixed behavior:
+
+- Alife `WebApiClient.PullAssets()` unwraps the success envelope with `DeserializeEnvelope<WebAssetManifest>()`.
+- The focused WebBridge test `WebApiClientPullsAssetsFromWebEnvelope` passes.
 
 ### Hash Mismatch
 
