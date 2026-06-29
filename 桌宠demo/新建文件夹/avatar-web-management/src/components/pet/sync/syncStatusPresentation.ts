@@ -49,17 +49,35 @@ export function getPreviewChipLabelKey(summaryKind: DesktopSummaryKind): string 
 }
 
 export function getLifecycleSteps(status: DesktopSyncStatus): SyncLifecycleStep[] {
+  if (status.packageState === 'notPublished') {
+    return [
+      {
+        key: 'published',
+        titleKey: 'lifecycle.published.title',
+        descriptionKey: 'lifecycle.published.description',
+        state: 'wait',
+      },
+      {
+        key: 'staged',
+        titleKey: 'lifecycle.staged.title',
+        descriptionKey: 'lifecycle.staged.description',
+        state: 'wait',
+      },
+      {
+        key: 'applied',
+        titleKey: 'lifecycle.applied.title',
+        descriptionKey: 'lifecycle.applied.description',
+        state: 'wait',
+      },
+    ];
+  }
+
   return [
     {
       key: 'published',
       titleKey: 'lifecycle.published.title',
       descriptionKey: 'lifecycle.published.description',
-      state:
-        status.packageState === 'failed'
-          ? 'error'
-          : status.packageState === 'notPublished'
-            ? 'wait'
-            : 'finish',
+      state: status.packageState === 'failed' ? 'error' : 'finish',
     },
     {
       key: 'staged',

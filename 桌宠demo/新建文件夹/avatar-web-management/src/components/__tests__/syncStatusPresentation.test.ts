@@ -1,5 +1,8 @@
 import { getLifecycleSteps } from '@/components/pet/sync/syncStatusPresentation';
-import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
+import {
+  buildDesktopSyncStatus,
+  type DesktopSyncStatus,
+} from '@/lib/webbridge/sync-status';
 
 function createStatus(overrides: Partial<DesktopSyncStatus> = {}): DesktopSyncStatus {
   return {
@@ -33,6 +36,22 @@ describe('syncStatusPresentation', () => {
     );
 
     expect(steps.map((step) => step.state)).toEqual(['wait', 'wait', 'wait']);
+  });
+
+  it('keeps normalized unpublished pending-pull lifecycle idle', () => {
+    const status = buildDesktopSyncStatus({
+      webConfigVersion: 2,
+      packageState: 'notPublished',
+      desktopKnownVersion: null,
+    });
+
+    expect(status.summaryKind).toBe('pendingPull');
+    expect(status.requiresLocalConfirmation).toBe(true);
+    expect(getLifecycleSteps(status).map((step) => step.state)).toEqual([
+      'wait',
+      'wait',
+      'wait',
+    ]);
   });
 
   it('keeps pulled package in staged process even without local confirmation', () => {
