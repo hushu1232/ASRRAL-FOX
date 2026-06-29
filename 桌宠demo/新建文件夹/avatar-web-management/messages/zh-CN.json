@@ -1069,7 +1069,7 @@
           "description": "Web 已准备当前包。"
         },
         "staged": {
-          "title": "Alife 已暂存",
+          "title": "Alife .NET 已暂存",
           "description": "Alife .NET 已拉取并验证该包。"
         },
         "applied": {

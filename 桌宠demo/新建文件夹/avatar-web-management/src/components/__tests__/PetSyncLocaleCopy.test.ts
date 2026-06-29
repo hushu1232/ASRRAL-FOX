@@ -21,7 +21,7 @@ describe('pet sync locale copy', () => {
     );
     expect(en.pet.syncStatus.previewChip.localConfirmationRequired).toBe('Confirm locally');
     expect(en.pet.syncStatus.previewChip.upToDate).toBe('Synced');
-    expect(en.pet.syncStatus.lifecycle.staged.title).toBe('Alife staged');
+    expect(en.pet.syncStatus.lifecycle.staged.title).toBe('Alife .NET staged');
     expect(en.pet.syncStatus.lifecycle.staged.description).toBe(
       'Alife .NET has pulled and validated the package.',
     );
@@ -46,6 +46,7 @@ describe('pet sync locale copy', () => {
     );
     expect(zh.pet.syncStatus.previewChip.localConfirmationRequired).toBe('待本地确认');
     expect(zh.pet.syncStatus.previewChip.upToDate).toBe('已同步');
+    expect(zh.pet.syncStatus.lifecycle.staged.title).toBe('Alife .NET 已暂存');
     expect(zh.pet.syncStatus.lifecycle.staged.description).toBe(
       'Alife .NET 已拉取并验证该包。',
     );
@@ -72,6 +73,7 @@ describe('pet sync locale copy', () => {
     );
     expect(ja.pet.syncStatus.previewChip.localConfirmationRequired).toBe('確認待ち');
     expect(ja.pet.syncStatus.previewChip.upToDate).toBe('同期済み');
+    expect(ja.pet.syncStatus.lifecycle.staged.title).toBe('Alife .NET ステージ済み');
     expect(ja.pet.syncStatus.lifecycle.staged.description).toBe(
       'Alife .NET はパッケージを取得し検証しました。',
     );

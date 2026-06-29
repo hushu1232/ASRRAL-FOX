@@ -1061,7 +1061,7 @@
           "description": "Web は現在のパッケージを準備済みです。"
         },
         "staged": {
-          "title": "Alife ステージ済み",
+          "title": "Alife .NET ステージ済み",
           "description": "Alife .NET はパッケージを取得し検証しました。"
         },
         "applied": {

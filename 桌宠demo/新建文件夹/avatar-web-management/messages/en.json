@@ -1069,7 +1069,7 @@
           "description": "Web has prepared the current package."
         },
         "staged": {
-          "title": "Alife staged",
+          "title": "Alife .NET staged",
           "description": "Alife .NET has pulled and validated the package."
         },
         "applied": {
