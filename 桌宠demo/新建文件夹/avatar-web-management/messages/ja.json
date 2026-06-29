@@ -1017,8 +1017,8 @@
       "unavailable": "デスクトップ同期状態を取得できません。",
       "connection": "接続状態",
       "webVersion": "Web バージョン",
-      "desktopAppliedVersion": "デスクトップ適用済みバージョン",
-      "desktopKnownVersion": "デスクトップ既知バージョン",
+      "desktopAppliedVersion": "Alife 適用済みバージョン",
+      "desktopKnownVersion": "Alife 既知バージョン",
       "packageState": "パッケージ状態",
       "lastSyncAt": "最終同期",
       "lastAppliedAt": "最終適用",
@@ -1036,6 +1036,14 @@
         "localConfirmationRequired": "デスクトップで確認が必要",
         "upToDate": "最新です",
         "failed": "同期に失敗しました"
+      },
+      "detail": {
+        "unknown": "状態情報が不足しています。Alife .NET の報告後に再確認してください。",
+        "desktopOffline": "Alife .NET はオフライン、または最近状態を報告していません。",
+        "pendingPull": "Web に新しいパッケージがあり、Alife .NET の取得を待っています。",
+        "localConfirmationRequired": "パッケージはローカルでステージ済みです。適用前に Alife .NET で確認してください。",
+        "upToDate": "Alife .NET は現在の Web バージョンを実行しています。",
+        "failed": "再試行前に同期エラーを確認してください。"
       },
       "connectionState": {
         "unknown": "不明",
@@ -1059,6 +1067,7 @@
     "runtimeSummary": {
       "title": "ランタイム制御",
       "unavailable": "ランタイム同期状態を取得できません。Web サービスの準備後に再確認してください。",
+      "currentState": "現在の状態",
       "nextAction": {
         "label": "次の操作",
         "none": "操作は不要です",

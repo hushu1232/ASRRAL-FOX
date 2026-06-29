@@ -1025,8 +1025,8 @@
       "unavailable": "暂时无法获取桌面同步状态。",
       "connection": "连接状态",
       "webVersion": "Web 版本",
-      "desktopAppliedVersion": "桌面端已应用版本",
-      "desktopKnownVersion": "桌面端已知版本",
+      "desktopAppliedVersion": "Alife 已应用版本",
+      "desktopKnownVersion": "Alife 已知版本",
       "packageState": "包状态",
       "lastSyncAt": "上次同步",
       "lastAppliedAt": "上次应用",
@@ -1044,6 +1044,14 @@
         "localConfirmationRequired": "需要在桌面端确认",
         "upToDate": "已是最新",
         "failed": "同步失败"
+      },
+      "detail": {
+        "unknown": "状态信息不完整。请在 Alife .NET 上报后重新检查。",
+        "desktopOffline": "Alife .NET 离线或最近没有上报状态。",
+        "pendingPull": "Web 有更新的包，正在等待 Alife .NET 拉取。",
+        "localConfirmationRequired": "包已在本地暂存。应用前请在 Alife .NET 中确认。",
+        "upToDate": "Alife .NET 正在运行当前 Web 版本。",
+        "failed": "重试前请先查看同步错误。"
       },
       "connectionState": {
         "unknown": "未知",
@@ -1067,6 +1075,7 @@
     "runtimeSummary": {
       "title": "运行控制",
       "unavailable": "运行同步状态不可用。Web 服务就绪后再检查。",
+      "currentState": "当前状态",
       "nextAction": {
         "label": "下一步",
         "none": "无需操作",

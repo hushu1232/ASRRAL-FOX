@@ -1025,8 +1025,8 @@
       "unavailable": "Desktop sync status is unavailable.",
       "connection": "Connection",
       "webVersion": "Web version",
-      "desktopAppliedVersion": "Desktop applied version",
-      "desktopKnownVersion": "Desktop known version",
+      "desktopAppliedVersion": "Alife applied version",
+      "desktopKnownVersion": "Alife known version",
       "packageState": "Package state",
       "lastSyncAt": "Last sync",
       "lastAppliedAt": "Last applied",
@@ -1044,6 +1044,14 @@
         "localConfirmationRequired": "Desktop confirmation required",
         "upToDate": "Up to date",
         "failed": "Sync failed"
+      },
+      "detail": {
+        "unknown": "Status is incomplete. Check again after Alife .NET reports.",
+        "desktopOffline": "Alife .NET is offline or has not reported recently.",
+        "pendingPull": "Web has a newer package waiting for Alife .NET to pull.",
+        "localConfirmationRequired": "Package staged locally. Confirm it in Alife .NET before apply.",
+        "upToDate": "Alife .NET is running the current Web version.",
+        "failed": "Review the sync error before retrying."
       },
       "connectionState": {
         "unknown": "Unknown",
@@ -1067,6 +1075,7 @@
     "runtimeSummary": {
       "title": "Runtime control",
       "unavailable": "Runtime sync status is unavailable. Check again after the web service is ready.",
+      "currentState": "Current state",
       "nextAction": {
         "label": "Next action",
         "none": "No action required",
