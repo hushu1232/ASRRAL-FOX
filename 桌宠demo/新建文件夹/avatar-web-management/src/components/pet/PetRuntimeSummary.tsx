@@ -5,12 +5,12 @@ import { Button, Space, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
 import MetricTile from '@/components/ui/MetricTile';
 import OperationPanel from '@/components/ui/OperationPanel';
-import StatusChip, { type StatusChipTone } from '@/components/ui/StatusChip';
-import type {
-  DesktopPrimaryAction,
-  DesktopSummaryKind,
-  DesktopSyncStatus,
-} from '@/lib/webbridge/sync-status';
+import StatusChip from '@/components/ui/StatusChip';
+import {
+  getRuntimeDetailKey,
+  SUMMARY_TONES,
+} from '@/components/pet/sync/syncStatusPresentation';
+import type { DesktopPrimaryAction, DesktopSyncStatus } from '@/lib/webbridge/sync-status';
 
 const { Text } = Typography;
 
@@ -19,15 +19,6 @@ export interface PetRuntimeSummaryProps {
   loading: boolean;
   onRefresh: () => void;
 }
-
-const SUMMARY_TONES: Record<DesktopSummaryKind, StatusChipTone> = {
-  unknown: 'neutral',
-  desktopOffline: 'warning',
-  pendingPull: 'processing',
-  localConfirmationRequired: 'warning',
-  upToDate: 'success',
-  failed: 'error',
-};
 
 export default function PetRuntimeSummary({ status, loading, onRefresh }: PetRuntimeSummaryProps) {
   const tPet = useTranslations('pet');
@@ -52,17 +43,21 @@ export default function PetRuntimeSummary({ status, loading, onRefresh }: PetRun
 
   return (
     <OperationPanel
-      title={
-        <Space size="small" wrap>
-          <span>{tPet('runtimeSummary.title')}</span>
-          <StatusChip tone={SUMMARY_TONES[status.summaryKind]}>
-            {tSync(`summary.${status.summaryKind}`)}
-          </StatusChip>
-        </Space>
-      }
+      title={tPet('runtimeSummary.title')}
       extra={renderPrimaryAction(status.primaryAction, loading, onRefresh, tSync)}
     >
       <Space vertical size="middle" style={{ width: '100%' }}>
+        <div>
+          <Text type="secondary">{tPet('runtimeSummary.currentState')}</Text>
+          <div style={{ marginTop: 6 }}>
+            <StatusChip tone={SUMMARY_TONES[status.summaryKind]}>
+              {tSync(`summary.${status.summaryKind}`)}
+            </StatusChip>
+          </div>
+          <div style={{ marginTop: 8, color: 'var(--text-primary)', lineHeight: 1.55 }}>
+            {tSync(getRuntimeDetailKey(status.summaryKind))}
+          </div>
+        </div>
         <div>
           <Text type="secondary">{tPet('runtimeSummary.nextAction.label')}</Text>
           <div style={{ marginTop: 4, color: 'var(--text-primary)', fontWeight: 650 }}>
@@ -78,6 +73,10 @@ export default function PetRuntimeSummary({ status, loading, onRefresh }: PetRun
         >
           <MetricTile label={tSync('webVersion')} value={status.webConfigVersion} />
           <MetricTile
+            label={tSync('desktopKnownVersion')}
+            value={status.desktopKnownVersion ?? tSync('never')}
+          />
+          <MetricTile
             label={tSync('desktopAppliedVersion')}
             value={status.desktopAppliedVersion ?? tSync('notApplied')}
           />
@@ -85,7 +84,6 @@ export default function PetRuntimeSummary({ status, loading, onRefresh }: PetRun
             label={tSync('localConfirmation')}
             value={status.requiresLocalConfirmation ? tSync('required') : tSync('notRequired')}
           />
-          <MetricTile label={tSync('lastSyncAt')} value={formatDate(status.lastSyncAt, tSync)} />
         </div>
       </Space>
     </OperationPanel>
@@ -119,17 +117,4 @@ function RefreshAction({
       {label}
     </Button>
   );
-}
-
-function formatDate(value: Date | number | string | null, t: (key: string) => string): string {
-  if (value === null) {
-    return t('never');
-  }
-
-  const date = value instanceof Date ? value : new Date(value);
-  if (!Number.isFinite(date.getTime())) {
-    return t('never');
-  }
-
-  return date.toLocaleString();
 }
