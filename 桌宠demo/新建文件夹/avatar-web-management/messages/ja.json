@@ -1033,10 +1033,10 @@
       "localActionNotice": "ステージ済みパッケージは Alife .NET で確認してください。",
       "summary": {
         "unknown": "不明",
-        "desktopOffline": "デスクトップがオフライン",
-        "pendingPull": "デスクトップの取得待ち",
-        "localConfirmationRequired": "デスクトップで確認が必要",
-        "upToDate": "最新です",
+        "desktopOffline": "Alife .NET オフライン",
+        "pendingPull": "Alife .NET の取得待ち",
+        "localConfirmationRequired": "ローカル確認待ち",
+        "upToDate": "Alife .NET に適用済み",
         "failed": "同期に失敗しました"
       },
       "detail": {

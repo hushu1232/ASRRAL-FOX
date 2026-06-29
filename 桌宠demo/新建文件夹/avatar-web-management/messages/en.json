@@ -1041,10 +1041,10 @@
       "localActionNotice": "Confirm this staged package inside Alife .NET.",
       "summary": {
         "unknown": "Unknown",
-        "desktopOffline": "Desktop offline",
-        "pendingPull": "Pending pull",
-        "localConfirmationRequired": "Desktop confirmation required",
-        "upToDate": "Up to date",
+        "desktopOffline": "Alife .NET offline",
+        "pendingPull": "Waiting for Alife .NET pull",
+        "localConfirmationRequired": "Awaiting local confirmation",
+        "upToDate": "Applied in Alife .NET",
         "failed": "Sync failed"
       },
       "detail": {

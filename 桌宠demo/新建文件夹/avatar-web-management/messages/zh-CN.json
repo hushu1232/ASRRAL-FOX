@@ -1041,10 +1041,10 @@
       "localActionNotice": "请在 Alife .NET 中确认这个已暂存的包。",
       "summary": {
         "unknown": "状态未知",
-        "desktopOffline": "桌面端离线",
-        "pendingPull": "等待桌面端拉取",
-        "localConfirmationRequired": "需要在桌面端确认",
-        "upToDate": "已是最新",
+        "desktopOffline": "Alife .NET 离线",
+        "pendingPull": "等待 Alife .NET 拉取",
+        "localConfirmationRequired": "等待本地确认",
+        "upToDate": "已应用到 Alife .NET",
         "failed": "同步失败"
       },
       "detail": {

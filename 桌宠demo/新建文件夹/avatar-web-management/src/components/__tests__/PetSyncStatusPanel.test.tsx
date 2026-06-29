@@ -31,10 +31,10 @@ jest.mock('next-intl', () => ({
         'source.live': 'Live API',
         never: 'Never',
         'summary.unknown': 'Unknown',
-        'summary.desktopOffline': 'Desktop offline',
+        'summary.desktopOffline': 'Alife .NET offline',
         'summary.pendingPull': 'Waiting for Alife .NET pull',
         'summary.localConfirmationRequired': 'Awaiting local confirmation',
-        'summary.upToDate': 'Up to date',
+        'summary.upToDate': 'Applied in Alife .NET',
         'summary.failed': 'Sync failed',
         'detail.pendingPull': 'Web has a newer package waiting for Alife .NET to pull.',
         'detail.localConfirmationRequired':
@@ -147,8 +147,11 @@ describe('PetSyncStatusPanel', () => {
       screen.getByText('Package staged locally. Confirm it in Alife .NET before apply.'),
     ).toBeDefined();
     expect(screen.getByText('Web published')).toBeDefined();
+    expect(screen.getByText('Web has prepared the current package.')).toBeDefined();
     expect(screen.getByText('Alife staged')).toBeDefined();
+    expect(screen.getByText('Alife .NET has pulled and validated the package.')).toBeDefined();
     expect(screen.getByText('Applied')).toBeDefined();
+    expect(screen.getByText('Alife .NET is running the current version.')).toBeDefined();
     expect(screen.getByText('Staged locally')).toBeDefined();
     expect(screen.getByText('Alife .NET is waiting for local confirmation.')).toBeDefined();
     expect(screen.getByText('Raw state')).toBeDefined();
@@ -180,11 +183,17 @@ describe('PetSyncStatusPanel', () => {
     );
 
     expect(screen.getByText('Waiting for Alife .NET pull')).toBeDefined();
+    expect(
+      screen.getByText('Web has a newer package waiting for Alife .NET to pull.'),
+    ).toBeDefined();
     expect(screen.getByText('Published, waiting for pull')).toBeDefined();
     expect(screen.getByText('Web has a package ready for Alife .NET.')).toBeDefined();
     expect(screen.getByText('Web published')).toBeDefined();
+    expect(screen.getByText('Web has prepared the current package.')).toBeDefined();
     expect(screen.getByText('Alife staged')).toBeDefined();
+    expect(screen.getByText('Alife .NET has pulled and validated the package.')).toBeDefined();
     expect(screen.getByText('Applied')).toBeDefined();
+    expect(screen.getByText('Alife .NET is running the current version.')).toBeDefined();
   });
 
   it('upToDate state shows summary and no check-again action', () => {
@@ -204,7 +213,7 @@ describe('PetSyncStatusPanel', () => {
       { wrapper: Wrapper },
     );
 
-    expect(screen.getByText('Up to date')).toBeDefined();
+    expect(screen.getAllByText('Applied in Alife .NET').length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole('button', { name: /check again/i })).toBeNull();
   });
 
