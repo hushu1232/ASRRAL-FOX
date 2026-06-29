@@ -6,13 +6,16 @@ This document records the current local WebBridge status between FOXD Web and th
 
 ## Scope
 
-The initial audit was read-only for `D:\Alife`. The follow-up A-path fix was made in the canonical Alife checkout and is published as `89023518 Fix WebBridge asset envelope parsing`.
+The initial audit was read-only for `D:\Alife`. Follow-up fixes were made in the canonical Alife checkout and published as:
+
+- `89023518 Fix WebBridge asset envelope parsing`
+- `3884f38d feat: report WebBridge package milestones`
 
 - No Alife runtime was started.
-- The Alife source change was limited to `WebApiClient.PullAssets()` and focused WebBridge tests.
+- The Alife source changes were limited to WebBridge HTTP contract handling, package install milestone reporting, and focused WebBridge tests.
 - No live Alife long task was interrupted.
 - No Unity workflow was used. Unity is treated as legacy/deprecated context only.
-- A staging-only `InstallPackage` smoke was run against the local FOXD Web server with an isolated package root under `D:\FOXD\.worktrees`.
+- Staging-only `InstallPackage` smokes were run against the local FOXD Web server with isolated package roots under `D:\FOXD\.worktrees`.
 
 The current runtime direction is:
 
@@ -112,7 +115,7 @@ The WebBridge direction is mostly pull-based:
 
 ```text
 Alife -> FOXD Web: pull config, pull package manifest, download package files
-Alife -> FOXD Web: optional push state / set avatar / future status milestones
+Alife -> FOXD Web: optional push state / set avatar / package status milestones
 FOXD Web -> Alife local API: not yet wired in Web UI as a live dependency
 ```
 
@@ -127,7 +130,7 @@ FOXD Web -> Alife local API: not yet wired in Web UI as a live dependency
 | Pet state push | `POST /api/pet/sync` | `WebApiClient.PushState`, `WebBridgeService.PushState` | Partial | Alife can POST a `WebAvatarConfig`, but Web route currently ignores request body and returns current export. This is not a true state round trip yet. |
 | Set avatar | `POST /api/pet/set-avatar` | `WebApiClient.SetAvatar`, `WebBridgeService.SetAvatar` | Implemented | Web requires `{ avatarId }` and calls `petService.setAvatarAsPet`. |
 | Asset manifest pull | `GET /api/pet/assets` | `WebApiClient.PullAssets`, `WebAssetManifest.cs`, `WebAssetSync.cs` | Fixed in Alife commit `89023518` | Web returns the standard success envelope around asset data. Alife now unwraps `data` with `DeserializeEnvelope<WebAssetManifest>()`. Run isolated smoke before enabling live asset sync. |
-| Sync status query/report | `GET/POST /api/pet/sync/status`, `petSyncStatusService.ts`, `sync-status.ts` | No direct milestone reporting found in `Alife.Function.WebBridge` | Web implemented, Alife integration pending | Web supports milestones like `manifestFetched`, `filesDownloaded`, `hashValidated`, `packageStaged`, `confirmationRequested`, `packageApplied`, `packageFailed`. Alife does not yet appear to POST these milestones. |
+| Sync status query/report | `GET/POST /api/pet/sync/status`, `petSyncStatusService.ts`, `sync-status.ts` | `WebApiClient.ReportSyncMilestone`, `WebBridgeService.InstallPackage`, `WebBridgePackageInstaller.Install` | Implemented in Alife commit `3884f38d` and smoke-tested locally | Alife posts `manifestFetched`, `filesDownloaded`, `hashValidated`, `packageStaged`, and `confirmationRequested` during staging-only install. `packageFailed` is posted on install failure. Live activation still does not post `packageApplied` because activation/apply is not implemented. |
 | Local Alife management API | Not clearly consumed by Web app yet | `AlifeManagementApiHost.cs`, `AlifeManagementApiService.cs` | Implemented in Alife, Web consumption pending | Alife exposes `/api/alife/health`, `/api/alife/status`, `/api/alife/qchat/status`, `/api/alife/vision/status`, `/api/alife/tts/status` on `127.0.0.1:8787` when enabled. |
 
 ## Manifest Contract
@@ -201,7 +204,7 @@ Pull manifest -> download file -> validate hash -> stage files -> write config d
 
 It does not support live activation yet.
 
-## Isolated Smoke Result
+## Initial Isolated Smoke Result
 
 The staging-only smoke was run after the Alife asset-envelope fix and FOXD runbook update.
 
@@ -248,6 +251,45 @@ Catalog status was confirmed as:
 }
 ```
 
+## Milestone Smoke Result
+
+After Alife commit `3884f38d`, a second staging-only smoke was run with the same safety boundaries:
+
+- FOXD Web server was started by the local integration runner and stopped after the smoke.
+- Alife runtime was not started.
+- Alife default storage was not used.
+- Output stayed under an ignored local root:
+
+```text
+D:\FOXD\.worktrees\_alife-webbridge-integration\20260629051431
+```
+
+Observed install result:
+
+```text
+PackageId: current-pet-character-bundle
+Status: pendingActivation
+InstalledFiles: 1
+```
+
+Observed Web status after Alife milestone posts:
+
+```text
+packageState: staged
+summaryKind: localConfirmationRequired
+primaryAction: confirmInDesktop
+```
+
+Two local Web prerequisites were required before this smoke could pass:
+
+```powershell
+npm run prisma:generate
+npm run prisma:push
+npm run build
+```
+
+Root cause of the failed first milestone smoke: local generated Prisma client and local PostgreSQL schema were behind the committed `PetSyncStatus` Prisma model/migration. `npm run prisma:generate` restored the `petSyncStatus` client delegate, and `npm run prisma:push` created the missing local `pet_sync_statuses` table.
+
 ## Important Gaps
 
 1. `docs/webbridge-alife-local-integration.md` has been updated to use the current canonical Alife path `D:\Alife`. Any remaining `D:\FOXD\alife-service` mention should be treated as historical context, not the active workflow.
@@ -264,7 +306,7 @@ Catalog status was confirmed as:
 
 3. Alife `PushState()` exists, but Web `/api/pet/sync` currently ignores POST body. This means "push desktop state back to Web" is not a real persisted state update yet.
 
-4. Web sync status API is ahead of Alife. Web has status/milestone models and tests; Alife does not yet appear to report milestones to `/api/pet/sync/status`.
+4. Package milestone reporting is now implemented and smoke-tested. The local Web database must be in sync with Prisma schema before running this path; otherwise `/api/pet/sync/status` fails because `pet_sync_statuses` is missing.
 
 5. Alife local management API exists, but Web does not yet clearly consume `/api/alife/*` as a real live status source. Current Web UI should continue to present mock/local-only states unless live integration is explicitly started.
 
@@ -274,8 +316,11 @@ Catalog status was confirmed as:
 
 ### Phase 1: Contract Cleanup Without Starting Alife
 
-1. Record Alife commit `89023518` as the current tested WebBridge asset-envelope fix.
-2. Keep the package install path staging-only until local confirmation and milestone reporting are implemented.
+Completed:
+
+- `89023518` records the tested WebBridge asset-envelope fix.
+- `3884f38d` records tested WebBridge package milestone reporting.
+- The package install path remains staging-only.
 
 ### Phase 2: Isolated Package Install Smoke
 
@@ -305,7 +350,7 @@ Do not call any activation/apply step.
 
 ### Phase 3: Milestone Reporting
 
-Add Alife milestone reporting after package install steps:
+Completed for staging-only package install:
 
 ```text
 manifestFetched
@@ -313,15 +358,14 @@ filesDownloaded
 hashValidated
 packageStaged
 confirmationRequested
-packageApplied
 packageFailed
 ```
 
-Use tests first. Web already has validation and status derivation around these milestones.
+`packageApplied` remains pending because local confirmation/apply is not implemented yet.
 
 ### Phase 4: UI/UX Live-State Upgrade
 
-Only after Phase 2 or Phase 3 has evidence:
+Phase 2 and staging milestone reporting now have evidence. The next UI/UX work should:
 
 - Replace mock-only WebBridge status with explicit mock/live modes.
 - Show Alife local management health when available.
@@ -331,10 +375,10 @@ Only after Phase 2 or Phase 3 has evidence:
 
 ## Current Recommendation
 
-Do not start broad UI/UX changes before the milestone gap is clarified.
+The milestone gap is now clarified for staging-only install. Broad UI/UX work can start, but it should keep live activation clearly separate from staged/local-confirmation states.
 
 The best next engineering task is:
 
 ```text
-Add Alife milestone reporting to /api/pet/sync/status, then expose the live/mock distinction in FOXD Web UI.
+Expose the live/mock distinction in FOXD Web UI, using the smoke-tested `staged/localConfirmationRequired` status as the first real live state.
 ```

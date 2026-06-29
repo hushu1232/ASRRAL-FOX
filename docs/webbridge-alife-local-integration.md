@@ -97,8 +97,13 @@ From the Web app root:
 
 ```powershell
 cd "D:\FOXD\桌宠demo\新建文件夹\avatar-web-management"
+npm run prisma:generate
+npm run prisma:push
+npm run build
 npm run check:webbridge
 ```
+
+`npm run prisma:generate` and `npm run prisma:push` are required on a local development database if the `PetSyncStatus` Prisma model or `pet_sync_statuses` table is missing. Without them, `/api/pet/sync/status` can fail even when the source route exists.
 
 Expected checks:
 
@@ -188,6 +193,26 @@ Expected catalog state:
 ```
 
 The package must stay pending until a local confirmation flow is implemented and explicitly invoked.
+
+After Alife commit `3884f38d feat: report WebBridge package milestones`, the isolated smoke should also produce Web sync status:
+
+```text
+packageState: staged
+summaryKind: localConfirmationRequired
+primaryAction: confirmInDesktop
+```
+
+The Alife side reports these staging milestones:
+
+```text
+manifestFetched
+filesDownloaded
+hashValidated
+packageStaged
+confirmationRequested
+```
+
+If install fails, Alife reports `packageFailed` with a mapped desktop error code before rethrowing the original install error.
 
 ## Failure Checks
 
