@@ -54,7 +54,12 @@ export function getLifecycleSteps(status: DesktopSyncStatus): SyncLifecycleStep[
       key: 'published',
       titleKey: 'lifecycle.published.title',
       descriptionKey: 'lifecycle.published.description',
-      state: status.packageState === 'failed' ? 'error' : 'finish',
+      state:
+        status.packageState === 'failed'
+          ? 'error'
+          : status.packageState === 'notPublished'
+            ? 'wait'
+            : 'finish',
     },
     {
       key: 'staged',
@@ -77,7 +82,6 @@ function getStagedLifecycleState(status: DesktopSyncStatus): SyncLifecycleStep['
   }
 
   if (
-    status.packageState === 'pulled' ||
     status.packageState === 'staged' ||
     status.packageState === 'applied' ||
     hasMilestone(status, 'packageStaged') ||
@@ -85,6 +89,10 @@ function getStagedLifecycleState(status: DesktopSyncStatus): SyncLifecycleStep['
     hasMilestone(status, 'packageApplied')
   ) {
     return status.requiresLocalConfirmation ? 'process' : 'finish';
+  }
+
+  if (status.packageState === 'pulled') {
+    return 'process';
   }
 
   if (status.summaryKind === 'pendingPull') {
