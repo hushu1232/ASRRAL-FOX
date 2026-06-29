@@ -1,8 +1,11 @@
 'use client';
 
-import { Alert, Button, Card, Descriptions, Space, Spin, Tag, Typography } from 'antd';
+import { Alert, Button, Descriptions, Space, Spin, Typography } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import OperationPanel from '@/components/ui/OperationPanel';
+import StatusChip from '@/components/ui/StatusChip';
+import type { StatusChipTone } from '@/components/ui/StatusChip';
 import type {
   DesktopConnectionState,
   DesktopPrimaryAction,
@@ -18,11 +21,11 @@ interface PetSyncStatusPanelProps {
   onRefresh: () => void;
 }
 
-const SUMMARY_TAG_COLORS: Record<DesktopSummaryKind, string> = {
-  unknown: 'default',
+const SUMMARY_TONES: Record<DesktopSummaryKind, StatusChipTone> = {
+  unknown: 'neutral',
   desktopOffline: 'warning',
   pendingPull: 'processing',
-  localConfirmationRequired: 'orange',
+  localConfirmationRequired: 'warning',
   upToDate: 'success',
   failed: 'error',
 };
@@ -36,12 +39,12 @@ export default function PetSyncStatusPanel({
 
   if (!status && loading) {
     return (
-      <Card>
+      <OperationPanel title={null}>
         <Space>
           <Spin />
           <Text>{t('loading')}</Text>
         </Space>
-      </Card>
+      </OperationPanel>
     );
   }
 
@@ -57,19 +60,20 @@ export default function PetSyncStatusPanel({
   }
 
   return (
-    <Card title={t('title')} extra={renderAction(status.primaryAction, loading, onRefresh, t)}>
-      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-        <Tag color={SUMMARY_TAG_COLORS[status.summaryKind]}>
+    <OperationPanel
+      title={t('title')}
+      extra={renderAction(status.primaryAction, loading, onRefresh, t)}
+    >
+      <Space vertical size="middle" style={{ width: '100%' }}>
+        <StatusChip tone={SUMMARY_TONES[status.summaryKind]}>
           {t(`summary.${status.summaryKind}`)}
-        </Tag>
+        </StatusChip>
 
         <Descriptions column={1} size="small">
           <Descriptions.Item label={t('connection')}>
             {formatConnection(status.desktopConnection, t)}
           </Descriptions.Item>
-          <Descriptions.Item label={t('webVersion')}>
-            {status.webConfigVersion}
-          </Descriptions.Item>
+          <Descriptions.Item label={t('webVersion')}>{status.webConfigVersion}</Descriptions.Item>
           <Descriptions.Item label={t('desktopAppliedVersion')}>
             {status.desktopAppliedVersion ?? t('notApplied')}
           </Descriptions.Item>
@@ -90,10 +94,8 @@ export default function PetSyncStatusPanel({
             showIcon
             title={status.errorMessage?.title ?? status.lastError.message ?? status.lastError.code}
             description={
-              <Space orientation="vertical" size={4}>
-                {status.errorMessage?.recovery && (
-                  <Text>{status.errorMessage.recovery}</Text>
-                )}
+              <Space vertical size={4}>
+                {status.errorMessage?.recovery && <Text>{status.errorMessage.recovery}</Text>}
                 <Text code>{status.lastError.code}</Text>
                 {status.lastError.technicalDetail && (
                   <Text type="secondary">{status.lastError.technicalDetail}</Text>
@@ -103,7 +105,7 @@ export default function PetSyncStatusPanel({
           />
         )}
       </Space>
-    </Card>
+    </OperationPanel>
   );
 }
 
@@ -111,7 +113,7 @@ function renderAction(
   primaryAction: DesktopPrimaryAction,
   loading: boolean,
   onRefresh: () => void,
-  t: (key: string) => string
+  t: (key: string) => string,
 ) {
   if (primaryAction === 'none') {
     return null;
@@ -144,17 +146,11 @@ function RefreshButton({
   );
 }
 
-function formatConnection(
-  connection: DesktopConnectionState,
-  t: (key: string) => string
-): string {
+function formatConnection(connection: DesktopConnectionState, t: (key: string) => string): string {
   return t(`connectionState.${connection}`);
 }
 
-function formatDate(
-  value: Date | number | string | null,
-  t: (key: string) => string
-): string {
+function formatDate(value: Date | number | string | null, t: (key: string) => string): string {
   if (value === null) {
     return t('never');
   }

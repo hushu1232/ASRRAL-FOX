@@ -117,7 +117,7 @@ describe('PetSyncStatusPanel', () => {
         loading={false}
         onRefresh={jest.fn()}
       />,
-      { wrapper: Wrapper }
+      { wrapper: Wrapper },
     );
 
     expect(screen.getByText('Up to date')).toBeDefined();
@@ -137,7 +137,7 @@ describe('PetSyncStatusPanel', () => {
         loading={false}
         onRefresh={onRefresh}
       />,
-      { wrapper: Wrapper }
+      { wrapper: Wrapper },
     );
 
     fireEvent.click(screen.getByRole('button', { name: /check again/i }));
@@ -160,7 +160,7 @@ describe('PetSyncStatusPanel', () => {
         loading={false}
         onRefresh={jest.fn()}
       />,
-      { wrapper: Wrapper }
+      { wrapper: Wrapper },
     );
 
     expect(screen.getByText('PACKAGE_HASH_MISMATCH')).toBeDefined();
@@ -185,7 +185,7 @@ describe('PetSyncStatusPanel', () => {
         loading={false}
         onRefresh={jest.fn()}
       />,
-      { wrapper: Wrapper }
+      { wrapper: Wrapper },
     );
 
     expect(screen.getByText('Package validation failed')).toBeDefined();

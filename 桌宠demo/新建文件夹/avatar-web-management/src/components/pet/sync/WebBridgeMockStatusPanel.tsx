@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Alert, Card, Descriptions, Segmented, Space, Steps, Tag, Typography } from 'antd';
+import { Alert, Descriptions, Segmented, Space, Steps, Tag, Typography } from 'antd';
 import {
   ApiOutlined,
   CheckCircleOutlined,
@@ -10,8 +10,10 @@ import {
   ExclamationCircleOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
+import MetricTile from '@/components/ui/MetricTile';
+import OperationPanel from '@/components/ui/OperationPanel';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 const PACKAGE_ROOT = 'D:\\tmp\\alife-webbridge-integration';
 
@@ -137,13 +139,6 @@ const checkStateColors: Record<CheckState, string> = {
 
 const failureReasons = ['401 package file', 'PACKAGE_HASH_MISMATCH', 'PACKAGE_SECURITY_BLOCKED'];
 
-const metricCardStyle = {
-  border: '1px solid var(--border-subtle)',
-  borderRadius: 8,
-  padding: 14,
-  background: 'var(--bg-card-hover)',
-};
-
 export default function WebBridgeMockStatusPanel() {
   const [scenarioKey, setScenarioKey] = useState<MockScenarioKey>('pendingActivation');
   const scenario = mockScenarios[scenarioKey];
@@ -157,7 +152,7 @@ export default function WebBridgeMockStatusPanel() {
   );
 
   return (
-    <Card
+    <OperationPanel
       title={
         <Space size="small" wrap>
           <ApiOutlined />
@@ -165,9 +160,8 @@ export default function WebBridgeMockStatusPanel() {
           <Tag color="blue">Mock</Tag>
         </Space>
       }
-      styles={{ body: { background: 'var(--bg-card)' } }}
     >
-      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
+      <Space vertical size="large" style={{ width: '100%' }}>
         <div>
           <Text strong>Mock scenario</Text>
           <div style={{ marginTop: 8 }}>
@@ -186,30 +180,13 @@ export default function WebBridgeMockStatusPanel() {
             gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
           }}
         >
-          <div style={metricCardStyle}>
-            <Text type="secondary">Runtime</Text>
-            <Title level={5} style={{ margin: '6px 0 0' }}>
-              Alife .NET 9
-            </Title>
-          </div>
-          <div style={metricCardStyle}>
-            <Text type="secondary">Package state</Text>
-            <div style={{ marginTop: 8 }}>
-              <Tag color={scenario.tagColor}>{scenario.packageState}</Tag>
-            </div>
-          </div>
-          <div style={metricCardStyle}>
-            <Text type="secondary">Next action</Text>
-            <div style={{ marginTop: 8 }}>
-              <Text>{scenario.nextAction}</Text>
-            </div>
-          </div>
-          <div style={metricCardStyle}>
-            <Text type="secondary">Isolation</Text>
-            <div style={{ marginTop: 8 }}>
-              <Tag color="default">No live Alife calls</Tag>
-            </div>
-          </div>
+          <MetricTile label="Runtime" value="Alife .NET 9" />
+          <MetricTile
+            label="Package state"
+            value={<Tag color={scenario.tagColor}>{scenario.packageState}</Tag>}
+          />
+          <MetricTile label="Next action" value={scenario.nextAction} />
+          <MetricTile label="Isolation" value={<Tag color="default">No live Alife calls</Tag>} />
         </div>
 
         <Steps
@@ -219,7 +196,7 @@ export default function WebBridgeMockStatusPanel() {
             title: check.label,
             status: toStepStatus(scenario.checks[check.key]),
             content: (
-              <Space orientation="vertical" size={2}>
+              <Space vertical size={2}>
                 <Text type="secondary">{check.detail}</Text>
                 <Tag color={checkStateColors[scenario.checks[check.key]]}>
                   {checkStateLabels[scenario.checks[check.key]]}
@@ -261,14 +238,14 @@ export default function WebBridgeMockStatusPanel() {
           icon={<CheckCircleOutlined />}
           title="Activation guard"
           description={
-            <Space orientation="vertical" size={4}>
+            <Space vertical size={4}>
               <Text>{scenario.nextAction}</Text>
               <Text code>autoApply=false, requiresLocalConfirmation=true</Text>
             </Space>
           }
         />
       </Space>
-    </Card>
+    </OperationPanel>
   );
 }
 
