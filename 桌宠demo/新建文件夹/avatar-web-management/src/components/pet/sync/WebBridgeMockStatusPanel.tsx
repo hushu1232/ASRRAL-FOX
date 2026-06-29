@@ -164,11 +164,12 @@ export default function WebBridgeMockStatusPanel() {
       <Space vertical size="large" style={{ width: '100%' }}>
         <div>
           <Text strong>Mock scenario</Text>
-          <div style={{ marginTop: 8 }}>
+          <div style={{ marginTop: 8, maxWidth: '100%', overflowX: 'auto', paddingBottom: 2 }}>
             <Segmented
               options={scenarioOptions}
               value={scenarioKey}
               onChange={(value) => setScenarioKey(value as MockScenarioKey)}
+              style={{ minWidth: 'max-content' }}
             />
           </div>
         </div>

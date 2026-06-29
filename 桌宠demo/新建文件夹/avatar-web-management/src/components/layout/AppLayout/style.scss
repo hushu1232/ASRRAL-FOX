@@ -47,4 +47,20 @@
       padding: var.$spacing-6 var.$spacing-8;
     }
   }
+
+  @media (max-width: var.$breakpoint-sm) {
+    &__sidebar-area {
+      display: none;
+    }
+
+    &__main {
+      min-width: 0;
+      width: 100%;
+
+      &--sidebar-expanded,
+      &--sidebar-collapsed {
+        margin-left: 0;
+      }
+    }
+  }
 }

@@ -80,9 +80,7 @@ export default function PageHeader({
   const showBreadcrumbs = resolvedBreadcrumbs.length > 1;
 
   // Tab state from URL for persistence
-  const activeTab = tabs
-    ? searchParams.get(tabParam) || defaultTab || tabs[0]?.key
-    : undefined;
+  const activeTab = tabs ? searchParams.get(tabParam) || defaultTab || tabs[0]?.key : undefined;
 
   const handleTabChange = (key: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -133,10 +131,7 @@ export default function PageHeader({
       {/* Title + Actions row */}
       <div className="flex flex-wrap items-start justify-between gap-4 mb-2">
         <div className="min-w-0">
-          <h1
-            className="text-2xl font-bold m-0"
-            style={{ color: 'var(--text-primary)' }}
-          >
+          <h1 className="text-2xl font-bold m-0" style={{ color: 'var(--text-primary)' }}>
             {title}
           </h1>
           {subtitle && (
@@ -149,7 +144,9 @@ export default function PageHeader({
           )}
         </div>
         {actions && (
-          <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end">
+            {actions}
+          </div>
         )}
       </div>
 
