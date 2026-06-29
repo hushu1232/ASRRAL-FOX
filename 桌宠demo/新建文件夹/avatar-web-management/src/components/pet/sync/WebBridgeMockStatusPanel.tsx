@@ -42,8 +42,8 @@ const mockChecks = [
   },
   {
     key: 'pending',
-    label: 'Pending activation',
-    detail: 'Local confirmation',
+    label: 'Pending local confirmation',
+    detail: 'Alife .NET apply guard',
     icon: <ClockCircleOutlined />,
   },
 ];
@@ -66,8 +66,9 @@ const mockScenarios: Record<
     packageState: 'pendingActivation',
     tagColor: 'orange',
     activeStep: 3,
-    nextAction: 'Local operator review before apply',
-    detail: 'Package passed preflight, manifest, and SHA-256 checks. Activation is held locally.',
+    nextAction: 'Confirm inside Alife .NET before apply',
+    detail:
+      'Package passed preflight, manifest, and SHA-256 checks. Alife .NET holds activation for local confirmation.',
     alertType: 'success',
     checks: {
       preflight: 'ready',
@@ -156,14 +157,14 @@ export default function WebBridgeMockStatusPanel() {
       title={
         <Space size="small" wrap>
           <ApiOutlined />
-          <span>WebBridge package install</span>
-          <Tag color="default">Mock simulation</Tag>
+          <span>WebBridge package simulation</span>
+          <Tag color="default">Simulation only</Tag>
         </Space>
       }
     >
       <Space vertical size="large" style={{ width: '100%' }}>
         <div>
-          <Text strong>Mock scenario</Text>
+          <Text strong>Simulation scenario</Text>
           <div style={{ marginTop: 8, maxWidth: '100%', overflowX: 'auto', paddingBottom: 2 }}>
             <Segmented
               options={scenarioOptions}

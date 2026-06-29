@@ -24,12 +24,15 @@ describe('WebBridgeMockStatusPanel', () => {
   it('shows the isolated Alife .NET 9 package install mock flow', () => {
     render(<WebBridgeMockStatusPanel />, { wrapper: Wrapper });
 
+    expect(screen.getByText('WebBridge package simulation')).toBeDefined();
+    expect(screen.getByText('Simulation only')).toBeDefined();
     expect(screen.getByText('Alife .NET 9')).toBeDefined();
-    expect(screen.getByText('Mock simulation')).toBeDefined();
+    expect(screen.getByText('No live Alife calls')).toBeDefined();
     expect(screen.getByText('Preflight')).toBeDefined();
     expect(screen.getByText('Package manifest')).toBeDefined();
     expect(screen.getByText('SHA-256 validation')).toBeDefined();
-    expect(screen.getByText('Pending activation')).toBeDefined();
+    expect(screen.getByText('Pending local confirmation')).toBeDefined();
+    expect(screen.getAllByText('Confirm inside Alife .NET before apply').length).toBeGreaterThan(0);
     expect(screen.getByText('pendingActivation')).toBeDefined();
     expect(screen.getByText('D:\\FOXD\\.worktrees\\_alife-webbridge-integration')).toBeDefined();
   });
@@ -54,8 +57,8 @@ describe('WebBridgeMockStatusPanel', () => {
 
     render(<WebBridgeMockStatusPanel />, { wrapper: Wrapper });
 
-    expect(screen.getByText('Mock scenario')).toBeDefined();
-    expect(screen.getAllByText('Local operator review before apply').length).toBeGreaterThan(0);
+    expect(screen.getByText('Simulation scenario')).toBeDefined();
+    expect(screen.getAllByText('Confirm inside Alife .NET before apply').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByText('Auth failure'));
     expect(
