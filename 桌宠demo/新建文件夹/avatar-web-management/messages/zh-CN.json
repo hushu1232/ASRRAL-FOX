@@ -1115,13 +1115,16 @@
         "live": "Live API"
       },
       "actionHint": {
-        "confirmInDesktop": "请在 Alife .NET 中确认已暂存的包。Web 不提供本地激活操作。"
+        "confirmInDesktop": "请在 Alife .NET 中确认已暂存的包。Web 不提供本地激活操作。",
+        "openDesktop": "请在本地打开 Alife .NET，然后回到 Web 重新检查。"
       }
     },
     "runtimeSummary": {
       "title": "运行控制",
       "unavailable": "运行同步状态不可用。Web 服务就绪后再检查。",
       "currentState": "当前状态",
+      "commandTitle": "WebBridge 指挥区",
+      "commandDescription": "对照 Alife .NET 9 跟踪 Web 包状态。",
       "nextAction": {
         "label": "下一步",
         "none": "无需操作",

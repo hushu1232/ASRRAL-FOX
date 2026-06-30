@@ -1107,13 +1107,16 @@
         "live": "Live API"
       },
       "actionHint": {
-        "confirmInDesktop": "ステージ済みパッケージは Alife .NET で確認してください。Web からのローカル適用はできません。"
+        "confirmInDesktop": "ステージ済みパッケージは Alife .NET で確認してください。Web からのローカル適用はできません。",
+        "openDesktop": "ローカルで Alife .NET を開いてから、Web で再確認してください。"
       }
     },
     "runtimeSummary": {
       "title": "ランタイム制御",
       "unavailable": "ランタイム同期状態を取得できません。Web サービスの準備後に再確認してください。",
       "currentState": "現在の状態",
+      "commandTitle": "WebBridge コマンドストリップ",
+      "commandDescription": "Web パッケージ状態を Alife .NET 9 と照合します。",
       "nextAction": {
         "label": "次の操作",
         "none": "操作は不要です",

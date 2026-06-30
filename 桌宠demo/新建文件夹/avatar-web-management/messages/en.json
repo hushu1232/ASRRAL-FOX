@@ -1115,13 +1115,16 @@
         "live": "Live API"
       },
       "actionHint": {
-        "confirmInDesktop": "Confirm the staged package inside Alife .NET. Web activation is not available."
+        "confirmInDesktop": "Confirm the staged package inside Alife .NET. Web activation is not available.",
+        "openDesktop": "Open Alife .NET locally, then check again from Web."
       }
     },
     "runtimeSummary": {
       "title": "Runtime control",
       "unavailable": "Runtime sync status is unavailable. Check again after the web service is ready.",
       "currentState": "Current state",
+      "commandTitle": "WebBridge command strip",
+      "commandDescription": "Track Web package state against Alife .NET 9.",
       "nextAction": {
         "label": "Next action",
         "none": "No action required",

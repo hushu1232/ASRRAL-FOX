@@ -37,6 +37,7 @@ const messages: Record<string, Record<string, string>> = {
     'action.checkAgain': 'Check again',
     'action.confirmInDesktop': 'Confirm in Alife .NET',
     'action.openDesktop': 'Open Alife .NET',
+    'action.viewDetails': 'View details',
     'actionHint.confirmInDesktop':
       'Confirm the staged package inside Alife .NET. Web activation is not available.',
     'actionHint.openDesktop': 'Open Alife .NET locally, then check again from Web.',
@@ -109,6 +110,12 @@ describe('PetRuntimeSummary', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Confirm in Alife .NET' })).toBeDisabled();
+    expect(screen.getByTestId('icon-desktop')).toBeDefined();
+    expect(
+      screen.getByText(
+        'Confirm the staged package inside Alife .NET. Web activation is not available.',
+      ),
+    ).toBeDefined();
   });
 
   it('shows an Alife .NET open guidance action for openDesktop state', () => {
@@ -126,9 +133,24 @@ describe('PetRuntimeSummary', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Open Alife .NET' })).toBeDisabled();
+    expect(screen.getByTestId('icon-desktop')).toBeDefined();
+    expect(screen.getByText('Open Alife .NET locally, then check again from Web.')).toBeDefined();
     expect(screen.getByTestId('sync-next-action').textContent).toContain(
       'Open Alife .NET runtime',
     );
+  });
+
+  it('does not render a primary action button for viewDetails', () => {
+    render(
+      <PetRuntimeSummary
+        status={createStatus({ primaryAction: 'viewDetails', summaryKind: 'failed' })}
+        loading={false}
+        onRefresh={jest.fn()}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    expect(screen.queryByRole('button', { name: 'View details' })).toBeNull();
   });
 
   it('surfaces current state, next action, versions, and local confirmation guard', () => {

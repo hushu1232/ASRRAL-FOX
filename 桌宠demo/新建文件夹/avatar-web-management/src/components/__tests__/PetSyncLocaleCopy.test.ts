@@ -35,6 +35,13 @@ describe('pet sync locale copy', () => {
     expect(en.pet.syncStatus.actionHint.confirmInDesktop).toBe(
       'Confirm the staged package inside Alife .NET. Web activation is not available.',
     );
+    expect(en.pet.syncStatus.actionHint.openDesktop).toBe(
+      'Open Alife .NET locally, then check again from Web.',
+    );
+    expect(en.pet.runtimeSummary.commandTitle).toBe('WebBridge command strip');
+    expect(en.pet.runtimeSummary.commandDescription).toBe(
+      'Track Web package state against Alife .NET 9.',
+    );
     expect(en.pet.runtimeSummary.nextAction.checkAgain).toBe(
       'Check Alife .NET runtime status again',
     );
@@ -62,6 +69,13 @@ describe('pet sync locale copy', () => {
     expect(zh.pet.syncStatus.actionHint.confirmInDesktop).toBe(
       '请在 Alife .NET 中确认已暂存的包。Web 不提供本地激活操作。',
     );
+    expect(zh.pet.syncStatus.actionHint.openDesktop).toBe(
+      '请在本地打开 Alife .NET，然后回到 Web 重新检查。',
+    );
+    expect(zh.pet.runtimeSummary.commandTitle).toBe('WebBridge 指挥区');
+    expect(zh.pet.runtimeSummary.commandDescription).toBe(
+      '对照 Alife .NET 9 跟踪 Web 包状态。',
+    );
     expect(zh.pet.runtimeSummary.nextAction.checkAgain).toBe('重新检查 Alife .NET 运行状态');
     expect(zh.pet.runtimeSummary.nextAction.openDesktop).toBe('打开 Alife .NET 运行时');
     expect(zh.pet.runtimeSummary.nextAction.confirmInDesktop).toBe(
@@ -86,6 +100,13 @@ describe('pet sync locale copy', () => {
     expect(ja.pet.syncStatus.action.openDesktop).toBe('Alife .NET を開く');
     expect(ja.pet.syncStatus.actionHint.confirmInDesktop).toBe(
       'ステージ済みパッケージは Alife .NET で確認してください。Web からのローカル適用はできません。',
+    );
+    expect(ja.pet.syncStatus.actionHint.openDesktop).toBe(
+      'ローカルで Alife .NET を開いてから、Web で再確認してください。',
+    );
+    expect(ja.pet.runtimeSummary.commandTitle).toBe('WebBridge コマンドストリップ');
+    expect(ja.pet.runtimeSummary.commandDescription).toBe(
+      'Web パッケージ状態を Alife .NET 9 と照合します。',
     );
     expect(ja.pet.runtimeSummary.nextAction.checkAgain).toBe(
       'Alife .NET ランタイム状態を再確認',

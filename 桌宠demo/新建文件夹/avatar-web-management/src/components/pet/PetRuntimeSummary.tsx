@@ -3,6 +3,7 @@
 import { DesktopOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Space, Tooltip, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
+import { useId } from 'react';
 import MetricTile from '@/components/ui/MetricTile';
 import OperationPanel from '@/components/ui/OperationPanel';
 import StatusChip from '@/components/ui/StatusChip';
@@ -148,25 +149,66 @@ function renderPrimaryAction(
 
   if (action === 'confirmInDesktop') {
     return (
-      <Tooltip title={t('actionHint.confirmInDesktop')}>
-        <Button type="primary" icon={<DesktopOutlined />} disabled>
-          {t('action.confirmInDesktop')}
-        </Button>
-      </Tooltip>
+      <DesktopGuidanceAction
+        label={t('action.confirmInDesktop')}
+        hint={t('actionHint.confirmInDesktop')}
+        primary
+      />
     );
   }
 
   if (action === 'openDesktop') {
     return (
-      <Tooltip title={t('actionHint.openDesktop')}>
-        <Button icon={<DesktopOutlined />} disabled>
-          {t('action.openDesktop')}
-        </Button>
-      </Tooltip>
+      <DesktopGuidanceAction label={t('action.openDesktop')} hint={t('actionHint.openDesktop')} />
     );
   }
 
   return null;
+}
+
+function DesktopGuidanceAction({
+  label,
+  hint,
+  primary = false,
+}: {
+  label: string;
+  hint: string;
+  primary?: boolean;
+}) {
+  const descriptionId = useId();
+
+  return (
+    <span>
+      <Tooltip title={hint}>
+        <span aria-describedby={descriptionId} style={{ display: 'inline-block' }}>
+          <Button
+            type={primary ? 'primary' : undefined}
+            icon={<DesktopOutlined />}
+            disabled
+            aria-describedby={descriptionId}
+          >
+            {label}
+          </Button>
+        </span>
+      </Tooltip>
+      <span
+        id={descriptionId}
+        style={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: 'hidden',
+          clip: 'rect(0 0 0 0)',
+          whiteSpace: 'nowrap',
+          border: 0,
+        }}
+      >
+        {hint}
+      </span>
+    </span>
+  );
 }
 
 function RefreshAction({
