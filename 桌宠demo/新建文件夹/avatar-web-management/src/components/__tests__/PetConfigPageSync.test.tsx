@@ -29,8 +29,18 @@ jest.mock('@/lib/api-client', () => ({
 }));
 
 jest.mock('next-intl', () => ({
-  useTranslations: () => {
-    const t = (key: string) => key;
+  useTranslations: (namespace: string) => {
+    const messages: Record<string, Record<string, string>> = {
+      'pet.diagnostics': {
+        title: 'Diagnostics and package simulation',
+        description:
+          'Simulation tools are hidden by default so live Alife .NET status stays first.',
+        show: 'Show diagnostics',
+        hide: 'Hide diagnostics',
+      },
+    };
+
+    const t = (key: string) => messages[namespace]?.[key] ?? key;
     t.rich = (key: string) => key;
     return t;
   },
@@ -142,12 +152,24 @@ describe('PetConfigPage desktop sync', () => {
     expect(mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/config')).toBeLessThan(
       mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/sync/status'),
     );
+    expect(screen.getByTestId('pet-sync-status-panel')).toBeDefined();
     expect(screen.getByText('wizard.title')).toBeDefined();
     expect(screen.getByText('wizard.step5Desc')).toBeDefined();
     expect(screen.getByText('wizard.step6Desc')).toBeDefined();
     expect(screen.getByText('runtimeSummary.title')).toBeDefined();
     expect(screen.getByText('runtimeSummary.nextAction.label')).toBeDefined();
     expect(screen.getByText('preview.webPreview')).toBeDefined();
+    expect(screen.getByText('Diagnostics and package simulation')).toBeDefined();
+    const showDiagnosticsButton = screen.getByRole('button', { name: /show diagnostics/i });
+    expect(showDiagnosticsButton).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('WebBridge package simulation')).not.toBeInTheDocument();
+
+    fireEvent.click(showDiagnosticsButton);
+
+    expect(screen.getByRole('button', { name: /hide diagnostics/i })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
     expect(screen.getByText('WebBridge package simulation')).toBeDefined();
     expect(screen.getByText('Alife .NET 9')).toBeDefined();
     expect(screen.getByText('No live Alife calls')).toBeDefined();
