@@ -14,6 +14,8 @@ const messages: Record<string, Record<string, string>> = {
     'runtimeSummary.unavailable':
       'Runtime sync status is unavailable. Check again after the web service is ready.',
     'runtimeSummary.currentState': 'Current state',
+    'runtimeSummary.commandTitle': 'WebBridge command strip',
+    'runtimeSummary.commandDescription': 'Track Web package state against Alife .NET 9.',
     'runtimeSummary.nextAction.label': 'Next action',
     'runtimeSummary.nextAction.none': 'No action required',
     'runtimeSummary.nextAction.checkAgain': 'Check Alife .NET runtime status again',
@@ -33,6 +35,11 @@ const messages: Record<string, Record<string, string>> = {
     lastSyncAt: 'Last sync',
     never: 'Never',
     'action.checkAgain': 'Check again',
+    'action.confirmInDesktop': 'Confirm in Alife .NET',
+    'action.openDesktop': 'Open Alife .NET',
+    'actionHint.confirmInDesktop':
+      'Confirm the staged package inside Alife .NET. Web activation is not available.',
+    'actionHint.openDesktop': 'Open Alife .NET locally, then check again from Web.',
     'summary.pendingPull': 'Waiting for Alife .NET pull',
     'summary.localConfirmationRequired': 'Awaiting local confirmation',
     'summary.upToDate': 'Applied in Alife .NET',
@@ -54,6 +61,7 @@ jest.mock('next-intl', () => ({
 }));
 
 jest.mock('@ant-design/icons', () => ({
+  DesktopOutlined: () => <span data-testid="icon-desktop" />,
   ReloadOutlined: () => <span data-testid="icon-reload" />,
 }));
 
@@ -82,13 +90,53 @@ function createStatus(overrides: Partial<DesktopSyncStatus> = {}): DesktopSyncSt
 }
 
 describe('PetRuntimeSummary', () => {
+  it('renders a sync command strip with an emphasized next action', () => {
+    render(<PetRuntimeSummary status={createStatus()} loading={false} onRefresh={jest.fn()} />, {
+      wrapper: Wrapper,
+    });
+
+    expect(screen.getByTestId('sync-command-strip')).toBeDefined();
+    expect(screen.getByText('WebBridge command strip')).toBeDefined();
+    expect(screen.getByText('Track Web package state against Alife .NET 9.')).toBeDefined();
+    expect(screen.getByTestId('sync-next-action').textContent).toContain(
+      'Confirm the staged package inside Alife .NET',
+    );
+  });
+
+  it('shows a disabled local confirmation action because confirmation happens in Alife .NET', () => {
+    render(<PetRuntimeSummary status={createStatus()} loading={false} onRefresh={jest.fn()} />, {
+      wrapper: Wrapper,
+    });
+
+    expect(screen.getByRole('button', { name: 'Confirm in Alife .NET' })).toBeDisabled();
+  });
+
+  it('shows an Alife .NET open guidance action for openDesktop state', () => {
+    render(
+      <PetRuntimeSummary
+        status={createStatus({
+          primaryAction: 'openDesktop',
+          summaryKind: 'desktopOffline',
+          desktopConnection: 'offline',
+        })}
+        loading={false}
+        onRefresh={jest.fn()}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    expect(screen.getByRole('button', { name: 'Open Alife .NET' })).toBeDisabled();
+    expect(screen.getByTestId('sync-next-action').textContent).toContain(
+      'Open Alife .NET runtime',
+    );
+  });
+
   it('surfaces current state, next action, versions, and local confirmation guard', () => {
     render(<PetRuntimeSummary status={createStatus()} loading={false} onRefresh={jest.fn()} />, {
       wrapper: Wrapper,
     });
 
     expect(screen.getByText('Runtime status')).toBeDefined();
-    expect(screen.getByText('Current state')).toBeDefined();
     expect(screen.getByText('Awaiting local confirmation')).toBeDefined();
     expect(
       screen.getByText('Package staged locally. Confirm it in Alife .NET before apply.'),
