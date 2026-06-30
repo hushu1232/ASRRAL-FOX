@@ -1019,6 +1019,12 @@
       "typeTexture": "贴图",
       "typeAnimation": "动画"
     },
+    "diagnostics": {
+      "title": "WebBridge 诊断与包模拟",
+      "description": "模拟工具默认收起，让真实 Alife .NET 状态保持优先。",
+      "show": "显示诊断",
+      "hide": "收起诊断"
+    },
     "syncStatus": {
       "title": "桌面同步",
       "loading": "正在检查桌面同步状态...",

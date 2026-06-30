@@ -152,14 +152,25 @@ describe('PetConfigPage desktop sync', () => {
     expect(mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/config')).toBeLessThan(
       mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/sync/status'),
     );
-    expect(screen.getByTestId('pet-sync-status-panel')).toBeDefined();
+    const syncStatusPanel = screen.getByTestId('pet-sync-status-panel');
+    expect(syncStatusPanel).toBeDefined();
     expect(screen.getByText('wizard.title')).toBeDefined();
     expect(screen.getByText('wizard.step5Desc')).toBeDefined();
     expect(screen.getByText('wizard.step6Desc')).toBeDefined();
-    expect(screen.getByText('runtimeSummary.title')).toBeDefined();
+    const runtimeSummaryTitle = screen.getByText('runtimeSummary.title');
+    expect(runtimeSummaryTitle).toBeDefined();
     expect(screen.getByText('runtimeSummary.nextAction.label')).toBeDefined();
     expect(screen.getByText('preview.webPreview')).toBeDefined();
     expect(screen.getByText('Diagnostics and package simulation')).toBeDefined();
+    const diagnosticsSection = screen.getByTestId('pet-diagnostics-section');
+    expect(
+      runtimeSummaryTitle.compareDocumentPosition(syncStatusPanel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      syncStatusPanel.compareDocumentPosition(diagnosticsSection) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const showDiagnosticsButton = screen.getByRole('button', { name: /show diagnostics/i });
     expect(showDiagnosticsButton).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('WebBridge package simulation')).not.toBeInTheDocument();

@@ -3,6 +3,29 @@ const zh = require('../../../messages/zh-CN.json');
 const ja = require('../../../messages/ja.json');
 
 describe('pet sync locale copy', () => {
+  it('defines diagnostics section copy in all supported pet locales', () => {
+    expect(en.pet.diagnostics).toEqual({
+      title: 'Diagnostics and package simulation',
+      description:
+        'Simulation tools are hidden by default so live Alife .NET status stays first.',
+      show: 'Show diagnostics',
+      hide: 'Hide diagnostics',
+    });
+    expect(zh.pet.diagnostics).toEqual({
+      title: 'WebBridge 诊断与包模拟',
+      description: '模拟工具默认收起，让真实 Alife .NET 状态保持优先。',
+      show: '显示诊断',
+      hide: '收起诊断',
+    });
+    expect(ja.pet.diagnostics).toEqual({
+      title: 'WebBridge 診断とパッケージシミュレーション',
+      description:
+        'シミュレーションツールは既定で閉じ、実際の Alife .NET 状態を優先します。',
+      show: '診断を表示',
+      hide: '診断を閉じる',
+    });
+  });
+
   it('uses Alife .NET wording in English sync copy', () => {
     expect(en.pet.consoleSubtitle).toBe(
       'Prepare and validate the Web pet configuration here. Alife .NET applies staged changes only after local confirmation.',

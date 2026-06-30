@@ -42,6 +42,9 @@ describe('PetDiagnosticsSection', () => {
       { wrapper: Wrapper },
     );
 
+    const section = screen.getByTestId('pet-diagnostics-section');
+    expect(section).toHaveAccessibleName('Diagnostics and package simulation');
+    expect(screen.getByLabelText('Diagnostics and package simulation')).toBe(section);
     expect(screen.getByText('Diagnostics and package simulation')).toBeVisible();
     expect(
       screen.getByText(
@@ -52,11 +55,13 @@ describe('PetDiagnosticsSection', () => {
 
     const showButton = screen.getByRole('button', { name: /show diagnostics/i });
     expect(showButton).toHaveAttribute('aria-expanded', 'false');
+    expect(showButton).toHaveAttribute('aria-controls', 'pet-diagnostics-content');
 
     fireEvent.click(showButton);
 
     const hideButton = screen.getByRole('button', { name: /hide diagnostics/i });
     expect(hideButton).toHaveAttribute('aria-expanded', 'true');
+    expect(hideButton).toHaveAttribute('aria-controls', 'pet-diagnostics-content');
     expect(screen.getByText('WebBridge package simulation')).toBeVisible();
   });
 });

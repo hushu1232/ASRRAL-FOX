@@ -1019,6 +1019,12 @@
       "typeTexture": "Texture",
       "typeAnimation": "Animation"
     },
+    "diagnostics": {
+      "title": "Diagnostics and package simulation",
+      "description": "Simulation tools are hidden by default so live Alife .NET status stays first.",
+      "show": "Show diagnostics",
+      "hide": "Hide diagnostics"
+    },
     "syncStatus": {
       "title": "Desktop sync",
       "loading": "Checking desktop sync status...",

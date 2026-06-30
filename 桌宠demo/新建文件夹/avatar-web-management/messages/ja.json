@@ -1011,6 +1011,12 @@
       "typeTexture": "テクスチャ",
       "typeAnimation": "アニメーション"
     },
+    "diagnostics": {
+      "title": "WebBridge 診断とパッケージシミュレーション",
+      "description": "シミュレーションツールは既定で閉じ、実際の Alife .NET 状態を優先します。",
+      "show": "診断を表示",
+      "hide": "診断を閉じる"
+    },
     "syncStatus": {
       "title": "デスクトップ同期",
       "loading": "デスクトップ同期状態を確認しています...",
