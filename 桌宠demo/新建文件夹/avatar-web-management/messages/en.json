@@ -1044,6 +1044,7 @@
       "none": "None",
       "never": "Never",
       "rawState": "Raw state",
+      "livePanelDescription": "Live WebBridge status from Alife .NET 9.",
       "localActionNotice": "Confirm this staged package inside Alife .NET.",
       "summary": {
         "unknown": "Unknown",

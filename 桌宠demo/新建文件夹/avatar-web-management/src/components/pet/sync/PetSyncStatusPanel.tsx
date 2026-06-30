@@ -61,18 +61,22 @@ export default function PetSyncStatusPanel({
 
   return (
     <OperationPanel
+      data-testid="live-sync-status-panel"
       title={t('title')}
       extra={renderAction(status.primaryAction, loading, onRefresh, t)}
     >
       <Space vertical size="middle" style={{ width: '100%' }}>
-        <Space vertical size={4}>
+        <Space vertical size={6} style={{ width: '100%' }}>
           <Space size="small" wrap>
             <StatusChip tone={SUMMARY_TONES[status.summaryKind]}>
               {t(`summary.${status.summaryKind}`)}
             </StatusChip>
             <StatusChip tone="success">{t('source.live')}</StatusChip>
           </Space>
-          <Text type="secondary">{t(getRuntimeDetailKey(status.summaryKind))}</Text>
+          <Text type="secondary">{t('livePanelDescription')}</Text>
+          <Text style={{ color: 'var(--text-primary)', lineHeight: 1.55 }}>
+            {t(getRuntimeDetailKey(status.summaryKind))}
+          </Text>
         </Space>
 
         <Steps

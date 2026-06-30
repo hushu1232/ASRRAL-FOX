@@ -29,6 +29,7 @@ jest.mock('next-intl', () => ({
         notApplied: 'Not applied',
         none: 'None',
         'source.live': 'Live API',
+        livePanelDescription: 'Live WebBridge status from Alife .NET 9.',
         never: 'Never',
         'summary.unknown': 'Unknown',
         'summary.desktopOffline': 'Alife .NET offline',
@@ -162,6 +163,17 @@ describe('PetSyncStatusPanel', () => {
     expect(screen.getByText('confirmationRequested')).toBeDefined();
     expect(screen.getByRole('button', { name: /confirm in desktop/i })).toBeDisabled();
     expect(screen.getByText('Required')).toBeDefined();
+  });
+
+  it('marks the panel as the live Alife .NET sync source', () => {
+    render(<PetSyncStatusPanel status={createStatus()} loading={false} onRefresh={jest.fn()} />, {
+      wrapper: Wrapper,
+    });
+
+    expect(screen.getByTestId('live-sync-status-panel')).toBeDefined();
+    expect(screen.getByText('Live WebBridge status from Alife .NET 9.')).toBeDefined();
+    expect(screen.getByText('Live API')).toBeDefined();
+    expect(screen.getByText('Raw state')).toBeDefined();
   });
 
   it('pendingPull state shows lifecycle rail and published package detail', () => {

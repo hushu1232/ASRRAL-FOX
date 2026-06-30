@@ -125,4 +125,16 @@ describe('pet sync locale copy', () => {
       'Alife .NET は現在のバージョンを実行しています。',
     );
   });
+
+  it('defines live panel source copy in all supported sync locales', () => {
+    expect(en.pet.syncStatus.livePanelDescription).toBe(
+      'Live WebBridge status from Alife .NET 9.',
+    );
+    expect(zh.pet.syncStatus.livePanelDescription).toBe(
+      '来自 Alife .NET 9 的实时 WebBridge 状态。',
+    );
+    expect(ja.pet.syncStatus.livePanelDescription).toBe(
+      'Alife .NET 9 から取得したライブ WebBridge 状態です。',
+    );
+  });
 });

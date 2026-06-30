@@ -1044,6 +1044,7 @@
       "none": "无",
       "never": "从未",
       "rawState": "原始状态",
+      "livePanelDescription": "来自 Alife .NET 9 的实时 WebBridge 状态。",
       "localActionNotice": "请在 Alife .NET 中确认这个已暂存的包。",
       "summary": {
         "unknown": "状态未知",

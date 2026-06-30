@@ -1036,6 +1036,7 @@
       "none": "なし",
       "never": "なし",
       "rawState": "内部状態",
+      "livePanelDescription": "Alife .NET 9 から取得したライブ WebBridge 状態です。",
       "localActionNotice": "ステージ済みパッケージは Alife .NET で確認してください。",
       "summary": {
         "unknown": "不明",
