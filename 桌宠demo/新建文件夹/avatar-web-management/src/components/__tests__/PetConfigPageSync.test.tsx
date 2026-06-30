@@ -160,11 +160,22 @@ describe('PetConfigPage desktop sync', () => {
     const runtimeSummaryTitle = screen.getByText('runtimeSummary.title');
     expect(runtimeSummaryTitle).toBeDefined();
     expect(screen.getByText('runtimeSummary.nextAction.label')).toBeDefined();
-    expect(screen.getByText('preview.webPreview')).toBeDefined();
+    const previewPanelTitle = screen.getByText('preview.webPreview');
+    const editorBasicName = screen.getByText('basic.name');
+    expect(previewPanelTitle).toBeDefined();
+    expect(editorBasicName).toBeDefined();
     expect(screen.getByText('Diagnostics and package simulation')).toBeDefined();
     const diagnosticsSection = screen.getByTestId('pet-diagnostics-section');
     expect(
       runtimeSummaryTitle.compareDocumentPosition(syncStatusPanel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      syncStatusPanel.compareDocumentPosition(previewPanelTitle) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      syncStatusPanel.compareDocumentPosition(editorBasicName) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(

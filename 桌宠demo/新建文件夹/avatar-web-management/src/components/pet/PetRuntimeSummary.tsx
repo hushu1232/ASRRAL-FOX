@@ -178,7 +178,7 @@ function DesktopGuidanceAction({
   const descriptionId = useId();
 
   return (
-    <span>
+    <Space vertical align="end" size={4} style={{ maxWidth: 220 }}>
       <Tooltip title={hint}>
         <span aria-describedby={descriptionId} style={{ display: 'inline-block' }}>
           <Button
@@ -191,23 +191,20 @@ function DesktopGuidanceAction({
           </Button>
         </span>
       </Tooltip>
-      <span
+      <Text
+        type="secondary"
         id={descriptionId}
         style={{
-          position: 'absolute',
-          width: 1,
-          height: 1,
-          padding: 0,
-          margin: -1,
-          overflow: 'hidden',
-          clip: 'rect(0 0 0 0)',
-          whiteSpace: 'nowrap',
-          border: 0,
+          display: 'block',
+          maxWidth: 220,
+          textAlign: 'right',
+          fontSize: 'var(--ds-type-metadata-size)',
+          lineHeight: 1.35,
         }}
       >
         {hint}
-      </span>
-    </span>
+      </Text>
+    </Space>
   );
 }
 

@@ -90,6 +90,11 @@ function createStatus(overrides: Partial<DesktopSyncStatus> = {}): DesktopSyncSt
   };
 }
 
+function expectVisibleGuidanceText(node: HTMLElement) {
+  expect(node).toBeVisible();
+  expect(node).not.toHaveStyle({ position: 'absolute' });
+}
+
 describe('PetRuntimeSummary', () => {
   it('renders a sync command strip with an emphasized next action', () => {
     render(<PetRuntimeSummary status={createStatus()} loading={false} onRefresh={jest.fn()} />, {
@@ -109,13 +114,16 @@ describe('PetRuntimeSummary', () => {
       wrapper: Wrapper,
     });
 
-    expect(screen.getByRole('button', { name: 'Confirm in Alife .NET' })).toBeDisabled();
+    const confirmButton = screen.getByRole('button', { name: 'Confirm in Alife .NET' });
+    const confirmGuidance = screen.getByText(
+      'Confirm the staged package inside Alife .NET. Web activation is not available.',
+    );
+    expect(confirmButton).toBeDisabled();
+    expect(confirmButton).toHaveAccessibleDescription(
+      'Confirm the staged package inside Alife .NET. Web activation is not available.',
+    );
     expect(screen.getByTestId('icon-desktop')).toBeDefined();
-    expect(
-      screen.getByText(
-        'Confirm the staged package inside Alife .NET. Web activation is not available.',
-      ),
-    ).toBeDefined();
+    expectVisibleGuidanceText(confirmGuidance);
   });
 
   it('shows an Alife .NET open guidance action for openDesktop state', () => {
@@ -132,9 +140,14 @@ describe('PetRuntimeSummary', () => {
       { wrapper: Wrapper },
     );
 
-    expect(screen.getByRole('button', { name: 'Open Alife .NET' })).toBeDisabled();
+    const openButton = screen.getByRole('button', { name: 'Open Alife .NET' });
+    const openGuidance = screen.getByText('Open Alife .NET locally, then check again from Web.');
+    expect(openButton).toBeDisabled();
+    expect(openButton).toHaveAccessibleDescription(
+      'Open Alife .NET locally, then check again from Web.',
+    );
     expect(screen.getByTestId('icon-desktop')).toBeDefined();
-    expect(screen.getByText('Open Alife .NET locally, then check again from Web.')).toBeDefined();
+    expectVisibleGuidanceText(openGuidance);
     expect(screen.getByTestId('sync-next-action').textContent).toContain(
       'Open Alife .NET runtime',
     );
