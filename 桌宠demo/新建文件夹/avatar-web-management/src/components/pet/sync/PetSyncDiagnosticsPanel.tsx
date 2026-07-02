@@ -18,12 +18,6 @@ import type {
 
 const { Text } = Typography;
 
-const SMOKE_STAGED_MAPPING = 'WebStatus: staged/localConfirmationRequired/confirmInDesktop';
-const SMOKE_APPLIED_MAPPING =
-  'WebStatus: applied/upToDate/none/requiresLocalConfirmation=false';
-const SMOKE_COMMAND =
-  "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke";
-
 const CONNECTION_TONES: Record<DesktopConnectionState, StatusChipTone> = {
   unknown: 'neutral',
   checking: 'processing',
@@ -87,7 +81,7 @@ function renderIntegrationSnapshot(
           marginTop: 12,
         }}
       >
-        <MetricTile label={t('webPackageVersion')} value={status.webConfigVersion} />
+        <MetricTile label={t('webVersion')} value={status.webConfigVersion} />
         <MetricTile
           label={t('desktopKnownVersion')}
           value={formatVersion(status.desktopKnownVersion, t)}
@@ -116,7 +110,7 @@ function renderIntegrationSnapshot(
           label={t('localConfirmation')}
           value={
             <StatusChip tone={status.requiresLocalConfirmation ? 'warning' : 'success'}>
-              {status.requiresLocalConfirmation ? tStatus('required') : tStatus('notRequired')}
+              {status.requiresLocalConfirmation ? t('required') : t('notRequired')}
             </StatusChip>
           }
         />
@@ -183,11 +177,11 @@ function renderSmokeMapping(t: (key: string) => string) {
         <Tag color="default">{t('smoke.readOnly')}</Tag>
       </Space>
       <Descriptions column={1} size="small" style={{ marginTop: 8 }}>
-        <Descriptions.Item label={t('smoke.stagedMapping')}>
-          <Text code>{t('smoke.stagedValue')}</Text>
+        <Descriptions.Item label={t('smoke.expectedStagedLabel')}>
+          <Text code>{t('smoke.expectedStaged')}</Text>
         </Descriptions.Item>
-        <Descriptions.Item label={t('smoke.appliedMapping')}>
-          <Text code>{t('smoke.appliedValue')}</Text>
+        <Descriptions.Item label={t('smoke.expectedAppliedLabel')}>
+          <Text code>{t('smoke.expectedApplied')}</Text>
         </Descriptions.Item>
         <Descriptions.Item label={t('smoke.commandLabel')}>
           <Text code>{t('smoke.command')}</Text>
@@ -267,13 +261,18 @@ function renderErrorDetails(
     return <Text type="secondary">{t('noLiveError')}</Text>;
   }
 
+  const title = errorMessage?.title ?? error.message;
+
   return (
     <Space vertical size={4}>
-      {errorMessage?.title && <Text>{errorMessage.title}</Text>}
-      {errorMessage?.recovery && <Text type="secondary">{errorMessage.recovery}</Text>}
+      {title && <Text>{`${t('errorTitle')}: ${title}`}</Text>}
+      {errorMessage?.recovery && (
+        <Text type="secondary">{`${t('recovery')}: ${errorMessage.recovery}`}</Text>
+      )}
       <Text code>{error.code}</Text>
-      {error.message && <Text>{error.message}</Text>}
-      {error.technicalDetail && <Text type="secondary">{error.technicalDetail}</Text>}
+      {error.technicalDetail && (
+        <Text type="secondary">{`${t('technicalDetail')}: ${error.technicalDetail}`}</Text>
+      )}
       {error.occurredAt && <Text type="secondary">{formatDate(error.occurredAt, t)}</Text>}
     </Space>
   );

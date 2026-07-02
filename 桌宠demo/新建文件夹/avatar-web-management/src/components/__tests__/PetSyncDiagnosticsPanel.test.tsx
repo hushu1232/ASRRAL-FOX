@@ -18,7 +18,7 @@ const messages: Record<string, Record<string, string>> = {
     blockingReason: 'Blocking reason',
     evidenceTrail: 'Evidence trail',
     smokeMapping: 'Smoke mapping',
-    webPackageVersion: 'Web package version',
+    webVersion: 'Web package version',
     desktopKnownVersion: 'Alife known version',
     desktopAppliedVersion: 'Alife applied version',
     packageState: 'Package state',
@@ -30,6 +30,11 @@ const messages: Record<string, Record<string, string>> = {
     lastAppliedAt: 'Last applied',
     milestones: 'Milestones',
     errorDetails: 'Error details',
+    errorTitle: 'Error title',
+    recovery: 'Recovery',
+    technicalDetail: 'Technical detail',
+    required: 'Required',
+    notRequired: 'Not required',
     noMilestones: 'No milestones reported yet.',
     noLiveError: 'No live error reported.',
     'versionAlignment.missingEvidence': 'Alife .NET has not reported enough version evidence.',
@@ -45,19 +50,17 @@ const messages: Record<string, Record<string, string>> = {
       'Waiting for local confirmation inside Alife .NET.',
     'blocking.upToDate': 'No blocking sync reason reported.',
     'blocking.failed': 'Waiting for the live WebBridge sync error to be resolved.',
-    'smoke.stagedMapping': 'Staged/local confirmation mapping',
-    'smoke.appliedMapping': 'Applied/up-to-date mapping',
+    'smoke.expectedStagedLabel': 'Staged/local confirmation mapping',
+    'smoke.expectedAppliedLabel': 'Applied/up-to-date mapping',
     'smoke.commandLabel': 'Smoke command',
     'smoke.readOnly': 'Read-only reference',
-    'smoke.stagedValue': 'WebStatus: staged/localConfirmationRequired/confirmInDesktop',
-    'smoke.appliedValue':
+    'smoke.expectedStaged': 'WebStatus: staged/localConfirmationRequired/confirmInDesktop',
+    'smoke.expectedApplied':
       'WebStatus: applied/upToDate/none/requiresLocalConfirmation=false',
     'smoke.command':
       "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke",
   },
   'pet.syncStatus': {
-    required: 'Required',
-    notRequired: 'Not required',
     'connectionState.unknown': 'Unknown',
     'connectionState.checking': 'Checking',
     'connectionState.online': 'Online',
@@ -128,12 +131,15 @@ describe('PetSyncDiagnosticsPanel', () => {
     expect(screen.getByText('No milestones reported yet.')).toBeDefined();
     expect(screen.getByText('No live error reported.')).toBeDefined();
     expect(screen.getByText('Smoke mapping')).toBeDefined();
+    expect(screen.getByText('Staged/local confirmation mapping')).toBeDefined();
     expect(
       screen.getByText('WebStatus: staged/localConfirmationRequired/confirmInDesktop'),
     ).toBeDefined();
+    expect(screen.getByText('Applied/up-to-date mapping')).toBeDefined();
     expect(
       screen.getByText('WebStatus: applied/upToDate/none/requiresLocalConfirmation=false'),
     ).toBeDefined();
+    expect(screen.getByText('Smoke command')).toBeDefined();
     expect(
       screen.getByText(
         "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke",
@@ -154,5 +160,35 @@ describe('PetSyncDiagnosticsPanel', () => {
 
     expect(screen.getByText('Live WebBridge diagnostics are unavailable.')).toBeDefined();
     expect(screen.queryByText('Integration snapshot')).toBeNull();
+  });
+
+  it('shows live error evidence with diagnostic labels', () => {
+    render(
+      <PetSyncDiagnosticsPanel
+        status={createStatus({
+          packageState: 'failed',
+          summaryKind: 'failed',
+          primaryAction: 'viewDetails',
+          lastError: {
+            code: 'PACKAGE_HASH_MISMATCH',
+            message: 'Package validation failed',
+            technicalDetail: 'Expected sha256 abc but received def',
+          },
+          errorMessage: {
+            title: 'Package validation failed',
+            recovery: 'Re-download the package from the Web management app.',
+          },
+        })}
+        loading={false}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    expect(screen.getByText('Error title: Package validation failed')).toBeDefined();
+    expect(
+      screen.getByText('Recovery: Re-download the package from the Web management app.'),
+    ).toBeDefined();
+    expect(screen.getByText('Technical detail: Expected sha256 abc but received def')).toBeDefined();
+    expect(screen.getByText('PACKAGE_HASH_MISMATCH')).toBeDefined();
   });
 });
