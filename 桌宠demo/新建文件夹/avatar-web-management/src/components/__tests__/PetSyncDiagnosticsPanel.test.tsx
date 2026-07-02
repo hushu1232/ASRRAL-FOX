@@ -207,7 +207,7 @@ describe('PetSyncDiagnosticsPanel', () => {
           primaryAction: 'viewDetails',
           lastError: {
             code: 'PACKAGE_HASH_MISMATCH',
-            message: 'Package validation failed',
+            message: 'Downloaded package digest does not match manifest',
             technicalDetail: 'Expected sha256 abc but received def',
           },
           errorMessage: {
@@ -225,7 +225,8 @@ describe('PetSyncDiagnosticsPanel', () => {
       screen.getByText('Package sync failed; inspect error details before retrying.'),
     ).toBeDefined();
     expect(screen.getByText('PACKAGE_HASH_MISMATCH')).toBeDefined();
-    expect(screen.getAllByText(/Package validation failed/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Error title: Package validation failed')).toBeDefined();
+    expect(screen.getByText('Downloaded package digest does not match manifest')).toBeDefined();
     expect(
       screen.getByText('Recovery: Re-download the package from the Web management app.'),
     ).toBeDefined();

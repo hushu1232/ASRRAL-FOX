@@ -266,6 +266,7 @@ function renderErrorDetails(
   return (
     <Space vertical size={4}>
       {title && <Text>{`${t('errorTitle')}: ${title}`}</Text>}
+      {error.message && error.message !== title && <Text type="secondary">{error.message}</Text>}
       {errorMessage?.recovery && (
         <Text type="secondary">{`${t('recovery')}: ${errorMessage.recovery}`}</Text>
       )}
