@@ -1017,6 +1017,58 @@
       "show": "診断を表示",
       "hide": "診断を閉じる"
     },
+    "syncDiagnostics": {
+      "title": "ライブ WebBridge 診断",
+      "liveData": "ライブデータ",
+      "loading": "ライブ診断の証拠を確認しています...",
+      "unavailable": "ライブ WebBridge 診断は利用できません。",
+      "integrationSnapshot": "連携スナップショット",
+      "blockingReason": "ブロック理由",
+      "evidenceTrail": "証拠トレイル",
+      "smokeMapping": "スモーク対応",
+      "webVersion": "Web パッケージバージョン",
+      "desktopKnownVersion": "Alife 既知バージョン",
+      "desktopAppliedVersion": "Alife 適用済みバージョン",
+      "packageState": "パッケージ状態",
+      "desktopConnection": "デスクトップ接続",
+      "localConfirmation": "ローカル確認",
+      "lastSyncAt": "最終同期",
+      "lastAppliedAt": "最終適用",
+      "milestones": "マイルストーン",
+      "errorDetails": "エラー詳細",
+      "errorTitle": "エラータイトル",
+      "recovery": "復旧手順",
+      "technicalDetail": "技術詳細",
+      "required": "必要",
+      "notRequired": "不要",
+      "notReported": "未報告",
+      "never": "未実行",
+      "noMilestones": "まだマイルストーンは報告されていません。",
+      "noLiveError": "ライブエラーは報告されていません。",
+      "versionAlignment": {
+        "notPulled": "Web パッケージが新しく、Alife .NET はまだ最新パッケージを取得していません。",
+        "knownButNotApplied": "Alife .NET はパッケージを認識またはステージしていますが、まだ適用していません。",
+        "current": "Alife .NET は現在の Web パッケージバージョンを適用済みです。",
+        "missingEvidence": "Alife .NET から十分なバージョン証拠がまだ報告されていません。"
+      },
+      "blocking": {
+        "pendingPull": "Alife .NET が Web パッケージを取得するのを待っています。",
+        "localConfirmationRequired": "パッケージはローカルでステージ済みで、Alife .NET 内で確認が必要です。",
+        "desktopOffline": "Alife .NET はオフライン、または最近状態を報告していません。",
+        "failed": "パッケージ同期に失敗しました。再試行前にエラー詳細を確認してください。",
+        "upToDate": "パッケージは適用済みで最新です。ブロック理由はありません。",
+        "unknown": "状態が不完全です。Alife .NET からの次の報告を待ってください。"
+      },
+      "smoke": {
+        "expectedStagedLabel": "想定ステージ状態",
+        "expectedStaged": "WebStatus: staged/localConfirmationRequired/confirmInDesktop",
+        "expectedAppliedLabel": "想定適用済み状態",
+        "expectedApplied": "WebStatus: applied/upToDate/none/requiresLocalConfirmation=false",
+        "commandLabel": "ローカルスモークコマンド",
+        "command": "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke",
+        "readOnly": "読み取り専用リファレンス"
+      }
+    },
     "syncStatus": {
       "title": "デスクトップ同期",
       "loading": "デスクトップ同期状態を確認しています...",

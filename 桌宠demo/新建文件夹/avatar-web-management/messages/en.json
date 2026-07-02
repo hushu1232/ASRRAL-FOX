@@ -1025,6 +1025,58 @@
       "show": "Show diagnostics",
       "hide": "Hide diagnostics"
     },
+    "syncDiagnostics": {
+      "title": "Live WebBridge diagnostics",
+      "liveData": "Live data",
+      "loading": "Checking live diagnostic evidence...",
+      "unavailable": "Live WebBridge diagnostics are unavailable.",
+      "integrationSnapshot": "Integration snapshot",
+      "blockingReason": "Blocking reason",
+      "evidenceTrail": "Evidence trail",
+      "smokeMapping": "Smoke mapping",
+      "webVersion": "Web package version",
+      "desktopKnownVersion": "Alife known version",
+      "desktopAppliedVersion": "Alife applied version",
+      "packageState": "Package state",
+      "desktopConnection": "Desktop connection",
+      "localConfirmation": "Local confirmation",
+      "lastSyncAt": "Last sync",
+      "lastAppliedAt": "Last applied",
+      "milestones": "Milestones",
+      "errorDetails": "Error details",
+      "errorTitle": "Error title",
+      "recovery": "Recovery",
+      "technicalDetail": "Technical detail",
+      "required": "Required",
+      "notRequired": "Not required",
+      "notReported": "Not reported",
+      "never": "Never",
+      "noMilestones": "No milestones reported yet.",
+      "noLiveError": "No live error reported.",
+      "versionAlignment": {
+        "notPulled": "Web package is newer; Alife .NET has not pulled the newest package.",
+        "knownButNotApplied": "Alife .NET knows or staged the package but has not applied it.",
+        "current": "Alife .NET has applied the current Web package version.",
+        "missingEvidence": "Alife .NET has not reported enough version evidence yet."
+      },
+      "blocking": {
+        "pendingPull": "Waiting for Alife .NET to pull the Web package.",
+        "localConfirmationRequired": "Package is staged locally and must be confirmed inside Alife .NET.",
+        "desktopOffline": "Alife .NET is offline or has not reported recently.",
+        "failed": "Package sync failed; inspect error details before retrying.",
+        "upToDate": "Package is applied and current; no blocking reason.",
+        "unknown": "Status is incomplete; wait for Alife .NET to report again."
+      },
+      "smoke": {
+        "expectedStagedLabel": "Expected staged state",
+        "expectedStaged": "WebStatus: staged/localConfirmationRequired/confirmInDesktop",
+        "expectedAppliedLabel": "Expected applied state",
+        "expectedApplied": "WebStatus: applied/upToDate/none/requiresLocalConfirmation=false",
+        "commandLabel": "Local smoke command",
+        "command": "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke",
+        "readOnly": "Read-only reference"
+      }
+    },
     "syncStatus": {
       "title": "Desktop sync",
       "loading": "Checking desktop sync status...",

@@ -1025,6 +1025,58 @@
       "show": "显示诊断",
       "hide": "收起诊断"
     },
+    "syncDiagnostics": {
+      "title": "实时 WebBridge 诊断",
+      "liveData": "实时数据",
+      "loading": "正在检查实时诊断证据...",
+      "unavailable": "实时 WebBridge 诊断暂不可用。",
+      "integrationSnapshot": "集成快照",
+      "blockingReason": "阻塞原因",
+      "evidenceTrail": "证据链",
+      "smokeMapping": "冒烟映射",
+      "webVersion": "Web 包版本",
+      "desktopKnownVersion": "Alife 已知版本",
+      "desktopAppliedVersion": "Alife 已应用版本",
+      "packageState": "包状态",
+      "desktopConnection": "桌面端连接",
+      "localConfirmation": "本地确认",
+      "lastSyncAt": "上次同步",
+      "lastAppliedAt": "上次应用",
+      "milestones": "里程碑",
+      "errorDetails": "错误详情",
+      "errorTitle": "错误标题",
+      "recovery": "恢复建议",
+      "technicalDetail": "技术细节",
+      "required": "需要",
+      "notRequired": "不需要",
+      "notReported": "未上报",
+      "never": "从未",
+      "noMilestones": "暂未上报里程碑。",
+      "noLiveError": "暂未上报实时错误。",
+      "versionAlignment": {
+        "notPulled": "Web 包版本更新，Alife .NET 还没有拉取最新包。",
+        "knownButNotApplied": "Alife .NET 已知道或已暂存该包，但还没有应用它。",
+        "current": "Alife .NET 已应用当前 Web 包版本。",
+        "missingEvidence": "Alife .NET 暂未上报足够的版本证据。"
+      },
+      "blocking": {
+        "pendingPull": "正在等待 Alife .NET 拉取 Web 包。",
+        "localConfirmationRequired": "包已在本地暂存，需要在 Alife .NET 内确认。",
+        "desktopOffline": "Alife .NET 离线或最近没有上报状态。",
+        "failed": "包同步失败，请先查看错误详情再重试。",
+        "upToDate": "包已应用且为当前版本，没有阻塞原因。",
+        "unknown": "状态不完整，等待 Alife .NET 再次上报。"
+      },
+      "smoke": {
+        "expectedStagedLabel": "预期暂存状态",
+        "expectedStaged": "WebStatus: staged/localConfirmationRequired/confirmInDesktop",
+        "expectedAppliedLabel": "预期已应用状态",
+        "expectedApplied": "WebStatus: applied/upToDate/none/requiresLocalConfirmation=false",
+        "commandLabel": "本地冒烟命令",
+        "command": "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke",
+        "readOnly": "只读参考"
+      }
+    },
     "syncStatus": {
       "title": "桌面同步",
       "loading": "正在检查桌面同步状态...",

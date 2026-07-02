@@ -137,4 +137,77 @@ describe('pet sync locale copy', () => {
       'Alife .NET 9 から取得したライブ WebBridge 状態です。',
     );
   });
+
+  it('defines live WebBridge diagnostics copy in all supported pet locales', () => {
+    const requiredKeys = [
+      'title',
+      'liveData',
+      'loading',
+      'unavailable',
+      'integrationSnapshot',
+      'blockingReason',
+      'evidenceTrail',
+      'smokeMapping',
+      'webVersion',
+      'desktopKnownVersion',
+      'desktopAppliedVersion',
+      'packageState',
+      'desktopConnection',
+      'localConfirmation',
+      'lastSyncAt',
+      'lastAppliedAt',
+      'milestones',
+      'errorDetails',
+      'errorTitle',
+      'recovery',
+      'technicalDetail',
+      'required',
+      'notRequired',
+      'notReported',
+      'never',
+      'noMilestones',
+      'noLiveError',
+    ];
+
+    for (const locale of [en, zh, ja]) {
+      for (const key of requiredKeys) {
+        expect(locale.pet.syncDiagnostics[key]).toEqual(expect.any(String));
+        expect(locale.pet.syncDiagnostics[key].length).toBeGreaterThan(0);
+      }
+
+      expect(Object.keys(locale.pet.syncDiagnostics.versionAlignment).sort()).toEqual([
+        'current',
+        'knownButNotApplied',
+        'missingEvidence',
+        'notPulled',
+      ]);
+      expect(Object.keys(locale.pet.syncDiagnostics.blocking).sort()).toEqual([
+        'desktopOffline',
+        'failed',
+        'localConfirmationRequired',
+        'pendingPull',
+        'unknown',
+        'upToDate',
+      ]);
+      expect(locale.pet.syncDiagnostics.smoke).toEqual({
+        command:
+          "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke",
+        commandLabel: expect.any(String),
+        expectedApplied: 'WebStatus: applied/upToDate/none/requiresLocalConfirmation=false',
+        expectedAppliedLabel: expect.any(String),
+        expectedStaged: 'WebStatus: staged/localConfirmationRequired/confirmInDesktop',
+        expectedStagedLabel: expect.any(String),
+        readOnly: expect.any(String),
+      });
+    }
+
+    expect(en.pet.syncDiagnostics.title).toBe('Live WebBridge diagnostics');
+    expect(en.pet.syncDiagnostics.liveData).toBe('Live data');
+    expect(en.pet.syncDiagnostics.versionAlignment.notPulled).toContain('Alife .NET');
+    expect(en.pet.syncDiagnostics.blocking.localConfirmationRequired).toContain('Alife .NET');
+    expect(zh.pet.syncDiagnostics.title).toBe('实时 WebBridge 诊断');
+    expect(zh.pet.syncDiagnostics.blocking.pendingPull).toContain('Alife .NET');
+    expect(ja.pet.syncDiagnostics.title).toBe('ライブ WebBridge 診断');
+    expect(ja.pet.syncDiagnostics.blocking.pendingPull).toContain('Alife .NET');
+  });
 });
