@@ -11,6 +11,7 @@ import PetSetupReadiness from '@/components/pet/PetSetupReadiness';
 import PetPreviewCard from '@/components/pet/PetPreviewCard';
 import PetConfigEditor, { type PetAssetPickerType } from '@/components/pet/PetConfigEditor';
 import PetDiagnosticsSection from '@/components/pet/sync/PetDiagnosticsSection';
+import PetSyncDiagnosticsPanel from '@/components/pet/sync/PetSyncDiagnosticsPanel';
 import PetSyncStatusPanel from '@/components/pet/sync/PetSyncStatusPanel';
 import WebBridgeMockStatusPanel from '@/components/pet/sync/WebBridgeMockStatusPanel';
 import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
@@ -213,6 +214,7 @@ export default function PetConfigPage() {
         />
 
         <PetDiagnosticsSection>
+          <PetSyncDiagnosticsPanel status={syncStatus} loading={syncStatusLoading} />
           <WebBridgeMockStatusPanel />
         </PetDiagnosticsSection>
 

@@ -68,6 +68,24 @@ jest.mock('@/components/pet/sync/PetSyncStatusPanel', () => ({
   ),
 }));
 
+jest.mock('@/components/pet/sync/PetSyncDiagnosticsPanel', () => ({
+  __esModule: true,
+  default: ({
+    status,
+    loading,
+  }: {
+    status: DesktopSyncStatus | null;
+    loading: boolean;
+  }) => (
+    <section data-testid="pet-sync-diagnostics-panel">
+      <span>Live WebBridge diagnostics</span>
+      <span data-testid="diagnostics-status-props">
+        {loading ? 'loading' : status ? status.summaryKind : 'empty'}
+      </span>
+    </section>
+  ),
+}));
+
 jest.mock('next/navigation', () => ({
   usePathname: () => '/dashboard/pet',
   useRouter: () => ({ push: jest.fn() }),
@@ -192,7 +210,14 @@ describe('PetConfigPage desktop sync', () => {
       'aria-expanded',
       'true',
     );
-    expect(screen.getByText('WebBridge package simulation')).toBeDefined();
+    const diagnosticsPanel = screen.getByTestId('pet-sync-diagnostics-panel');
+    const simulation = screen.getByText('WebBridge package simulation');
+    expect(diagnosticsPanel).toBeDefined();
+    expect(screen.getByText('Live WebBridge diagnostics')).toBeDefined();
+    expect(screen.getByTestId('diagnostics-status-props').textContent).toBe('pendingPull');
+    expect(
+      diagnosticsPanel.compareDocumentPosition(simulation) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getByText('Alife .NET 9')).toBeDefined();
     expect(screen.getByText('No live Alife calls')).toBeDefined();
     expect(mockApiGet).toHaveBeenCalledTimes(2);
