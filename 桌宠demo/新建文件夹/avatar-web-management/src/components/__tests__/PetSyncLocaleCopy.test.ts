@@ -2,6 +2,18 @@ const en = require('../../../messages/en.json');
 const zh = require('../../../messages/zh-CN.json');
 const ja = require('../../../messages/ja.json');
 
+function expectNonEmptyLocaleLeaves(value: unknown): void {
+  if (typeof value === 'string') {
+    expect(value.length).toBeGreaterThan(0);
+    return;
+  }
+
+  expect(value).toEqual(expect.any(Object));
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    expectNonEmptyLocaleLeaves(child);
+  }
+}
+
 describe('pet sync locale copy', () => {
   it('defines diagnostics section copy in all supported pet locales', () => {
     expect(en.pet.diagnostics).toEqual({
@@ -170,6 +182,8 @@ describe('pet sync locale copy', () => {
     ];
 
     for (const locale of [en, zh, ja]) {
+      expectNonEmptyLocaleLeaves(locale.pet.syncDiagnostics);
+
       for (const key of requiredKeys) {
         expect(locale.pet.syncDiagnostics[key]).toEqual(expect.any(String));
         expect(locale.pet.syncDiagnostics[key].length).toBeGreaterThan(0);
