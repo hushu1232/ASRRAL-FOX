@@ -106,7 +106,7 @@ export default function PageHeader({
   }));
 
   return (
-    <div className="mb-6">
+    <div data-testid="page-header-shell" className="mb-6 min-w-0">
       {/* Breadcrumb row */}
       {showBreadcrumbs && (
         <Breadcrumb
@@ -129,8 +129,8 @@ export default function PageHeader({
       )}
 
       {/* Title + Actions row */}
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-2">
-        <div className="min-w-0">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-4 mb-2">
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold m-0" style={{ color: 'var(--text-primary)' }}>
             {title}
           </h1>
@@ -144,7 +144,7 @@ export default function PageHeader({
           )}
         </div>
         {actions && (
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end">
             {actions}
           </div>
         )}

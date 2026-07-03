@@ -18,7 +18,37 @@ describe('pet console responsive guardrails', () => {
   it('lets page header actions use a full-width wrapping row on mobile', () => {
     const source = readSource('src/components/layout/PageHeader.tsx');
 
-    expect(source).toContain('flex flex-wrap items-center gap-2 w-full sm:w-auto');
+    expect(source).toContain(
+      'className="flex min-w-0 flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end"',
+    );
+  });
+
+  it('keeps the shared page header shell shrink-safe and addressable', () => {
+    const source = readSource('src/components/layout/PageHeader.tsx');
+
+    expect(source).toContain('data-testid="page-header-shell"');
+    expect(source).toContain('className="mb-6 min-w-0"');
+    expect(source).toContain(
+      'className="flex min-w-0 flex-wrap items-start justify-between gap-4 mb-2"',
+    );
+    expect(source).toContain('className="min-w-0 flex-1"');
+  });
+
+  it('keeps the authenticated shell content shrink-safe inside the viewport', () => {
+    const source = readSource('src/components/layout/AppLayout/style.scss');
+
+    expect(source).toContain('&__main {');
+    expect(source).toContain('min-width: 0;');
+    expect(source).toContain('&__content {');
+  });
+
+  it('uses restrained sidebar active states without broad decorative gradients', () => {
+    const source = readSource('src/components/layout/Sidebar/style.scss');
+
+    expect(source).not.toContain('linear-gradient(90deg, var(--accent), var(--info))');
+    expect(source).toContain('background: var(--accent);');
+    expect(source).toContain('background: var(--bg-card-hover);');
+    expect(source).toContain('box-shadow: inset 3px 0 0 var(--accent);');
   });
 
   it('keeps WebBridge scenario switching inside the card width on narrow screens', () => {
