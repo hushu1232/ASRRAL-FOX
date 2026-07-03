@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This runbook verifies the FOXD WebBridge package install path against the Alife .NET runtime without touching the active Alife runtime state.
+This runbook verifies the FOXD WebBridge package path against the Alife .NET 9 runtime integration code without touching the active Alife runtime state.
 
-The smoke test is intentionally scoped to:
+The current verified smoke path is isolated staged-to-applied verification:
 
 - FOXD Web package manifest access.
 - FOXD Web package file download.
@@ -12,9 +12,10 @@ The smoke test is intentionally scoped to:
 - SHA-256 validation.
 - Local package staging.
 - Local catalog and config draft creation.
-- `pendingActivation` status.
+- Local confirmation/apply simulation inside the isolated smoke harness.
+- Web sync status transition from staged/local-confirmation-required to applied/up-to-date.
 
-It must not activate or apply the package.
+The smoke must stay isolated. It must not start, stop, restart, or mutate the active Alife runtime process or its default runtime storage.
 
 ## Current Runtime Direction
 
@@ -42,24 +43,24 @@ Do not use the system `dotnet` if it resolves to SDK 8. It cannot build the Alif
 
 ## Safety Boundary
 
-If Alife has a long-running task in progress, do not run a live runtime integration against the default Alife storage.
+If Alife has a long-running task in progress, do not run live runtime integration against the default Alife storage.
 
 Safe boundaries:
 
-- Do not start or restart the active Alife process.
-- Do not enable `AutoSyncEnabled`.
-- Do not call an activation or apply step.
+- Do not start, stop, or restart the active Alife runtime process.
+- Do not enable live `AutoSyncEnabled` against default runtime storage.
 - Do not write into the default `AlifePath.StorageFolderPath\WebBridge`.
 - Do not delete `Runtime`, `Storage`, `Outputs`, or any live task directories.
-- Use an isolated package root under `D:\tmp`.
+- Use the smoke runner's isolated package root.
+- Treat the apply step in `npm run check:webbridge:smoke` as isolated smoke evidence, not as active runtime activation.
 
-Recommended isolated root:
+Current observed isolated smoke output root on `master`:
 
 ```text
-D:\tmp\alife-webbridge-integration
+D:\FOXD\.worktrees\_alife-webbridge-integration\<timestamp>
 ```
 
-All smoke-test output should stay inside that directory.
+The smoke runner creates timestamped output under that ignored local root and reports the exact files it touched.
 
 ## Repository State Requirement
 
@@ -123,6 +124,50 @@ The package manifest preflight must reject unsafe manifest shapes:
 - `activationPolicy.requiresLocalConfirmation` must be `true`.
 - The first package file must include non-empty `sha256`.
 
+## Current Verified Staged-To-Applied Smoke
+
+Run from the Web app root:
+
+```powershell
+cd "D:\FOXD\妗屽疇demo\鏂板缓鏂囦欢澶筡avatar-web-management"
+$env:DOTNET_EXE='C:\Users\hu shu\.dotnet\dotnet.exe'; $env:ALIFE_ROOT='D:\Alife'; npm run check:webbridge:smoke
+```
+
+Verified on FOXD commit:
+
+```text
+c4a1726 test: strengthen pet diagnostics locale coverage
+```
+
+Expected terminal evidence:
+
+```text
+Alife WebBridge staged-to-applied smoke passed.
+WebStatus: staged/localConfirmationRequired/confirmInDesktop
+WebStatus: applied/upToDate/none/requiresLocalConfirmation=false
+```
+
+Expected smoke stages:
+
+```text
+InstallStatus: pendingActivation
+ApplyStatus: applied
+InstalledFiles: 1
+```
+
+Expected output files are reported by the smoke command:
+
+```text
+PackageRootPath
+ManifestPath
+ConfigDraftPath
+CharacterCardPath
+ActiveConfigPath
+CatalogPath
+```
+
+The smoke proves the WebBridge package can move through the staged-to-applied loop in an isolated harness. It does not prove that the active desktop runtime has applied a package in its default runtime storage.
+
 ## Alife .NET 9 Verification
 
 Run focused WebBridge tests with the .NET 9 SDK:
@@ -150,7 +195,9 @@ Expected result:
 0 errors
 ```
 
-## Isolated Install Smoke
+## Historical Staging-Only Install Smoke
+
+This section records the older staging-only manual smoke shape. The current recommended check is `npm run check:webbridge:smoke`, which verifies both staged and applied Web status inside an isolated harness.
 
 Only run this after confirming the active Alife long task does not depend on the same process, port, or storage.
 
@@ -289,15 +336,25 @@ Remove-Item -LiteralPath "D:\tmp\alife-webbridge-integration" -Recurse -Force
 
 Do not remove Alife runtime storage or build outputs as part of this smoke.
 
-## Next UI Work After Smoke
+## Current UI Status After Smoke
 
-After the isolated install smoke passes, the FOXD Web UI can safely show real WebBridge states:
+The FOXD Web UI now has live WebBridge diagnostics on `/dashboard/pet`:
 
-- Alife runtime health.
-- WebBridge preflight checks.
-- Package manifest availability.
-- Package file hash status.
-- `pendingActivation` package state.
-- Failure details for 401, hash mismatch, package not found, and local confirmation required.
+- `PetRuntimeSummary` remains the operator command strip.
+- `PetSyncStatusPanel` remains the first live status panel.
+- `PetDiagnosticsSection` remains collapsed by default.
+- `PetSyncDiagnosticsPanel` shows live diagnostic evidence before simulation when diagnostics is expanded.
+- `WebBridgeMockStatusPanel` remains simulation-only and appears after live diagnostics.
 
-Until the smoke passes, frontend work should use mock states and must not imply live Alife activation support.
+Current verified diagnostics states include:
+
+```text
+pendingPull
+localConfirmationRequired
+desktopOffline
+failed
+upToDate
+unknown
+```
+
+The next UI work should focus on component/text-style normalization and clearer local-runtime setup guidance. Do not imply that Web can execute local smoke commands from the browser.
