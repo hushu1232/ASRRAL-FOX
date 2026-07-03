@@ -20,6 +20,8 @@ D:\FOXD\alife-service
 
 The active runtime direction is Alife .NET 9. Unity-side desktop pet work is abandoned unless it is explicitly reopened.
 
+As of 2026-07-03, the canonical local checkout remains `D:\Alife`. The FOXD `alife-service` path is a gitlink pin in the parent repository. The gitlink may intentionally lag behind the canonical `D:\Alife` checkout when FOXD Web work does not require pinning a new Alife commit.
+
 ## Hard Rules
 
 - Do not upload Alife into FOXD as a copied directory snapshot.
@@ -36,6 +38,29 @@ Use `D:\Alife` as the primary place for Alife development and Alife Git commits.
 Use `D:\FOXD\alife-service` as the parent repository's submodule checkout. It may be used for focused verification, but if code is changed there, move or cherry-pick that change back into `D:\Alife` before publishing the FOXD pointer.
 
 Use `D:\FOXD` for FOXD Web platform work and for committing only the submodule gitlink update after Alife is published.
+
+## Submodule Inspection Fallback
+
+If `git submodule status` fails because the local Git shell environment cannot find Unix helper tools such as `basename` or `sed`, inspect the gitlink directly from FOXD. This is the `git ls-files -s alife-service` fallback with an explicit repository path:
+
+```powershell
+git -C D:\FOXD ls-files -s alife-service
+```
+
+Expected output shape:
+
+```text
+160000 <alife-commit> 0 alife-service
+```
+
+Inspect the submodule checkout itself with:
+
+```powershell
+git -C D:\FOXD\alife-service status --short --branch
+git -C D:\FOXD\alife-service rev-parse HEAD
+```
+
+These commands do not replace the upload flow. They only confirm which commit FOXD currently pins.
 
 ## Normal Upload Flow
 
@@ -72,6 +97,8 @@ The FOXD commit should show only a submodule pointer change unless FOXD Web file
 ## Version Snapshot Policy
 
 Version snapshots belong in Git tags and GitHub releases, not copied source snapshots inside FOXD.
+
+For FOXD documentation snapshots, record commit hashes and verification output in Markdown. Do not copy Alife source into FOXD to create a version snapshot. If a parent repository checkpoint needs to include Alife, update only the `alife-service` gitlink after the Alife commit is pushed.
 
 For a stable Alife runtime version:
 
