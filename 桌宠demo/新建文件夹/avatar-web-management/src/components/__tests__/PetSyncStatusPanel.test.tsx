@@ -176,6 +176,23 @@ describe('PetSyncStatusPanel', () => {
     expect(screen.getByText('Raw state')).toBeDefined();
   });
 
+  it('shows a scan-first evidence grid before detailed desktop sync rows', () => {
+    render(<PetSyncStatusPanel status={createStatus()} loading={false} onRefresh={jest.fn()} />, {
+      wrapper: Wrapper,
+    });
+
+    const grid = screen.getByTestId('live-sync-evidence-grid');
+    expect(grid).toBeDefined();
+    expect(grid.textContent).toContain('Web version');
+    expect(grid.textContent).toContain('Desktop known version');
+    expect(grid.textContent).toContain('Desktop applied version');
+    expect(grid.textContent).toContain('Local confirmation');
+    expect(
+      grid.compareDocumentPosition(screen.getByText('Connection')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('pendingPull state shows lifecycle rail and published package detail', () => {
     render(
       <PetSyncStatusPanel

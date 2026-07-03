@@ -101,7 +101,12 @@ describe('PetRuntimeSummary', () => {
       wrapper: Wrapper,
     });
 
-    expect(screen.getByTestId('sync-command-strip')).toBeDefined();
+    const commandStrip = screen.getByTestId('sync-command-strip');
+    expect(commandStrip).toBeDefined();
+    expect(commandStrip).toHaveStyle({
+      gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))',
+    });
+    expect(screen.getByTestId('sync-runtime-metrics-grid')).toBeDefined();
     expect(screen.getByText('WebBridge command strip')).toBeDefined();
     expect(screen.getByText('Track Web package state against Alife .NET 9.')).toBeDefined();
     expect(screen.getByTestId('sync-next-action').textContent).toContain(

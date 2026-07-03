@@ -21,19 +21,18 @@ export default function PetDiagnosticsSection({ children }: PetDiagnosticsSectio
     <section
       aria-label={t('title')}
       data-testid="pet-diagnostics-section"
-      style={{
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 'var(--ds-panel-radius)',
-        padding: 'var(--ds-panel-densePadding)',
-      }}
     >
       <div
+        data-testid="pet-diagnostics-toggle-surface"
         style={{
           alignItems: 'flex-start',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--ds-panel-radius)',
           display: 'flex',
           gap: 12,
           justifyContent: 'space-between',
+          padding: 'var(--ds-panel-densePadding)',
           width: '100%',
           flexWrap: 'wrap',
         }}
@@ -71,7 +70,7 @@ export default function PetDiagnosticsSection({ children }: PetDiagnosticsSectio
         </Button>
       </div>
 
-      <div id={contentId} hidden={!open} style={{ marginTop: open ? 16 : 0 }}>
+      <div id={contentId} hidden={!open} style={{ marginTop: open ? 12 : 0 }}>
         {open ? children : null}
       </div>
     </section>

@@ -117,6 +117,7 @@ describe('PetSyncDiagnosticsPanel', () => {
     expect(screen.getByText('Live WebBridge diagnostics')).toBeDefined();
     expect(screen.getByText('Live data')).toBeDefined();
     expect(screen.getByText('Integration snapshot')).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Integration snapshot' })).toBeDefined();
     expect(screen.getByText('Web package version')).toBeDefined();
     expect(screen.getByText('Alife known version')).toBeDefined();
     expect(screen.getByText('Alife applied version')).toBeDefined();
@@ -129,9 +130,11 @@ describe('PetSyncDiagnosticsPanel', () => {
     expect(screen.getByText('Blocking reason')).toBeDefined();
     expect(screen.getByText('Waiting for Alife .NET to pull the Web package.')).toBeDefined();
     expect(screen.getByText('Evidence trail')).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Evidence trail' })).toBeDefined();
     expect(screen.getByText('No milestones reported yet.')).toBeDefined();
     expect(screen.getByText('No live error reported.')).toBeDefined();
     expect(screen.getByText('Smoke mapping')).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Smoke mapping' })).toBeDefined();
     expect(screen.getByText('Staged/local confirmation mapping')).toBeDefined();
     expect(
       screen.getByText('WebStatus: staged/localConfirmationRequired/confirmInDesktop'),

@@ -4,6 +4,7 @@ import { Alert, Button, Descriptions, Space, Spin, Steps, Tag, Tooltip, Typograp
 import { DesktopOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import OperationPanel from '@/components/ui/OperationPanel';
+import MetricTile from '@/components/ui/MetricTile';
 import StatusChip from '@/components/ui/StatusChip';
 import {
   getLifecycleSteps,
@@ -79,6 +80,29 @@ export default function PetSyncStatusPanel({
           </Text>
         </Space>
 
+        <div
+          data-testid="live-sync-evidence-grid"
+          style={{
+            display: 'grid',
+            gap: 12,
+            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))',
+          }}
+        >
+          <MetricTile label={t('webVersion')} value={status.webConfigVersion} />
+          <MetricTile
+            label={t('desktopKnownVersion')}
+            value={status.desktopKnownVersion ?? t('notApplied')}
+          />
+          <MetricTile
+            label={t('desktopAppliedVersion')}
+            value={status.desktopAppliedVersion ?? t('notApplied')}
+          />
+          <MetricTile
+            label={t('localConfirmation')}
+            value={status.requiresLocalConfirmation ? t('required') : t('notRequired')}
+          />
+        </div>
+
         <Steps
           size="small"
           current={currentLifecycleIndex >= 0 ? currentLifecycleIndex : undefined}
@@ -120,9 +144,6 @@ export default function PetSyncStatusPanel({
           </Descriptions.Item>
           <Descriptions.Item label={t('lastAppliedAt')}>
             {formatDate(status.lastAppliedAt, t)}
-          </Descriptions.Item>
-          <Descriptions.Item label={t('localConfirmation')}>
-            {status.requiresLocalConfirmation ? t('required') : t('notRequired')}
           </Descriptions.Item>
           <Descriptions.Item label={t('milestones')}>
             <Space size={[6, 6]} wrap>

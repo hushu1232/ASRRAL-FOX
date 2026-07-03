@@ -28,4 +28,13 @@ describe('pet console responsive guardrails', () => {
     expect(source).toContain("maxWidth: '100%'");
     expect(source).toContain("minWidth: 'max-content'");
   });
+
+  it('keeps diagnostics children out of a card-like wrapper', () => {
+    const source = readSource('src/components/pet/sync/PetDiagnosticsSection.tsx');
+
+    expect(source).toContain('pet-diagnostics-toggle-surface');
+    expect(source).not.toContain(
+      "background: 'var(--bg-card)',\n        border: '1px solid var(--border-subtle)',\n        borderRadius: 'var(--ds-panel-radius)'",
+    );
+  });
 });

@@ -44,6 +44,11 @@ describe('PetDiagnosticsSection', () => {
 
     const section = screen.getByTestId('pet-diagnostics-section');
     expect(section).toHaveAccessibleName('Diagnostics and package simulation');
+    expect(section).not.toHaveStyle({
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border-subtle)',
+    });
+    expect(screen.getByTestId('pet-diagnostics-toggle-surface')).toBeDefined();
     expect(screen.getByLabelText('Diagnostics and package simulation')).toBe(section);
     expect(screen.getByText('Diagnostics and package simulation')).toBeVisible();
     expect(

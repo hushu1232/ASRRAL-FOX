@@ -24,6 +24,11 @@ describe('WebBridgeMockStatusPanel', () => {
   it('shows the isolated Alife .NET 9 package install mock flow', () => {
     render(<WebBridgeMockStatusPanel />, { wrapper: Wrapper });
 
+    expect(screen.getByTestId('webbridge-mock-simulation-panel')).toBeDefined();
+    expect(screen.getByTestId('webbridge-mock-evidence-grid')).toBeDefined();
+    expect(screen.getByTestId('webbridge-mock-simulation-panel').textContent).toContain(
+      'Simulation only',
+    );
     expect(screen.getByText('WebBridge package simulation')).toBeDefined();
     expect(screen.getByText('Simulation only')).toBeDefined();
     expect(screen.getByText('Alife .NET 9')).toBeDefined();

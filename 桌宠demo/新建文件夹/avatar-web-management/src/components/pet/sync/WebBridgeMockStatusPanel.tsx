@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons';
 import MetricTile from '@/components/ui/MetricTile';
 import OperationPanel from '@/components/ui/OperationPanel';
+import StatusChip from '@/components/ui/StatusChip';
 
 const { Text } = Typography;
 
@@ -154,11 +155,12 @@ export default function WebBridgeMockStatusPanel() {
 
   return (
     <OperationPanel
+      data-testid="webbridge-mock-simulation-panel"
       title={
         <Space size="small" wrap>
           <ApiOutlined />
           <span>WebBridge package simulation</span>
-          <Tag color="default">Simulation only</Tag>
+          <StatusChip tone="neutral">Simulation only</StatusChip>
         </Space>
       }
     >
@@ -176,10 +178,11 @@ export default function WebBridgeMockStatusPanel() {
         </div>
 
         <div
+          data-testid="webbridge-mock-evidence-grid"
           style={{
             display: 'grid',
             gap: 12,
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))',
           }}
         >
           <MetricTile label="Runtime" value="Alife .NET 9" />

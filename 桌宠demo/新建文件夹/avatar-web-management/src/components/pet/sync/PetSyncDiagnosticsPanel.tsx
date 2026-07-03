@@ -193,9 +193,17 @@ function renderSmokeMapping(t: (key: string) => string) {
 
 function SectionTitle({ children }: { children: string }) {
   return (
-    <Text strong style={{ color: 'var(--text-primary)' }}>
+    <Typography.Title
+      level={3}
+      style={{
+        color: 'var(--text-primary)',
+        fontSize: 'var(--ds-type-cardTitle-size)',
+        lineHeight: 1.35,
+        margin: 0,
+      }}
+    >
       {children}
-    </Text>
+    </Typography.Title>
   );
 }
 

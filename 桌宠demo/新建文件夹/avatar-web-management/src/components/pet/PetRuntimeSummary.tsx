@@ -53,7 +53,7 @@ export default function PetRuntimeSummary({ status, loading, onRefresh }: PetRun
           style={{
             display: 'grid',
             gap: 12,
-            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))',
           }}
         >
           <div>
@@ -112,6 +112,7 @@ export default function PetRuntimeSummary({ status, loading, onRefresh }: PetRun
           </div>
         </div>
         <div
+          data-testid="sync-runtime-metrics-grid"
           style={{
             display: 'grid',
             gap: 12,
