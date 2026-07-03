@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, Button, Input, Select, Space, Table, Tag, Tree, App, Spin, Pagination, Progress } from 'antd';
+import { Card, Button, Input, Select, Table, Tag, Tree, App, Spin, Pagination, Progress, Tooltip } from 'antd';
 import { UploadOutlined, AppstoreOutlined, UnorderedListOutlined, FolderOutlined, FileOutlined, SearchOutlined, ShopOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import PageHeader from '@/components/layout/PageHeader';
+import OperationPanel from '@/components/ui/OperationPanel';
+import EmptyState from '@/components/ui/EmptyState';
 import { apiGet } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/authStore';
 import type { PaginatedResponse } from '@/lib/api-client';
@@ -134,7 +136,15 @@ export default function AssetLibraryPage() {
     { title: t('upload.size'), dataIndex: 'file_size', key: 'size', render: (s: number) => s > 0 ? (s / 1024 / 1024).toFixed(1) + ' MB' : '-' },
     { title: t('upload.date'), dataIndex: 'created_at', key: 'date' },
     { title: t('upload.actions'), key: 'action', render: (_: unknown, record: AssetItem) => (
-      <ShopOutlined className="cursor-pointer text-gray-400 hover:text-purple-400" onClick={() => router.push(`/marketplace/new?from=asset&assetId=${record.id}&filename=${encodeURIComponent(record.filename)}&storagePath=${encodeURIComponent(record.storage_path)}`)} aria-label={t('upload.sellOnMarket')} />
+      <Tooltip title={t('upload.sellOnMarket')}>
+        <Button
+          type="text"
+          size="small"
+          icon={<ShopOutlined />}
+          onClick={() => router.push(`/marketplace/new?from=asset&assetId=${record.id}&filename=${encodeURIComponent(record.filename)}&storagePath=${encodeURIComponent(record.storage_path)}`)}
+          aria-label={t('upload.sellOnMarket')}
+        />
+      </Tooltip>
     ) },
   ];
 
@@ -158,8 +168,12 @@ export default function AssetLibraryPage() {
         }
       />
 
-      <div className="flex gap-4">
-        <Card className="!border-purple-500/10 w-52 shrink-0" title={t('upload.directory')}>
+      <div className="flex flex-col gap-4 lg:flex-row">
+        <OperationPanel
+          data-testid="asset-directory-panel"
+          className="w-full lg:w-56 lg:shrink-0"
+          title={t('upload.directory')}
+        >
           <Tree
             treeData={[
               { title: t('upload.allAssets'), key: 'all', icon: <FolderOutlined /> },
@@ -173,56 +187,105 @@ export default function AssetLibraryPage() {
             ]}
             defaultExpandAll
           />
-        </Card>
+        </OperationPanel>
 
-        <div className="flex-1">
-          <Card className="!border-purple-500/10 mb-4">
-            <Space wrap>
-              <Input prefix={<SearchOutlined />} placeholder={t('upload.searchFiles')} value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ width: 220 }} />
+        <div className="min-w-0 flex-1">
+          <OperationPanel data-testid="asset-filter-panel" className="mb-4" title={null}>
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <Input
+                prefix={<SearchOutlined />}
+                placeholder={t('upload.searchFiles')}
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1); }}
+                className="w-full sm:w-64"
+              />
               <Select
                 placeholder={t('upload.typeFilter')}
                 value={typeFilter || undefined}
                 onChange={(v) => { setTypeFilter(v || ''); setPage(1); }}
                 allowClear
-                style={{ width: 140 }}
+                className="w-full sm:w-40"
                 options={Object.entries(assetTypeLabels).map(([k, v]) => ({ value: k, label: v }))}
               />
-              <div className="flex gap-1 border border-purple-500/20 rounded-lg p-0.5">
-                <Button type={viewMode === 'grid' ? 'primary' : 'text'} size="small" icon={<AppstoreOutlined />} onClick={() => setViewMode('grid')} />
-                <Button type={viewMode === 'list' ? 'primary' : 'text'} size="small" icon={<UnorderedListOutlined />} onClick={() => setViewMode('list')} />
+              <div className="flex gap-1 rounded-lg border border-[var(--border-subtle)] p-0.5">
+                <Tooltip title={t('upload.gridView')}>
+                  <Button
+                    type={viewMode === 'grid' ? 'primary' : 'text'}
+                    size="small"
+                    icon={<AppstoreOutlined />}
+                    onClick={() => setViewMode('grid')}
+                    aria-label={t('upload.gridView')}
+                  />
+                </Tooltip>
+                <Tooltip title={t('upload.listView')}>
+                  <Button
+                    type={viewMode === 'list' ? 'primary' : 'text'}
+                    size="small"
+                    icon={<UnorderedListOutlined />}
+                    onClick={() => setViewMode('list')}
+                    aria-label={t('upload.listView')}
+                  />
+                </Tooltip>
               </div>
-            </Space>
-          </Card>
+            </div>
+          </OperationPanel>
 
           {loading ? (
-            <div className="flex justify-center py-20"><Spin size="large" /></div>
+            <div className="flex min-h-[220px] items-center justify-center"><Spin size="large" /></div>
           ) : assets.length === 0 ? (
-            <Card className="!border-purple-500/10 text-center py-16">
-              <p className="text-lg text-gray-500 mb-2">{t('noAssets')}</p>
-              <p className="text-sm text-gray-600">{t('upload.noAssetsHint')}</p>
-            </Card>
+            <OperationPanel data-testid="asset-empty-panel" title={null}>
+              <EmptyState description={t('noAssets')} />
+              <p className="mt-[-24px] text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
+                {t('upload.noAssetsHint')}
+              </p>
+            </OperationPanel>
           ) : viewMode === 'list' ? (
-            <Card className="!border-purple-500/10">
-              <Table dataSource={assets} columns={columns} rowKey="id" pagination={false} size="middle" />
-            </Card>
+            <OperationPanel data-testid="asset-list-panel" title={null}>
+              <Table
+                dataSource={assets}
+                columns={columns}
+                rowKey="id"
+                pagination={false}
+                size="middle"
+                scroll={{ x: 'max-content' }}
+              />
+            </OperationPanel>
           ) : (
-            <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            <div
+              data-testid="asset-grid"
+              className="grid gap-3"
+              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}
+            >
               {assets.map(asset => (
                 <Card
                   key={asset.id}
                   hoverable
                   size="small"
-                  className="!border-purple-500/10 text-center"
+                  className="text-left transition-all"
+                  style={{
+                    borderColor: 'var(--border-subtle)',
+                    borderRadius: 'var(--ds-panel-radius)',
+                    background: 'var(--bg-card)',
+                  }}
                   cover={
-                    <div className="h-20 bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center overflow-hidden relative">
+                    <div className="relative flex h-24 items-center justify-center overflow-hidden" style={{ background: 'var(--bg-card-hover)' }}>
                       <Image src="/images/placeholder-asset.svg" alt={asset.filename} fill className="object-contain p-3 opacity-50" unoptimized />
                     </div>
                   }
                   actions={[
-                    <ShopOutlined key="sell" onClick={() => router.push(`/marketplace/new?from=asset&assetId=${asset.id}&filename=${encodeURIComponent(asset.filename)}&storagePath=${encodeURIComponent(asset.storage_path)}`)} aria-label={t('upload.sellOnMarket')} />,
+                    <Tooltip title={t('upload.sellOnMarket')} key="sell">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<ShopOutlined />}
+                        onClick={() => router.push(`/marketplace/new?from=asset&assetId=${asset.id}&filename=${encodeURIComponent(asset.filename)}&storagePath=${encodeURIComponent(asset.storage_path)}`)}
+                        aria-label={t('upload.sellOnMarket')}
+                      />
+                    </Tooltip>,
                   ]}
                 >
-                  <div className="text-xs text-gray-300 truncate" title={asset.filename}>{asset.filename}</div>
+                  <div className="truncate text-xs font-medium" style={{ color: 'var(--text-primary)' }} title={asset.filename}>{asset.filename}</div>
+                  <div className="mt-1 text-[11px] uppercase" style={{ color: 'var(--text-muted)' }}>{asset.format}</div>
                   <Tag color={assetTypeColors[asset.asset_type]} className="mt-1 text-[10px]">{assetTypeLabels[asset.asset_type] || asset.asset_type}</Tag>
                 </Card>
               ))}

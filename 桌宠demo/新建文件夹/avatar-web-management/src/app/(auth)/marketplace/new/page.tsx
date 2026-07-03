@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, Form, Input, Select, InputNumber, Button, App, Divider, Alert } from 'antd';
+import { Form, Input, Select, InputNumber, Button, App, Divider, Alert } from 'antd';
 import { SendOutlined, InfoCircleOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { apiPost } from '@/lib/api-client';
 import AssetPickerModal from '@/components/market/AssetPickerModal';
+import PageHeader from '@/components/layout/PageHeader';
+import OperationPanel from '@/components/ui/OperationPanel';
 
 const { TextArea } = Input;
 
@@ -57,24 +59,24 @@ export default function NewMarketItemPage() {
   useEffect(() => {
     if (fromAvatar && avatarId) {
       form.setFieldsValue({
-        title: avatarTitle || '我的形象',
+        title: avatarTitle || t('defaultAvatarTitle'),
         category: 'model',
         price: 0,
       });
     }
-  }, [fromAvatar, avatarId, avatarTitle, form]);
+  }, [fromAvatar, avatarId, avatarTitle, form, t]);
 
   // Pre-fill when coming from asset page — use storage_path as file entry
   useEffect(() => {
     if (fromAsset && assetId && storagePath) {
       form.setFieldsValue({
-        title: assetFilename || '我的资产',
+        title: assetFilename || t('defaultAssetTitle'),
         category: 'model',
         price: 0,
         files: storagePath,
       });
     }
-  }, [fromAsset, assetId, assetFilename, storagePath, form]);
+  }, [fromAsset, assetId, assetFilename, storagePath, form, t]);
 
   const handleSubmit = async (values: ListingForm) => {
     setLoading(true);
@@ -105,13 +107,17 @@ export default function NewMarketItemPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <Button type="text" onClick={() => router.back()} className="mb-4 text-gray-400 hover:text-white">
-        {t('back')}
-      </Button>
+    <div className="mx-auto max-w-2xl">
+      <PageHeader
+        title={t('title')}
+        actions={
+          <Button type="text" onClick={() => router.back()} className="text-gray-400 hover:text-white">
+            {t('back')}
+          </Button>
+        }
+      />
 
-      <Card className="!border-purple-500/10">
-        <h1 className="text-xl font-bold text-white mb-6">{t('title')}</h1>
+      <OperationPanel data-testid="marketplace-listing-form-panel" title={null}>
 
         {fromAvatar && avatarId && (
           <Alert
@@ -164,7 +170,7 @@ export default function NewMarketItemPage() {
             <TextArea rows={4} placeholder={t('descriptionPlaceholder')} maxLength={2000} showCount />
           </Form.Item>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Form.Item
               name="price"
               label={<span className="text-gray-300">{t('priceLabel')}</span>}
@@ -191,7 +197,7 @@ export default function NewMarketItemPage() {
             label={<span className="text-gray-300">{t('previewImagesLabel')}</span>}
             extra={<span className="text-gray-500">{t('previewImagesExtra')}</span>}
           >
-            <TextArea rows={3} placeholder="https://example.com/preview1.png&#10;https://example.com/preview2.png" />
+            <TextArea rows={3} placeholder={t('previewImagesPlaceholder')} />
             <Button
               type="dashed"
               icon={<FolderOpenOutlined />}
@@ -208,7 +214,7 @@ export default function NewMarketItemPage() {
             label={<span className="text-gray-300">{t('filesLabel')}</span>}
             extra={<span className="text-gray-500">{t('filesExtra')}</span>}
           >
-            <TextArea rows={2} placeholder="models/my-model.model3.json&#10;textures/my-tex.png" />
+            <TextArea rows={2} placeholder={t('filesPlaceholder')} />
             <Button
               type="dashed"
               icon={<FolderOpenOutlined />}
@@ -229,12 +235,12 @@ export default function NewMarketItemPage() {
             icon={<SendOutlined />}
             size="large"
             block
-            className="bg-gradient-to-r from-purple-600 to-blue-600 border-0 h-12 text-lg font-bold"
+            className="h-11 font-semibold"
           >
             {t('submit')}
           </Button>
         </Form>
-      </Card>
+      </OperationPanel>
 
       <AssetPickerModal
         open={filesPickerOpen}
