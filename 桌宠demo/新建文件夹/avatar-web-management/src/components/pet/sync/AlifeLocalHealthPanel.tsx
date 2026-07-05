@@ -3,6 +3,7 @@
 import { ApiOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Alert, Button, Descriptions, Space, Spin, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
+import EvidenceGrid from '@/components/ui/EvidenceGrid';
 import MetricTile from '@/components/ui/MetricTile';
 import OperationPanel from '@/components/ui/OperationPanel';
 import StatusChip, { type StatusChipTone } from '@/components/ui/StatusChip';
@@ -60,13 +61,7 @@ export default function AlifeLocalHealthPanel({
 
           <Alert type="info" showIcon title={t('advisory')} />
 
-          <div
-            style={{
-              display: 'grid',
-              gap: 12,
-              gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))',
-            }}
-          >
+          <EvidenceGrid data-testid="alife-local-health-evidence-grid">
             <MetricTile label={t('agent')} value={formatText(health.runtime?.agent, t)} />
             <MetricTile label={t('version')} value={formatText(health.health?.version, t)} />
             <MetricTile label={t('qchat')} value={formatEnabled(health.runtime?.qchatEnabled, t)} />
@@ -74,7 +69,7 @@ export default function AlifeLocalHealthPanel({
               label={t('outbox')}
               value={formatEnabled(health.runtime?.outboxEnabled, t)}
             />
-          </div>
+          </EvidenceGrid>
 
           <Descriptions column={1} size="small">
             <Descriptions.Item label={t('vision')}>

@@ -141,6 +141,7 @@ describe('AlifeLocalHealthPanel', () => {
     expect(screen.getByText('TTS')).toBeDefined();
     expect(screen.getByText(/voice model offline/)).toBeDefined();
     expect(screen.getByText('Outbox')).toBeDefined();
+    expect(screen.getByTestId('alife-local-health-evidence-grid')).toBeDefined();
     expect(screen.getByText('Last checked')).toBeDefined();
 
     expect(container.textContent).not.toContain('3045846738');

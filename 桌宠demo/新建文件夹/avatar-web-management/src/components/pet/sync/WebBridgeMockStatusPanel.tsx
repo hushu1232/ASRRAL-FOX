@@ -10,6 +10,7 @@ import {
   ExclamationCircleOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
+import EvidenceGrid from '@/components/ui/EvidenceGrid';
 import MetricTile from '@/components/ui/MetricTile';
 import OperationPanel from '@/components/ui/OperationPanel';
 import StatusChip from '@/components/ui/StatusChip';
@@ -177,14 +178,7 @@ export default function WebBridgeMockStatusPanel() {
           </div>
         </div>
 
-        <div
-          data-testid="webbridge-mock-evidence-grid"
-          style={{
-            display: 'grid',
-            gap: 12,
-            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))',
-          }}
-        >
+        <EvidenceGrid data-testid="webbridge-mock-evidence-grid">
           <MetricTile label="Runtime" value="Alife .NET 9" />
           <MetricTile
             label="Package state"
@@ -192,7 +186,7 @@ export default function WebBridgeMockStatusPanel() {
           />
           <MetricTile label="Next action" value={scenario.nextAction} />
           <MetricTile label="Isolation" value={<Tag color="default">No live Alife calls</Tag>} />
-        </div>
+        </EvidenceGrid>
 
         <Steps
           size="small"

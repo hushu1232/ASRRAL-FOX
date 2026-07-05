@@ -79,4 +79,17 @@ describe('pet console responsive guardrails', () => {
       );
     }
   });
+
+  it('uses the shared EvidenceGrid for advisory and diagnostic evidence', () => {
+    const alifeHealth = readSource('src/components/pet/sync/AlifeLocalHealthPanel.tsx');
+    const liveDiagnostics = readSource('src/components/pet/sync/PetSyncDiagnosticsPanel.tsx');
+    const mockDiagnostics = readSource('src/components/pet/sync/WebBridgeMockStatusPanel.tsx');
+
+    for (const source of [alifeHealth, liveDiagnostics, mockDiagnostics]) {
+      expect(source).toContain("import EvidenceGrid from '@/components/ui/EvidenceGrid'");
+      expect(source).not.toContain(
+        "gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))'",
+      );
+    }
+  });
 });

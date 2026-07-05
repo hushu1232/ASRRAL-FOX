@@ -3,6 +3,7 @@
 import { ApiOutlined } from '@ant-design/icons';
 import { Alert, Descriptions, Space, Tag, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
+import EvidenceGrid from '@/components/ui/EvidenceGrid';
 import MetricTile from '@/components/ui/MetricTile';
 import OperationPanel from '@/components/ui/OperationPanel';
 import StatusChip, { type StatusChipTone } from '@/components/ui/StatusChip';
@@ -73,14 +74,7 @@ function renderIntegrationSnapshot(
   return (
     <section>
       <SectionTitle>{t('integrationSnapshot')}</SectionTitle>
-      <div
-        style={{
-          display: 'grid',
-          gap: 12,
-          gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))',
-          marginTop: 12,
-        }}
-      >
+      <EvidenceGrid data-testid="pet-sync-diagnostics-evidence-grid" style={{ marginTop: 12 }}>
         <MetricTile label={t('webVersion')} value={status.webConfigVersion} />
         <MetricTile
           label={t('desktopKnownVersion')}
@@ -114,7 +108,7 @@ function renderIntegrationSnapshot(
             </StatusChip>
           }
         />
-      </div>
+      </EvidenceGrid>
     </section>
   );
 }

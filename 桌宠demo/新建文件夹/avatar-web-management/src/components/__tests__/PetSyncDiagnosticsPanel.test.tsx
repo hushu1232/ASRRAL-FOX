@@ -118,6 +118,7 @@ describe('PetSyncDiagnosticsPanel', () => {
     expect(screen.getByText('Live data')).toBeDefined();
     expect(screen.getByText('Integration snapshot')).toBeDefined();
     expect(screen.getByRole('heading', { name: 'Integration snapshot' })).toBeDefined();
+    expect(screen.getByTestId('pet-sync-diagnostics-evidence-grid')).toBeDefined();
     expect(screen.getByText('Web package version')).toBeDefined();
     expect(screen.getByText('Alife known version')).toBeDefined();
     expect(screen.getByText('Alife applied version')).toBeDefined();
