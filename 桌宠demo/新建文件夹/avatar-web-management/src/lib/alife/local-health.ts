@@ -45,17 +45,19 @@ type JsonFetchResult =
   | { kind: 'httpError'; status: number }
   | { kind: 'invalidJson' }
   | { kind: 'requestFailed' };
+type JsonFetchErrorResult = Exclude<JsonFetchResult, { kind: 'ok' }>;
 
 const DEFAULT_ENABLED = 'false';
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8787';
 const DEFAULT_TIMEOUT_MS = 1500;
 
 export async function getAlifeLocalHealth(
-  options: GetAlifeLocalHealthOptions = {}
+  options: GetAlifeLocalHealthOptions = {},
 ): Promise<AlifeLocalHealthView> {
   const env = options.env ?? process.env;
   const checkedAt = (options.now?.() ?? new Date()).toISOString();
-  const enabled = (env.FOXD_ALIFE_LOCAL_HEALTH_ENABLED ?? DEFAULT_ENABLED).trim().toLowerCase() === 'true';
+  const enabled =
+    (env.FOXD_ALIFE_LOCAL_HEALTH_ENABLED ?? DEFAULT_ENABLED).trim().toLowerCase() === 'true';
 
   if (!enabled) {
     return {
@@ -102,11 +104,10 @@ export async function getAlifeLocalHealth(
     buildLocalEndpoint(normalizedBaseUrl, '/api/alife/health'),
     token,
     timeoutMs,
-    fetchImpl
+    fetchImpl,
   );
-  const healthError = mapFetchError(healthResult, checkedAt);
-  if (healthError) {
-    return healthError;
+  if (healthResult.kind !== 'ok') {
+    return mapFetchError(healthResult, checkedAt);
   }
 
   const health = sanitizeHealthResponse(healthResult.data);
@@ -123,11 +124,10 @@ export async function getAlifeLocalHealth(
     buildLocalEndpoint(normalizedBaseUrl, '/api/alife/status'),
     token,
     timeoutMs,
-    fetchImpl
+    fetchImpl,
   );
-  const statusError = mapFetchError(statusResult, checkedAt);
-  if (statusError) {
-    return statusError;
+  if (statusResult.kind !== 'ok') {
+    return mapFetchError(statusResult, checkedAt);
   }
 
   const runtime = sanitizeRuntimeResponse(statusResult.data);
@@ -167,21 +167,26 @@ export function isLoopbackBaseUrl(value: string): boolean {
   }
 
   const hostname = url.hostname.toLowerCase();
-  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]' || hostname === '::1';
+  return (
+    hostname === '127.0.0.1' ||
+    hostname === 'localhost' ||
+    hostname === '[::1]' ||
+    hostname === '::1'
+  );
 }
 
 async function fetchJson(
   url: string,
   token: string,
   timeoutMs: number,
-  fetchImpl: AlifeLocalHealthFetch
+  fetchImpl: AlifeLocalHealthFetch,
 ): Promise<JsonFetchResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let responseReceived = false;
 
-  let response: Response;
   try {
-    response = await fetchImpl(url, {
+    const response = await fetchImpl(url, {
       method: 'GET',
       cache: 'no-store',
       headers: {
@@ -189,38 +194,31 @@ async function fetchJson(
       },
       signal: controller.signal,
     });
-  } catch {
-    clearTimeout(timeout);
-    return { kind: 'requestFailed' };
-  }
+    responseReceived = true;
 
-  clearTimeout(timeout);
+    if (!response.ok) {
+      return {
+        kind: 'httpError',
+        status: response.status,
+      };
+    }
 
-  if (!response.ok) {
-    return {
-      kind: 'httpError',
-      status: response.status,
-    };
-  }
-
-  try {
     return {
       kind: 'ok',
       data: await response.json(),
     };
-  } catch {
+  } catch (error) {
+    if (!responseReceived || controller.signal.aborted || isAbortError(error)) {
+      return { kind: 'requestFailed' };
+    }
+
     return { kind: 'invalidJson' };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-function mapFetchError(
-  result: JsonFetchResult,
-  checkedAt: string
-): AlifeLocalHealthView | null {
-  if (result.kind === 'ok') {
-    return null;
-  }
-
+function mapFetchError(result: JsonFetchErrorResult, checkedAt: string): AlifeLocalHealthView {
   if (result.kind === 'requestFailed') {
     return {
       state: 'unreachable',
@@ -341,7 +339,7 @@ function normalizeBaseUrl(value: string): string | null {
 
   try {
     const url = new URL(bracketedIpv6Loopback);
-    return url.href.replace(/\/+$/, '');
+    return url.origin;
   } catch {
     return null;
   }
@@ -362,4 +360,8 @@ function normalizeTimeoutMs(value: string | undefined): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isAbortError(error: unknown): boolean {
+  return isRecord(error) && error.name === 'AbortError';
 }

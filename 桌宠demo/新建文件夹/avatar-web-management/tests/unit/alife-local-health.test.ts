@@ -106,19 +106,54 @@ describe('Alife local health adapter', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('normalizes configured loopback base URLs to the local endpoint origin', async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(healthResponse()))
+      .mockResolvedValueOnce(jsonResponse(statusResponse()));
+
+    const view = await getAlifeLocalHealth({
+      env: {
+        ...enabledEnv,
+        FOXD_ALIFE_LOCAL_HEALTH_BASE_URL: 'http://localhost:8787/alife?debug=true#health',
+      },
+      fetch: fetchImpl,
+    });
+
+    expect(view.state).toBe('reachable');
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:8787/api/alife/health',
+      expect.any(Object),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:8787/api/alife/status',
+      expect.any(Object),
+    );
+  });
+
   it('returns a reachable sanitized model without owner, bot, token, or base URL details', async () => {
     const fetchImpl = jest
       .fn()
-      .mockResolvedValueOnce(jsonResponse(healthResponse({
-        token: 'health-token-leak',
-        baseUrl: 'http://127.0.0.1:8787',
-      })))
-      .mockResolvedValueOnce(jsonResponse(statusResponse({
-        ownerId: 'owner-1',
-        botId: 'bot-1',
-        token: 'status-token-leak',
-        baseUrl: 'http://127.0.0.1:8787',
-      })));
+      .mockResolvedValueOnce(
+        jsonResponse(
+          healthResponse({
+            token: 'health-token-leak',
+            baseUrl: 'http://127.0.0.1:8787',
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          statusResponse({
+            ownerId: 'owner-1',
+            botId: 'bot-1',
+            token: 'status-token-leak',
+            baseUrl: 'http://127.0.0.1:8787',
+          }),
+        ),
+      );
 
     const view = await getAlifeLocalHealth({ env: enabledEnv, fetch: fetchImpl });
 
@@ -154,7 +189,7 @@ describe('Alife local health adapter', () => {
         cache: 'no-store',
         headers: { Authorization: 'Bearer local-health-token' },
         signal: expect.any(AbortSignal),
-      })
+      }),
     );
     expect(fetchImpl).toHaveBeenNthCalledWith(
       2,
@@ -164,7 +199,7 @@ describe('Alife local health adapter', () => {
         cache: 'no-store',
         headers: { Authorization: 'Bearer local-health-token' },
         signal: expect.any(AbortSignal),
-      })
+      }),
     );
     expect(JSON.stringify(view)).not.toContain('owner-1');
     expect(JSON.stringify(view)).not.toContain('bot-1');
@@ -213,6 +248,57 @@ describe('Alife local health adapter', () => {
       checkedAt: expect.any(String),
       reason: 'invalidJson',
     });
+  });
+
+  it('keeps the timeout active while parsing the response body', async () => {
+    jest.useFakeTimers();
+
+    try {
+      let bodyReadStarted = false;
+      const fetchImpl = jest.fn(
+        async (_url: string, init?: RequestInit) =>
+          ({
+            ok: true,
+            status: 200,
+            json: () => {
+              bodyReadStarted = true;
+              return new Promise((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => {
+                  reject(new DOMException('Aborted', 'AbortError'));
+                });
+              });
+            },
+          }) as Response,
+      );
+
+      const viewPromise = getAlifeLocalHealth({
+        env: {
+          ...enabledEnv,
+          FOXD_ALIFE_LOCAL_HEALTH_TIMEOUT_MS: '5',
+        },
+        fetch: fetchImpl,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(bodyReadStarted).toBe(true);
+      jest.advanceTimersByTime(5);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const result = await Promise.race([viewPromise, Promise.resolve({ state: 'stillPending' })]);
+
+      expect(result).toEqual({
+        state: 'unreachable',
+        configured: true,
+        checkedAt: expect.any(String),
+        reason: 'requestFailed',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('maps missing required fields to invalidResponse', async () => {
