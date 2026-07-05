@@ -6,10 +6,7 @@ import { useTranslations } from 'next-intl';
 import MetricTile from '@/components/ui/MetricTile';
 import OperationPanel from '@/components/ui/OperationPanel';
 import StatusChip, { type StatusChipTone } from '@/components/ui/StatusChip';
-import type {
-  AlifeLocalHealthState,
-  AlifeLocalHealthView,
-} from '@/lib/alife/local-health';
+import type { AlifeLocalHealthState, AlifeLocalHealthView } from '@/lib/alife/local-health';
 
 const { Text } = Typography;
 
@@ -48,9 +45,7 @@ export default function AlifeLocalHealthPanel({
         </Space>
       )}
 
-      {!health && !loading && (
-        <Text type="secondary">{t('notReported')}</Text>
-      )}
+      {!health && !loading && <Text type="secondary">{t('notReported')}</Text>}
 
       {health && (
         <Space vertical size="middle" style={{ width: '100%' }}>
