@@ -49,7 +49,7 @@ The smoke writes under an isolated local package root reported by the runner. It
 | Package staging | Web manifest and file bytes | WebBridge package installer | Implemented and smoke-tested | Produces staged/local-confirmation-required Web status. |
 | Isolated apply | Smoke runner | Alife WebBridge apply path used by smoke | Implemented for isolated smoke | Produces applied/up-to-date Web status. |
 | Sync status query/report | `GET/POST /api/pet/sync/status` | Alife milestone/status reporting | Implemented and UI-visible | UI now exposes diagnostics evidence. |
-| Pet config pull | `GET/POST /api/pet/sync` | Alife config pull | Implemented | Web POST body persistence remains partial. |
+| Pet config pull | `GET/POST /api/pet/sync` | Alife config pull | Implemented and persisted | POST records a desktop config-pull snapshot in `PetSyncStatus`; active apply confirmation remains `/api/pet/sync/status`. |
 | Asset manifest pull | `GET /api/pet/assets` | Alife asset manifest pull | Fixed in Alife history | Keep `SyncAssetsEnabled=false` unless a dedicated asset smoke is planned. |
 | Local Alife management API | `GET /api/pet/alife/local-health` | Alife local API host | Advisory health integrated | Disabled by default, server-side only, and read-only. Broader management actions remain out of scope. |
 
@@ -107,7 +107,7 @@ FOXD now exposes an authenticated, disabled-by-default server-side adapter for A
 
 1. The active desktop runtime apply path has not been exercised through the real running Alife desktop process.
 2. Web local health awareness is advisory and disabled by default; it is not an active desktop runtime apply confirmation.
-3. Web `/api/pet/sync` POST is not yet a persisted desktop-state round trip.
+3. Web `/api/pet/sync` POST now persists config-pull evidence; active desktop runtime apply evidence remains separate.
 4. Asset sync should stay disabled until a dedicated asset smoke is planned.
 5. The parent FOXD `alife-service` gitlink is a pinning mechanism, not the canonical Alife working tree.
 
