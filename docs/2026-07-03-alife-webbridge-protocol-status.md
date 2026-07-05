@@ -93,10 +93,20 @@ PetSyncDiagnosticsPanel
 WebBridgeMockStatusPanel
 ```
 
+## FOXD Web Local Health Adapter
+
+FOXD now exposes an authenticated, disabled-by-default server-side adapter for Alife local management health.
+
+- FOXD route: `GET /api/pet/alife/local-health`
+- Local Alife source endpoint: `GET http://127.0.0.1:8787/api/alife/health` and `GET http://127.0.0.1:8787/api/alife/status`
+- Enable flag: `FOXD_ALIFE_LOCAL_HEALTH_ENABLED=true`
+- Token: `FOXD_ALIFE_LOCAL_HEALTH_TOKEN`
+- Boundary: Web UI receives sanitized advisory status only. It does not read the token, call loopback directly, start Alife, stop Alife, restart Alife, apply packages, or execute shell commands.
+
 ## Open Protocol Gaps
 
 1. The active desktop runtime apply path has not been exercised through the real running Alife desktop process.
-2. Web does not yet consume Alife local management API health as a live runtime dependency.
+2. Web local health awareness is advisory and disabled by default; it is not an active desktop runtime apply confirmation.
 3. Web `/api/pet/sync` POST is not yet a persisted desktop-state round trip.
 4. Asset sync should stay disabled until a dedicated asset smoke is planned.
 5. The parent FOXD `alife-service` gitlink is a pinning mechanism, not the canonical Alife working tree.
