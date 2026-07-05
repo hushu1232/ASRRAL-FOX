@@ -167,6 +167,9 @@ describe('Alife local health source guardrails', () => {
       for (const key of requiredTopLevelKeys) {
         expectNonEmptyString(webbridgeMock?.[key]);
       }
+      expect(webbridgeMock?.autoApplyGuard).toBe(
+        'autoApply=false, requiresLocalConfirmation=true',
+      );
       for (const key of scenarioKeys) {
         expectNonEmptyString(webbridgeMock?.scenario?.[key]?.label);
         expectNonEmptyString(webbridgeMock?.scenario?.[key]?.nextAction);
