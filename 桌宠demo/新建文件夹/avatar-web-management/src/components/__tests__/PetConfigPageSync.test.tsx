@@ -39,6 +39,10 @@ jest.mock('next-intl', () => ({
         show: 'Show diagnostics',
         hide: 'Hide diagnostics',
       },
+      'pet.webbridgeMock': {
+        title: 'WebBridge package simulation',
+        noLiveCalls: 'No live Alife calls',
+      },
     };
 
     const t = (key: string) => messages[namespace]?.[key] ?? key;
@@ -229,14 +233,23 @@ describe('PetConfigPage desktop sync', () => {
     expect(localHealthCallIndex).toBeGreaterThanOrEqual(0);
     expect(configCallIndex).toBeLessThan(syncCallIndex);
     expect(configCallIndex).toBeLessThan(localHealthCallIndex);
+    const runtimeSummaryTitle = screen.getByText('runtimeSummary.title');
     const syncStatusPanel = screen.getByTestId('pet-sync-status-panel');
+    const alifeLocalHealthPanel = screen.getByTestId('alife-local-health-panel');
+    expect(
+      runtimeSummaryTitle.compareDocumentPosition(alifeLocalHealthPanel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      alifeLocalHealthPanel.compareDocumentPosition(syncStatusPanel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(syncStatusPanel).toBeDefined();
     expect(screen.getByTestId('alife-local-health-panel')).toBeDefined();
     expect(screen.getByTestId('alife-local-health-props').textContent).toBe('reachable:none');
     expect(screen.getByText('wizard.title')).toBeDefined();
     expect(screen.getByText('wizard.step5Desc')).toBeDefined();
     expect(screen.getByText('wizard.step6Desc')).toBeDefined();
-    const runtimeSummaryTitle = screen.getByText('runtimeSummary.title');
     expect(runtimeSummaryTitle).toBeDefined();
     expect(screen.getByText('runtimeSummary.nextAction.label')).toBeDefined();
     const previewPanelTitle = screen.getByText('preview.webPreview');
