@@ -110,15 +110,7 @@ export async function getAlifeLocalHealth(
     return mapFetchError(healthResult, checkedAt);
   }
 
-  const health = sanitizeHealthResponse(healthResult.data);
-  if (!health) {
-    return {
-      state: 'invalidResponse',
-      configured: true,
-      checkedAt,
-      reason: 'missingRequiredFields',
-    };
-  }
+  const healthData = healthResult.data;
 
   const statusResult = await fetchJson(
     buildLocalEndpoint(normalizedBaseUrl, '/api/alife/status'),
@@ -130,7 +122,23 @@ export async function getAlifeLocalHealth(
     return mapFetchError(statusResult, checkedAt);
   }
 
-  const runtime = sanitizeRuntimeResponse(statusResult.data);
+  const sensitiveValues = collectSensitiveValues({
+    token,
+    baseUrl: normalizedBaseUrl,
+    healthData,
+    statusData: statusResult.data,
+  });
+  const health = sanitizeHealthResponse(healthData, sensitiveValues);
+  if (!health) {
+    return {
+      state: 'invalidResponse',
+      configured: true,
+      checkedAt,
+      reason: 'missingRequiredFields',
+    };
+  }
+
+  const runtime = sanitizeRuntimeResponse(statusResult.data, sensitiveValues);
   if (!runtime) {
     return {
       state: 'invalidResponse',
@@ -258,22 +266,20 @@ function mapFetchError(result: JsonFetchErrorResult, checkedAt: string): AlifeLo
   };
 }
 
-function sanitizeHealthResponse(data: unknown): AlifeLocalHealthView['health'] | null {
+function sanitizeHealthResponse(
+  data: unknown,
+  sensitiveValues: string[],
+): AlifeLocalHealthView['health'] | null {
   if (!isRecord(data)) {
     return null;
   }
 
-  const status = data.status;
-  const service = data.service;
-  const version = data.version;
-  const timestampUtc = data.timestampUtc;
+  const status = publicStringField(data, 'status', sensitiveValues);
+  const service = publicStringField(data, 'service', sensitiveValues);
+  const version = publicStringField(data, 'version', sensitiveValues);
+  const timestampUtc = publicStringField(data, 'timestampUtc', sensitiveValues);
 
-  if (
-    typeof status !== 'string' ||
-    typeof service !== 'string' ||
-    typeof version !== 'string' ||
-    typeof timestampUtc !== 'string'
-  ) {
+  if (status === null || service === null || version === null || timestampUtc === null) {
     return null;
   }
 
@@ -285,35 +291,38 @@ function sanitizeHealthResponse(data: unknown): AlifeLocalHealthView['health'] |
   };
 }
 
-function sanitizeRuntimeResponse(data: unknown): AlifeLocalHealthView['runtime'] | null {
+function sanitizeRuntimeResponse(
+  data: unknown,
+  sensitiveValues: string[],
+): AlifeLocalHealthView['runtime'] | null {
   if (!isRecord(data)) {
     return null;
   }
 
-  const status = data.status;
-  const agent = data.agent;
+  const status = publicStringField(data, 'status', sensitiveValues);
+  const agent = publicStringField(data, 'agent', sensitiveValues);
   const qchatEnabled = data.qchatEnabled;
   const visionEnabled = data.visionEnabled;
-  const visionStatus = data.visionStatus;
-  const visionReason = data.visionReason;
+  const visionStatus = publicStringField(data, 'visionStatus', sensitiveValues);
+  const visionReason = publicStringField(data, 'visionReason', sensitiveValues);
   const ttsEnabled = data.ttsEnabled;
-  const ttsStatus = data.ttsStatus;
-  const ttsReason = data.ttsReason;
+  const ttsStatus = publicStringField(data, 'ttsStatus', sensitiveValues);
+  const ttsReason = publicStringField(data, 'ttsReason', sensitiveValues);
   const outboxEnabled = data.outboxEnabled;
-  const timestampUtc = data.timestampUtc;
+  const timestampUtc = publicStringField(data, 'timestampUtc', sensitiveValues);
 
   if (
-    typeof status !== 'string' ||
-    typeof agent !== 'string' ||
+    status === null ||
+    agent === null ||
     typeof qchatEnabled !== 'boolean' ||
     typeof visionEnabled !== 'boolean' ||
-    typeof visionStatus !== 'string' ||
-    typeof visionReason !== 'string' ||
+    visionStatus === null ||
+    visionReason === null ||
     typeof ttsEnabled !== 'boolean' ||
-    typeof ttsStatus !== 'string' ||
-    typeof ttsReason !== 'string' ||
+    ttsStatus === null ||
+    ttsReason === null ||
     typeof outboxEnabled !== 'boolean' ||
-    typeof timestampUtc !== 'string'
+    timestampUtc === null
   ) {
     return null;
   }
@@ -364,6 +373,84 @@ function normalizeTimeoutMs(value: string | undefined): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function collectSensitiveValues({
+  token,
+  baseUrl,
+  healthData,
+  statusData,
+}: {
+  token: string;
+  baseUrl: string;
+  healthData: unknown;
+  statusData: unknown;
+}): string[] {
+  const values = new Set<string>();
+  addSensitiveValue(values, token);
+  addSensitiveValue(values, baseUrl);
+
+  try {
+    const url = new URL(baseUrl);
+    addSensitiveValue(values, url.host);
+    addSensitiveValue(values, url.hostname);
+  } catch {
+    // Base URL has already been validated; keep this defensive for future callers.
+  }
+
+  addNamedSensitiveValues(values, healthData);
+  addNamedSensitiveValues(values, statusData);
+
+  return [...values];
+}
+
+function addNamedSensitiveValues(values: Set<string>, data: unknown): void {
+  if (!isRecord(data)) {
+    return;
+  }
+
+  for (const [key, value] of Object.entries(data)) {
+    const normalizedKey = key.toLowerCase();
+    if (
+      normalizedKey === 'ownerid' ||
+      normalizedKey === 'botid' ||
+      normalizedKey === 'token' ||
+      normalizedKey === 'baseurl'
+    ) {
+      addSensitiveValue(values, value);
+    }
+  }
+}
+
+function addSensitiveValue(values: Set<string>, value: unknown): void {
+  if (typeof value !== 'string') {
+    return;
+  }
+
+  const normalized = value.trim();
+  if (normalized.length >= 4) {
+    values.add(normalized);
+  }
+}
+
+function publicStringField(
+  data: Record<string, unknown>,
+  key: string,
+  sensitiveValues: string[],
+): string | null {
+  const value = data[key];
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  return containsSensitiveValue(value, sensitiveValues) ? null : value;
+}
+
+function containsSensitiveValue(value: string, sensitiveValues: string[]): boolean {
+  const normalizedValue = value.toLowerCase();
+  return sensitiveValues.some((sensitiveValue) =>
+    normalizedValue.includes(sensitiveValue.toLowerCase()),
+  );
 }
 
 function isAbortError(error: unknown): boolean {

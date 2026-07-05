@@ -209,6 +209,37 @@ describe('Alife local health adapter', () => {
     expect(JSON.stringify(view)).not.toContain('127.0.0.1');
   });
 
+  it('rejects allowed response strings that embed owner, bot, token, or base URL details', async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          healthResponse({
+            service: 'Alife local-health-token http://127.0.0.1:8787',
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          statusResponse({
+            ownerId: 'owner-1',
+            botId: 'bot-1',
+            agent: 'local owner-1',
+            visionReason: 'ready for bot-1',
+          }),
+        ),
+      );
+
+    const view = await getAlifeLocalHealth({ env: enabledEnv, fetch: fetchImpl });
+    const serialized = JSON.stringify(view);
+
+    expect(view.state).toBe('invalidResponse');
+    expect(serialized).not.toContain('owner-1');
+    expect(serialized).not.toContain('bot-1');
+    expect(serialized).not.toContain('local-health-token');
+    expect(serialized).not.toContain('127.0.0.1:8787');
+  });
+
   it.each([401, 403])('maps HTTP %s to authRequired without leaking the token', async (status) => {
     const fetchImpl = jest.fn().mockResolvedValueOnce(jsonResponse({ error: 'nope' }, status));
 

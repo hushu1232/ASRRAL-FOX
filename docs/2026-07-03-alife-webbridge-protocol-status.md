@@ -51,7 +51,7 @@ The smoke writes under an isolated local package root reported by the runner. It
 | Sync status query/report | `GET/POST /api/pet/sync/status` | Alife milestone/status reporting | Implemented and UI-visible | UI now exposes diagnostics evidence. |
 | Pet config pull | `GET/POST /api/pet/sync` | Alife config pull | Implemented | Web POST body persistence remains partial. |
 | Asset manifest pull | `GET /api/pet/assets` | Alife asset manifest pull | Fixed in Alife history | Keep `SyncAssetsEnabled=false` unless a dedicated asset smoke is planned. |
-| Local Alife management API | Not consumed by Web UI yet | Alife local API host | Pending Web integration | Needs consent and port/source documentation before UI dependency. |
+| Local Alife management API | `GET /api/pet/alife/local-health` | Alife local API host | Advisory health integrated | Disabled by default, server-side only, and read-only. Broader management actions remain out of scope. |
 
 ## Web Status Mapping
 
@@ -117,5 +117,5 @@ Use the verified WebBridge status as the stable baseline for UI/spec work:
 
 1. Draft the shared component/text-style specification.
 2. Normalize dashboard and pet-console components first.
-3. Add local Alife management health only after documenting its port, process ownership, and consent model.
+3. Keep local Alife health advisory, opt-in, server-side, and documented before adding any broader management API dependency.
 4. Keep protocol changes separate from UI polish.
