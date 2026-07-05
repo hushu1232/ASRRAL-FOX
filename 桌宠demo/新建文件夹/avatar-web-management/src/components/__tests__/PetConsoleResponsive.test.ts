@@ -97,9 +97,9 @@ describe('pet console responsive guardrails', () => {
     const source = readSource('src/components/pet/sync/WebBridgeMockStatusPanel.tsx');
 
     expect(source).toContain("useTranslations('pet.webbridgeMock')");
-    expect(source).not.toContain("'WebBridge package simulation'");
-    expect(source).not.toContain("'Simulation only'");
-    expect(source).not.toContain("'No live Alife calls'");
+    expect(source).not.toContain('WebBridge package simulation');
+    expect(source).not.toContain('Simulation only');
+    expect(source).not.toContain('No live Alife calls');
 
     for (const term of [
       'child_process',
