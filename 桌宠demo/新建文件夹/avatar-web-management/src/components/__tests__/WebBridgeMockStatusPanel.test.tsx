@@ -7,6 +7,63 @@ import { App } from 'antd';
 import type { ReactNode } from 'react';
 import WebBridgeMockStatusPanel from '@/components/pet/sync/WebBridgeMockStatusPanel';
 
+const mockMessages: Record<string, string> = {
+  title: 'WebBridge package simulation',
+  simulationOnly: 'Simulation only',
+  scenarioLabel: 'Simulation scenario',
+  runtime: 'Runtime',
+  packageState: 'Package state',
+  nextAction: 'Next action',
+  isolation: 'Isolation',
+  noLiveCalls: 'No live Alife calls',
+  packageRoot: 'Package root',
+  manifest: 'Manifest',
+  file: 'File',
+  scenarioDetail: 'Scenario detail',
+  failureStates: 'Failure states',
+  activationGuard: 'Activation guard',
+  autoApplyGuard: 'autoApply=false, requiresLocalConfirmation=true',
+  readOnlyNotice: 'This panel is a read-only simulation and does not call local Alife.',
+  'scenario.pendingActivation.label': 'Ready package',
+  'scenario.pendingActivation.nextAction': 'Confirm inside Alife .NET before apply',
+  'scenario.pendingActivation.detail':
+    'Package passed preflight, manifest, and SHA-256 checks. Alife .NET holds activation for local confirmation.',
+  'scenario.unauthorized.label': 'Auth failure',
+  'scenario.unauthorized.nextAction': 'Refresh package bearer token before download',
+  'scenario.unauthorized.detail':
+    'The manifest can be reached, but a package file request is rejected by authorization.',
+  'scenario.hashMismatch.label': 'Hash mismatch',
+  'scenario.hashMismatch.nextAction': 'Reject package and re-download bundle',
+  'scenario.hashMismatch.detail':
+    'The downloaded file digest does not match the signed package manifest.',
+  'scenario.securityBlocked.label': 'Security block',
+  'scenario.securityBlocked.nextAction': 'Keep activation disabled until path validation passes',
+  'scenario.securityBlocked.detail':
+    'A path traversal or unsafe package file target is blocked before activation.',
+  'check.preflight.label': 'Preflight',
+  'check.preflight.detail': 'WebBridge readiness',
+  'check.manifest.label': 'Package manifest',
+  'check.manifest.detail': 'current-pet-character-bundle',
+  'check.hash.label': 'SHA-256 validation',
+  'check.hash.detail': 'character-card',
+  'check.pending.label': 'Pending local confirmation',
+  'check.pending.detail': 'Alife .NET apply guard',
+  'state.ready': 'Ready',
+  'state.waiting': 'Waiting',
+  'state.failed': 'Failed',
+  'state.blocked': 'Blocked',
+};
+
+jest.mock('next-intl', () => ({
+  useTranslations: (namespace: string) => {
+    if (namespace !== 'pet.webbridgeMock') {
+      return (key: string) => key;
+    }
+
+    return (key: string) => mockMessages[key] ?? key;
+  },
+}));
+
 jest.mock('@ant-design/icons', () => ({
   ApiOutlined: () => <span data-testid="icon-api" />,
   CheckCircleOutlined: () => <span data-testid="icon-check" />,

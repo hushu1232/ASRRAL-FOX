@@ -126,4 +126,59 @@ describe('Alife local health source guardrails', () => {
       }
     }
   });
+
+  it('defines WebBridge mock diagnostics locale keys for every supported locale', () => {
+    const localePaths = ['messages/en.json', 'messages/zh-CN.json', 'messages/ja.json'];
+    const requiredTopLevelKeys = [
+      'title',
+      'simulationOnly',
+      'scenarioLabel',
+      'runtime',
+      'packageState',
+      'nextAction',
+      'isolation',
+      'noLiveCalls',
+      'packageRoot',
+      'manifest',
+      'file',
+      'scenarioDetail',
+      'failureStates',
+      'activationGuard',
+      'autoApplyGuard',
+      'readOnlyNotice',
+    ];
+    const scenarioKeys = ['pendingActivation', 'unauthorized', 'hashMismatch', 'securityBlocked'];
+    const checkKeys = ['preflight', 'manifest', 'hash', 'pending'];
+    const stateKeys = ['ready', 'waiting', 'failed', 'blocked'];
+
+    for (const localePath of localePaths) {
+      const locale = readJson(localePath) as {
+        pet?: {
+          webbridgeMock?: {
+            scenario?: Record<string, Record<string, unknown>>;
+            check?: Record<string, Record<string, unknown>>;
+            state?: Record<string, unknown>;
+          } & Record<string, unknown>;
+        };
+      };
+      const webbridgeMock = locale.pet?.webbridgeMock;
+
+      expect(webbridgeMock).toEqual(expect.any(Object));
+      for (const key of requiredTopLevelKeys) {
+        expectNonEmptyString(webbridgeMock?.[key]);
+      }
+      for (const key of scenarioKeys) {
+        expectNonEmptyString(webbridgeMock?.scenario?.[key]?.label);
+        expectNonEmptyString(webbridgeMock?.scenario?.[key]?.nextAction);
+        expectNonEmptyString(webbridgeMock?.scenario?.[key]?.detail);
+      }
+      for (const key of checkKeys) {
+        expectNonEmptyString(webbridgeMock?.check?.[key]?.label);
+        expectNonEmptyString(webbridgeMock?.check?.[key]?.detail);
+      }
+      for (const key of stateKeys) {
+        expectNonEmptyString(webbridgeMock?.state?.[key]);
+      }
+    }
+  });
 });

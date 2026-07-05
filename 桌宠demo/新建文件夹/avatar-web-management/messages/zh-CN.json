@@ -1031,6 +1031,58 @@
       "show": "显示诊断",
       "hide": "收起诊断"
     },
+    "webbridgeMock": {
+      "title": "WebBridge 包模拟",
+      "simulationOnly": "仅模拟",
+      "scenarioLabel": "模拟场景",
+      "runtime": "运行时",
+      "packageState": "包状态",
+      "nextAction": "下一步",
+      "isolation": "隔离边界",
+      "noLiveCalls": "不调用实时 Alife",
+      "packageRoot": "包根目录",
+      "manifest": "清单",
+      "file": "文件",
+      "scenarioDetail": "场景详情",
+      "failureStates": "失败状态",
+      "activationGuard": "激活防护",
+      "autoApplyGuard": "autoApply=false, requiresLocalConfirmation=true",
+      "readOnlyNotice": "此面板为只读模拟，不会调用本地 Alife。",
+      "scenario": {
+        "pendingActivation": {
+          "label": "包已就绪",
+          "nextAction": "在 Alife .NET 内确认后再应用",
+          "detail": "包已通过预检、清单和 SHA-256 校验。Alife .NET 会等待本地确认后再激活。"
+        },
+        "unauthorized": {
+          "label": "鉴权失败",
+          "nextAction": "刷新包下载令牌后重新下载",
+          "detail": "清单可访问，但包文件请求被鉴权拒绝。"
+        },
+        "hashMismatch": {
+          "label": "哈希不匹配",
+          "nextAction": "拒绝该包并重新下载",
+          "detail": "下载文件摘要与签名清单不一致。"
+        },
+        "securityBlocked": {
+          "label": "安全阻止",
+          "nextAction": "路径校验通过前保持激活禁用",
+          "detail": "路径穿越或不安全包文件目标会在激活前被阻止。"
+        }
+      },
+      "check": {
+        "preflight": { "label": "预检", "detail": "WebBridge 就绪状态" },
+        "manifest": { "label": "包清单", "detail": "current-pet-character-bundle" },
+        "hash": { "label": "SHA-256 校验", "detail": "character-card" },
+        "pending": { "label": "等待本地确认", "detail": "Alife .NET 应用防护" }
+      },
+      "state": {
+        "ready": "就绪",
+        "waiting": "等待",
+        "failed": "失败",
+        "blocked": "阻止"
+      }
+    },
     "alifeLocalHealth": {
       "title": "Alife 本地健康",
       "source": "本地 API",

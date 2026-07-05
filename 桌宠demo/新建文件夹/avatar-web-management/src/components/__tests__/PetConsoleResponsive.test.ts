@@ -92,4 +92,25 @@ describe('pet console responsive guardrails', () => {
       );
     }
   });
+
+  it('keeps WebBridge mock diagnostics localized and non-executable', () => {
+    const source = readSource('src/components/pet/sync/WebBridgeMockStatusPanel.tsx');
+
+    expect(source).toContain("useTranslations('pet.webbridgeMock')");
+    expect(source).not.toContain("'WebBridge package simulation'");
+    expect(source).not.toContain("'Simulation only'");
+    expect(source).not.toContain("'No live Alife calls'");
+
+    for (const term of [
+      'child_process',
+      'exec(',
+      'spawn(',
+      'PowerShell',
+      'Start Alife',
+      'Stop Alife',
+      'Restart Alife',
+    ]) {
+      expect(source).not.toContain(term);
+    }
+  });
 });

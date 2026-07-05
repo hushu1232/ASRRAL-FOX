@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Alert, Descriptions, Segmented, Space, Steps, Tag, Typography } from 'antd';
+import { useTranslations } from 'next-intl';
 import {
   ApiOutlined,
   CheckCircleOutlined,
@@ -24,53 +25,26 @@ type MockScenarioKey = 'pendingActivation' | 'unauthorized' | 'hashMismatch' | '
 type CheckState = 'ready' | 'waiting' | 'failed' | 'blocked';
 
 const mockChecks = [
-  {
-    key: 'preflight',
-    label: 'Preflight',
-    detail: 'WebBridge readiness',
-    icon: <CloudServerOutlined />,
-  },
-  {
-    key: 'manifest',
-    label: 'Package manifest',
-    detail: 'current-pet-character-bundle',
-    icon: <ApiOutlined />,
-  },
-  {
-    key: 'hash',
-    label: 'SHA-256 validation',
-    detail: 'character-card',
-    icon: <SafetyCertificateOutlined />,
-  },
-  {
-    key: 'pending',
-    label: 'Pending local confirmation',
-    detail: 'Alife .NET apply guard',
-    icon: <ClockCircleOutlined />,
-  },
+  { key: 'preflight', icon: <CloudServerOutlined /> },
+  { key: 'manifest', icon: <ApiOutlined /> },
+  { key: 'hash', icon: <SafetyCertificateOutlined /> },
+  { key: 'pending', icon: <ClockCircleOutlined /> },
 ];
 
 const mockScenarios: Record<
   MockScenarioKey,
   {
-    label: string;
     packageState: string;
     tagColor: string;
     activeStep: number;
-    nextAction: string;
-    detail: string;
     alertType: 'success' | 'warning' | 'error';
     checks: Record<string, CheckState>;
   }
 > = {
   pendingActivation: {
-    label: 'Ready package',
     packageState: 'pendingActivation',
     tagColor: 'orange',
     activeStep: 3,
-    nextAction: 'Confirm inside Alife .NET before apply',
-    detail:
-      'Package passed preflight, manifest, and SHA-256 checks. Alife .NET holds activation for local confirmation.',
     alertType: 'success',
     checks: {
       preflight: 'ready',
@@ -80,12 +54,9 @@ const mockScenarios: Record<
     },
   },
   unauthorized: {
-    label: 'Auth failure',
     packageState: '401 package file',
     tagColor: 'red',
     activeStep: 1,
-    nextAction: 'Refresh package bearer token before download',
-    detail: 'The manifest can be reached, but a package file request is rejected by authorization.',
     alertType: 'error',
     checks: {
       preflight: 'ready',
@@ -95,12 +66,9 @@ const mockScenarios: Record<
     },
   },
   hashMismatch: {
-    label: 'Hash mismatch',
     packageState: 'PACKAGE_HASH_MISMATCH',
     tagColor: 'red',
     activeStep: 2,
-    nextAction: 'Reject package and re-download bundle',
-    detail: 'The downloaded file digest does not match the signed package manifest.',
     alertType: 'error',
     checks: {
       preflight: 'ready',
@@ -110,12 +78,9 @@ const mockScenarios: Record<
     },
   },
   securityBlocked: {
-    label: 'Security block',
     packageState: 'PACKAGE_SECURITY_BLOCKED',
     tagColor: 'red',
     activeStep: 0,
-    nextAction: 'Keep activation disabled until path validation passes',
-    detail: 'A path traversal or unsafe package file target is blocked before activation.',
     alertType: 'error',
     checks: {
       preflight: 'failed',
@@ -124,13 +89,6 @@ const mockScenarios: Record<
       pending: 'blocked',
     },
   },
-};
-
-const checkStateLabels: Record<CheckState, string> = {
-  ready: 'Ready',
-  waiting: 'Waiting',
-  failed: 'Failed',
-  blocked: 'Blocked',
 };
 
 const checkStateColors: Record<CheckState, string> = {
@@ -143,16 +101,18 @@ const checkStateColors: Record<CheckState, string> = {
 const failureReasons = ['401 package file', 'PACKAGE_HASH_MISMATCH', 'PACKAGE_SECURITY_BLOCKED'];
 
 export default function WebBridgeMockStatusPanel() {
+  const t = useTranslations('pet.webbridgeMock');
   const [scenarioKey, setScenarioKey] = useState<MockScenarioKey>('pendingActivation');
   const scenario = mockScenarios[scenarioKey];
   const scenarioOptions = useMemo(
     () =>
-      Object.entries(mockScenarios).map(([value, item]) => ({
-        label: item.label,
+      (Object.keys(mockScenarios) as MockScenarioKey[]).map((value) => ({
+        label: t(`scenario.${value}.label`),
         value,
       })),
-    [],
+    [t],
   );
+  const nextAction = t(`scenario.${scenarioKey}.nextAction`);
 
   return (
     <OperationPanel
@@ -160,14 +120,16 @@ export default function WebBridgeMockStatusPanel() {
       title={
         <Space size="small" wrap>
           <ApiOutlined />
-          <span>WebBridge package simulation</span>
-          <StatusChip tone="neutral">Simulation only</StatusChip>
+          <span>{t('title')}</span>
+          <StatusChip tone="neutral">{t('simulationOnly')}</StatusChip>
         </Space>
       }
     >
       <Space vertical size="large" style={{ width: '100%' }}>
+        <Alert type="info" showIcon title={t('readOnlyNotice')} />
+
         <div>
-          <Text strong>Simulation scenario</Text>
+          <Text strong>{t('scenarioLabel')}</Text>
           <div style={{ marginTop: 8, maxWidth: '100%', overflowX: 'auto', paddingBottom: 2 }}>
             <Segmented
               options={scenarioOptions}
@@ -179,26 +141,29 @@ export default function WebBridgeMockStatusPanel() {
         </div>
 
         <EvidenceGrid data-testid="webbridge-mock-evidence-grid">
-          <MetricTile label="Runtime" value="Alife .NET 9" />
+          <MetricTile label={t('runtime')} value="Alife .NET 9" />
           <MetricTile
-            label="Package state"
+            label={t('packageState')}
             value={<Tag color={scenario.tagColor}>{scenario.packageState}</Tag>}
           />
-          <MetricTile label="Next action" value={scenario.nextAction} />
-          <MetricTile label="Isolation" value={<Tag color="default">No live Alife calls</Tag>} />
+          <MetricTile label={t('nextAction')} value={nextAction} />
+          <MetricTile
+            label={t('isolation')}
+            value={<StatusChip tone="neutral">{t('noLiveCalls')}</StatusChip>}
+          />
         </EvidenceGrid>
 
         <Steps
           size="small"
           current={scenario.activeStep}
           items={mockChecks.map((check) => ({
-            title: check.label,
+            title: t(`check.${check.key}.label`),
             status: toStepStatus(scenario.checks[check.key]),
             content: (
               <Space vertical size={2}>
-                <Text type="secondary">{check.detail}</Text>
+                <Text type="secondary">{t(`check.${check.key}.detail`)}</Text>
                 <Tag color={checkStateColors[scenario.checks[check.key]]}>
-                  {checkStateLabels[scenario.checks[check.key]]}
+                  {t(`state.${scenario.checks[check.key]}`)}
                 </Tag>
               </Space>
             ),
@@ -207,19 +172,21 @@ export default function WebBridgeMockStatusPanel() {
         />
 
         <Descriptions column={1} size="small">
-          <Descriptions.Item label="Package root">
+          <Descriptions.Item label={t('packageRoot')}>
             <Text code>{PACKAGE_ROOT}</Text>
           </Descriptions.Item>
-          <Descriptions.Item label="Manifest">current-pet-character-bundle</Descriptions.Item>
-          <Descriptions.Item label="File">characters/current-pet/card.json</Descriptions.Item>
-          <Descriptions.Item label="Scenario detail">{scenario.detail}</Descriptions.Item>
+          <Descriptions.Item label={t('manifest')}>current-pet-character-bundle</Descriptions.Item>
+          <Descriptions.Item label={t('file')}>characters/current-pet/card.json</Descriptions.Item>
+          <Descriptions.Item label={t('scenarioDetail')}>
+            {t(`scenario.${scenarioKey}.detail`)}
+          </Descriptions.Item>
         </Descriptions>
 
         <Alert
           type="warning"
           showIcon
           icon={<ExclamationCircleOutlined />}
-          title="Failure states"
+          title={t('failureStates')}
           description={
             <Space size={[8, 8]} wrap>
               {failureReasons.map((reason) => (
@@ -235,11 +202,11 @@ export default function WebBridgeMockStatusPanel() {
           type={scenario.alertType}
           showIcon
           icon={<CheckCircleOutlined />}
-          title="Activation guard"
+          title={t('activationGuard')}
           description={
             <Space vertical size={4}>
-              <Text>{scenario.nextAction}</Text>
-              <Text code>autoApply=false, requiresLocalConfirmation=true</Text>
+              <Text>{nextAction}</Text>
+              <Text code>{t('autoApplyGuard')}</Text>
             </Space>
           }
         />

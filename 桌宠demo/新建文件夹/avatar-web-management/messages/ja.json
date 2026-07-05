@@ -1023,6 +1023,58 @@
       "show": "診断を表示",
       "hide": "診断を閉じる"
     },
+    "webbridgeMock": {
+      "title": "WebBridge パッケージシミュレーション",
+      "simulationOnly": "シミュレーションのみ",
+      "scenarioLabel": "シミュレーションシナリオ",
+      "runtime": "ランタイム",
+      "packageState": "パッケージ状態",
+      "nextAction": "次の操作",
+      "isolation": "分離境界",
+      "noLiveCalls": "ライブ Alife 呼び出しなし",
+      "packageRoot": "パッケージルート",
+      "manifest": "マニフェスト",
+      "file": "ファイル",
+      "scenarioDetail": "シナリオ詳細",
+      "failureStates": "失敗状態",
+      "activationGuard": "有効化ガード",
+      "autoApplyGuard": "autoApply=false, requiresLocalConfirmation=true",
+      "readOnlyNotice": "このパネルは読み取り専用のシミュレーションで、ローカル Alife を呼び出しません。",
+      "scenario": {
+        "pendingActivation": {
+          "label": "準備済みパッケージ",
+          "nextAction": "Alife .NET 内で確認してから適用",
+          "detail": "パッケージはプリフライト、マニフェスト、SHA-256 検証を通過しました。Alife .NET はローカル確認まで有効化を保留します。"
+        },
+        "unauthorized": {
+          "label": "認証失敗",
+          "nextAction": "パッケージの Bearer トークンを更新してから再ダウンロード",
+          "detail": "マニフェストには到達できますが、パッケージファイル要求が認可で拒否されています。"
+        },
+        "hashMismatch": {
+          "label": "ハッシュ不一致",
+          "nextAction": "パッケージを拒否して再ダウンロード",
+          "detail": "ダウンロードしたファイルのダイジェストが署名済みマニフェストと一致しません。"
+        },
+        "securityBlocked": {
+          "label": "セキュリティブロック",
+          "nextAction": "パス検証が通るまで有効化を無効のままにする",
+          "detail": "パストラバーサルまたは安全でないパッケージファイルの対象は、有効化前にブロックされます。"
+        }
+      },
+      "check": {
+        "preflight": { "label": "プリフライト", "detail": "WebBridge 準備状態" },
+        "manifest": { "label": "パッケージマニフェスト", "detail": "current-pet-character-bundle" },
+        "hash": { "label": "SHA-256 検証", "detail": "character-card" },
+        "pending": { "label": "ローカル確認待ち", "detail": "Alife .NET 適用ガード" }
+      },
+      "state": {
+        "ready": "準備完了",
+        "waiting": "待機中",
+        "failed": "失敗",
+        "blocked": "ブロック"
+      }
+    },
     "alifeLocalHealth": {
       "title": "Alife ローカルヘルス",
       "source": "ローカル API",

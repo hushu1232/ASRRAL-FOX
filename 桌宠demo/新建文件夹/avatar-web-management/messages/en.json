@@ -1031,6 +1031,58 @@
       "show": "Show diagnostics",
       "hide": "Hide diagnostics"
     },
+    "webbridgeMock": {
+      "title": "WebBridge package simulation",
+      "simulationOnly": "Simulation only",
+      "scenarioLabel": "Simulation scenario",
+      "runtime": "Runtime",
+      "packageState": "Package state",
+      "nextAction": "Next action",
+      "isolation": "Isolation",
+      "noLiveCalls": "No live Alife calls",
+      "packageRoot": "Package root",
+      "manifest": "Manifest",
+      "file": "File",
+      "scenarioDetail": "Scenario detail",
+      "failureStates": "Failure states",
+      "activationGuard": "Activation guard",
+      "autoApplyGuard": "autoApply=false, requiresLocalConfirmation=true",
+      "readOnlyNotice": "This panel is a read-only simulation and does not call local Alife.",
+      "scenario": {
+        "pendingActivation": {
+          "label": "Ready package",
+          "nextAction": "Confirm inside Alife .NET before apply",
+          "detail": "Package passed preflight, manifest, and SHA-256 checks. Alife .NET holds activation for local confirmation."
+        },
+        "unauthorized": {
+          "label": "Auth failure",
+          "nextAction": "Refresh package bearer token before download",
+          "detail": "The manifest can be reached, but a package file request is rejected by authorization."
+        },
+        "hashMismatch": {
+          "label": "Hash mismatch",
+          "nextAction": "Reject package and re-download bundle",
+          "detail": "The downloaded file digest does not match the signed package manifest."
+        },
+        "securityBlocked": {
+          "label": "Security block",
+          "nextAction": "Keep activation disabled until path validation passes",
+          "detail": "A path traversal or unsafe package file target is blocked before activation."
+        }
+      },
+      "check": {
+        "preflight": { "label": "Preflight", "detail": "WebBridge readiness" },
+        "manifest": { "label": "Package manifest", "detail": "current-pet-character-bundle" },
+        "hash": { "label": "SHA-256 validation", "detail": "character-card" },
+        "pending": { "label": "Pending local confirmation", "detail": "Alife .NET apply guard" }
+      },
+      "state": {
+        "ready": "Ready",
+        "waiting": "Waiting",
+        "failed": "Failed",
+        "blocked": "Blocked"
+      }
+    },
     "alifeLocalHealth": {
       "title": "Alife local health",
       "source": "Local API",
