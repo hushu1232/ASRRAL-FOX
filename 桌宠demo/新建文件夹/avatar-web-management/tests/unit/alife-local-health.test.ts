@@ -187,6 +187,7 @@ describe('Alife local health adapter', () => {
       expect.objectContaining({
         method: 'GET',
         cache: 'no-store',
+        redirect: 'manual',
         headers: { Authorization: 'Bearer local-health-token' },
         signal: expect.any(AbortSignal),
       }),
@@ -197,6 +198,7 @@ describe('Alife local health adapter', () => {
       expect.objectContaining({
         method: 'GET',
         cache: 'no-store',
+        redirect: 'manual',
         headers: { Authorization: 'Bearer local-health-token' },
         signal: expect.any(AbortSignal),
       }),
@@ -320,6 +322,37 @@ describe('Alife local health adapter', () => {
     expect(serialized).not.toContain('owner-nested-1');
     expect(serialized).not.toContain('bot-nested-1');
     expect(serialized).not.toContain('nested-access-token');
+  });
+
+  it('rejects public strings that embed generic sensitive identifiers', async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(healthResponse()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          statusResponse({
+            metadata: {
+              userId: 'user-raw-1',
+              workspaceId: 'workspace-raw-1',
+              session_id: 'session-raw-1',
+              apiKey: 'api-key-raw-1',
+              authorization: 'Bearer authorization-raw-1',
+              secret: 'secret-raw-1',
+            },
+            agent: 'local user-raw-1',
+            visionReason: 'workspace workspace-raw-1',
+            ttsReason: 'using api-key-raw-1',
+          }),
+        ),
+      );
+
+    const view = await getAlifeLocalHealth({ env: enabledEnv, fetch: fetchImpl });
+    const serialized = JSON.stringify(view);
+
+    expect(view.state).toBe('invalidResponse');
+    expect(serialized).not.toContain('user-raw-1');
+    expect(serialized).not.toContain('workspace-raw-1');
+    expect(serialized).not.toContain('api-key-raw-1');
   });
 
   it.each([401, 403])('maps HTTP %s to authRequired without leaking the token', async (status) => {

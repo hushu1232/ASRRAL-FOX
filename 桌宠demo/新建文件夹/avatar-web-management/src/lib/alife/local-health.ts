@@ -197,6 +197,7 @@ async function fetchJson(
     const response = await fetchImpl(url, {
       method: 'GET',
       cache: 'no-store',
+      redirect: 'manual',
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -491,12 +492,28 @@ function addSensitiveValue(values: Set<string>, value: unknown, minimumLength = 
 
 function isSensitiveResponseKey(key: string): boolean {
   const normalized = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const sensitiveKeys = new Set([
+    'apikey',
+    'authorization',
+    'baseuri',
+    'baseurl',
+    'botid',
+    'clientid',
+    'credential',
+    'credentials',
+    'ownerid',
+    'password',
+    'secret',
+    'sessionid',
+    'userid',
+    'workspaceid',
+  ]);
+
   return (
-    normalized === 'ownerid' ||
-    normalized === 'botid' ||
-    normalized === 'baseurl' ||
-    normalized === 'baseuri' ||
+    sensitiveKeys.has(normalized) ||
     normalized === 'token' ||
+    normalized.endsWith('key') ||
+    normalized.endsWith('secret') ||
     normalized.endsWith('token')
   );
 }
