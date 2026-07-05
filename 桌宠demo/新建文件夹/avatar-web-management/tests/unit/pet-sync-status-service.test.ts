@@ -114,6 +114,11 @@ describe('petSyncStatusService', () => {
         lastErrorDetail: null,
       }),
     });
+    const upsertArgs = mockPrismaClient.petSyncStatus.upsert.mock.calls[0][0];
+    expect(upsertArgs.create).not.toHaveProperty('desktopAppliedVersion');
+    expect(upsertArgs.create).not.toHaveProperty('lastAppliedAt');
+    expect(upsertArgs.update).not.toHaveProperty('desktopAppliedVersion');
+    expect(upsertArgs.update).not.toHaveProperty('lastAppliedAt');
     expect(status.packageState).toBe('pulled');
     expect(status.desktopKnownVersion).toBe(exportedConfigVersion);
     expect(status.summaryKind).toBe('localConfirmationRequired');
@@ -164,6 +169,56 @@ describe('petSyncStatusService', () => {
     expect(status.packageState).toBe('applied');
     expect(status.requiresLocalConfirmation).toBe(false);
     expect(status.summaryKind).toBe('upToDate');
+  });
+
+  it('config pull refreshes lastSyncAt without clearing same-version failed state', async () => {
+    const exportedConfigVersion = updatedAt.getTime();
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(exportedConfigVersion),
+      packageState: 'failed',
+      requiresLocalConfirmation: true,
+      lastSyncAt: new Date('2026-06-27T09:50:00.000Z'),
+      lastErrorCode: 'PACKAGE_HASH_MISMATCH',
+      lastErrorMessage: 'Hash mismatch',
+      lastErrorDetail: 'Expected abc',
+    }));
+    mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(exportedConfigVersion),
+      packageState: 'failed',
+      requiresLocalConfirmation: true,
+      lastSyncAt: reportedAt,
+      lastErrorCode: 'PACKAGE_HASH_MISMATCH',
+      lastErrorMessage: 'Hash mismatch',
+      lastErrorDetail: 'Expected abc',
+    }));
+
+    const status = await petSyncStatusService.reportConfigPull(
+      userId,
+      workspaceId,
+      {
+        desktopKnownVersion: exportedConfigVersion,
+        lastSyncAt: reportedAtIso,
+      },
+      exportedConfigVersion
+    );
+
+    expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({
+        desktopKnownVersion: BigInt(exportedConfigVersion),
+        packageState: 'failed',
+        requiresLocalConfirmation: true,
+        lastSyncAt: reportedAt,
+        lastErrorCode: 'PACKAGE_HASH_MISMATCH',
+        lastErrorMessage: 'Hash mismatch',
+        lastErrorDetail: 'Expected abc',
+      }),
+    }));
+    expect(status.packageState).toBe('failed');
+    expect(status.lastSyncAt).toBe(reportedAt);
+    expect(status.lastError?.code).toBe('PACKAGE_HASH_MISMATCH');
+    expect(status.lastError?.message).toBe('Hash mismatch');
+    expect(status.summaryKind).toBe('failed');
   });
 
   it('config pull clears stale older-version failure when Web exports a newer version', async () => {
@@ -223,6 +278,28 @@ describe('petSyncStatusService', () => {
         lastSyncAt: reportedAtIso,
       },
       updatedAt.getTime()
+    )).rejects.toThrow('Desktop packageVersion must be a positive safe integer');
+    expect(mockPrismaClient.petSyncStatus.findUnique).not.toHaveBeenCalled();
+    expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
+  });
+
+  it('config pull rejects invalid fallback exportedConfigVersion values', async () => {
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(null);
+    mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(0),
+      packageState: 'pulled',
+      requiresLocalConfirmation: true,
+      lastSyncAt: reportedAt,
+    }));
+
+    await expect(petSyncStatusService.reportConfigPull(
+      userId,
+      workspaceId,
+      {
+        lastSyncAt: reportedAtIso,
+      },
+      0
     )).rejects.toThrow('Desktop packageVersion must be a positive safe integer');
     expect(mockPrismaClient.petSyncStatus.findUnique).not.toHaveBeenCalled();
     expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();

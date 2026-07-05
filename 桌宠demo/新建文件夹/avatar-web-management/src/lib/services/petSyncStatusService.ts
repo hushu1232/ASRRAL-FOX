@@ -126,8 +126,13 @@ export const petSyncStatusService = {
     const webConfigVersion = webConfigVersionFromPetConfig(petConfig);
     const reportedAt = normalizeReportedAt(input.lastSyncAt);
     const explicitVersion = input.desktopKnownVersion ?? input.packageVersion;
-    const packageVersion = normalizePackageVersion(explicitVersion);
-    const desktopKnownVersion = BigInt(packageVersion ?? exportedConfigVersion);
+    const packageVersion = normalizePackageVersion(explicitVersion ?? exportedConfigVersion);
+
+    if (packageVersion === null) {
+      throw new ValidationError('Desktop packageVersion must be a positive safe integer');
+    }
+
+    const desktopKnownVersion = BigInt(packageVersion);
     const currentRow = await prisma.petSyncStatus.findUnique({ where: { petConfigId: petConfig.id } });
     const data = buildConfigPullUpdateData(currentRow, desktopKnownVersion, reportedAt);
 
