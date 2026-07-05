@@ -258,6 +258,70 @@ describe('Alife local health adapter', () => {
     expect(JSON.stringify(view)).not.toContain('abc');
   });
 
+  it.each([
+    {
+      baseUrl: 'http://127.0.0.1:8787',
+      leakedAlias: 'http://localhost:8787',
+    },
+    {
+      baseUrl: 'http://localhost:8787',
+      leakedAlias: 'http://127.0.0.1:8787',
+    },
+    {
+      baseUrl: 'http://[::1]:8787',
+      leakedAlias: 'http://localhost:8787',
+    },
+  ])(
+    'rejects loopback base URL aliases embedded in public strings',
+    async ({ baseUrl, leakedAlias }) => {
+      const fetchImpl = jest
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(healthResponse({ service: `Alife ${leakedAlias}` })))
+        .mockResolvedValueOnce(jsonResponse(statusResponse()));
+
+      const view = await getAlifeLocalHealth({
+        env: {
+          ...enabledEnv,
+          FOXD_ALIFE_LOCAL_HEALTH_BASE_URL: baseUrl,
+        },
+        fetch: fetchImpl,
+      });
+
+      expect(view.state).toBe('invalidResponse');
+      expect(JSON.stringify(view)).not.toContain(leakedAlias);
+    },
+  );
+
+  it('rejects public strings that embed nested sensitive identifiers', async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(healthResponse()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          statusResponse({
+            metadata: {
+              ownerId: 'owner-nested-1',
+              nested: {
+                bot_id: 'bot-nested-1',
+                accessToken: 'nested-access-token',
+              },
+            },
+            agent: 'local owner-nested-1',
+            visionReason: 'ready for bot-nested-1',
+            ttsReason: 'using nested-access-token',
+          }),
+        ),
+      );
+
+    const view = await getAlifeLocalHealth({ env: enabledEnv, fetch: fetchImpl });
+    const serialized = JSON.stringify(view);
+
+    expect(view.state).toBe('invalidResponse');
+    expect(serialized).not.toContain('owner-nested-1');
+    expect(serialized).not.toContain('bot-nested-1');
+    expect(serialized).not.toContain('nested-access-token');
+  });
+
   it.each([401, 403])('maps HTTP %s to authRequired without leaking the token', async (status) => {
     const fetchImpl = jest.fn().mockResolvedValueOnce(jsonResponse({ error: 'nope' }, status));
 

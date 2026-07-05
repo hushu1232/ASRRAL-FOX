@@ -390,13 +390,7 @@ function collectSensitiveValues({
   addSensitiveValue(values, token, 1);
   addSensitiveValue(values, baseUrl);
 
-  try {
-    const url = new URL(baseUrl);
-    addSensitiveValue(values, url.host);
-    addSensitiveValue(values, url.hostname);
-  } catch {
-    // Base URL has already been validated; keep this defensive for future callers.
-  }
+  addLoopbackBaseUrlAliases(values, baseUrl);
 
   addNamedSensitiveValues(values, healthData);
   addNamedSensitiveValues(values, statusData);
@@ -404,33 +398,107 @@ function collectSensitiveValues({
   return [...values];
 }
 
-function addNamedSensitiveValues(values: Set<string>, data: unknown): void {
-  if (!isRecord(data)) {
+function addLoopbackBaseUrlAliases(values: Set<string>, baseUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    // Base URL has already been validated; keep this defensive for future callers.
+    return;
+  }
+
+  const defaultPort = new URL(DEFAULT_BASE_URL).port;
+  const ports = new Set([url.port, defaultPort].filter(Boolean));
+  const portSuffixes = ports.size > 0 ? [...ports].map((port) => `:${port}`) : [''];
+
+  for (const hostname of ['127.0.0.1', 'localhost', '[::1]']) {
+    addSensitiveValue(values, hostname, 1);
+
+    for (const portSuffix of portSuffixes) {
+      addSensitiveValue(values, `${hostname}${portSuffix}`, 1);
+      addSensitiveValue(values, `http://${hostname}${portSuffix}`, 1);
+    }
+  }
+
+  addSensitiveValue(values, '::1', 1);
+}
+
+function addNamedSensitiveValues(
+  values: Set<string>,
+  data: unknown,
+  seen = new WeakSet<object>(),
+): void {
+  if (typeof data !== 'object' || data === null) {
+    return;
+  }
+
+  if (seen.has(data)) {
+    return;
+  }
+  seen.add(data);
+
+  if (Array.isArray(data)) {
+    for (const value of data) {
+      addNamedSensitiveValues(values, value, seen);
+    }
     return;
   }
 
   for (const [key, value] of Object.entries(data)) {
-    const normalizedKey = key.toLowerCase();
-    if (
-      normalizedKey === 'ownerid' ||
-      normalizedKey === 'botid' ||
-      normalizedKey === 'token' ||
-      normalizedKey === 'baseurl'
-    ) {
-      addSensitiveValue(values, value);
+    if (isSensitiveResponseKey(key)) {
+      addSensitiveLeafValues(values, value, seen);
     }
+    addNamedSensitiveValues(values, value, seen);
+  }
+}
+
+function addSensitiveLeafValues(values: Set<string>, data: unknown, seen: WeakSet<object>): void {
+  if (typeof data === 'string' || typeof data === 'number') {
+    addSensitiveValue(values, data);
+    return;
+  }
+
+  if (typeof data !== 'object' || data === null) {
+    return;
+  }
+
+  if (seen.has(data)) {
+    return;
+  }
+  seen.add(data);
+
+  const children = Array.isArray(data) ? data : Object.values(data);
+  for (const value of children) {
+    addSensitiveLeafValues(values, value, seen);
   }
 }
 
 function addSensitiveValue(values: Set<string>, value: unknown, minimumLength = 4): void {
-  if (typeof value !== 'string') {
+  let normalized: string;
+
+  if (typeof value === 'string') {
+    normalized = value.trim();
+  } else if (typeof value === 'number' && Number.isFinite(value)) {
+    normalized = String(value);
+  } else {
     return;
   }
 
-  const normalized = value.trim();
   if (normalized.length >= minimumLength) {
     values.add(normalized);
   }
+}
+
+function isSensitiveResponseKey(key: string): boolean {
+  const normalized = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  return (
+    normalized === 'ownerid' ||
+    normalized === 'botid' ||
+    normalized === 'baseurl' ||
+    normalized === 'baseuri' ||
+    normalized === 'token' ||
+    normalized.endsWith('token')
+  );
 }
 
 function publicStringField(
