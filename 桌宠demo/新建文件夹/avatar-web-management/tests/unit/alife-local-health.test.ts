@@ -355,6 +355,57 @@ describe('Alife local health adapter', () => {
     expect(serialized).not.toContain('api-key-raw-1');
   });
 
+  it.each([
+    {
+      label: 'ownerId',
+      metadata: { ownerId: 'abc' },
+      publicFields: { agent: 'local abc' },
+      leakedValue: 'abc',
+    },
+    {
+      label: 'bot_id',
+      metadata: { nested: { bot_id: 'b2' } },
+      publicFields: { visionReason: 'ready for b2' },
+      leakedValue: 'b2',
+    },
+    {
+      label: 'userId',
+      metadata: { userId: 'u1' },
+      publicFields: { agent: 'local u1' },
+      leakedValue: 'u1',
+    },
+    {
+      label: 'numeric session_id',
+      metadata: { session_id: 7 },
+      publicFields: { ttsReason: 'session 7' },
+      leakedValue: '7',
+    },
+  ])(
+    'rejects short response-derived sensitive values from $label',
+    async ({ metadata, publicFields, leakedValue }) => {
+      const fetchImpl = jest
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(healthResponse()))
+        .mockResolvedValueOnce(
+          jsonResponse(
+            statusResponse({
+              metadata,
+              ...publicFields,
+            }),
+          ),
+        );
+
+      const view = await getAlifeLocalHealth({
+        env: enabledEnv,
+        fetch: fetchImpl,
+        now: () => new Date('2026-05-04T00:00:00.000Z'),
+      });
+
+      expect(view.state).toBe('invalidResponse');
+      expect(JSON.stringify(view)).not.toContain(leakedValue);
+    },
+  );
+
   it.each([401, 403])('maps HTTP %s to authRequired without leaking the token', async (status) => {
     const fetchImpl = jest.fn().mockResolvedValueOnce(jsonResponse({ error: 'nope' }, status));
 

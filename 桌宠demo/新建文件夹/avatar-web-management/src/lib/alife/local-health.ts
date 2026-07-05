@@ -455,7 +455,7 @@ function addNamedSensitiveValues(
 
 function addSensitiveLeafValues(values: Set<string>, data: unknown, seen: WeakSet<object>): void {
   if (typeof data === 'string' || typeof data === 'number') {
-    addSensitiveValue(values, data);
+    addSensitiveValue(values, data, 1);
     return;
   }
 
