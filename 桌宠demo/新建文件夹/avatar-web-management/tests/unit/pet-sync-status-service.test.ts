@@ -74,6 +74,160 @@ describe('petSyncStatusService', () => {
     });
   });
 
+  it('config pull creates a pulled desktop status when no row exists', async () => {
+    const exportedConfigVersion = updatedAt.getTime();
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(null);
+    mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(exportedConfigVersion),
+      packageState: 'pulled',
+      requiresLocalConfirmation: true,
+      lastSyncAt: reportedAt,
+    }));
+
+    const status = await petSyncStatusService.reportConfigPull(
+      userId,
+      workspaceId,
+      { lastSyncAt: reportedAtIso },
+      exportedConfigVersion
+    );
+
+    expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith({
+      where: { petConfigId },
+      create: expect.objectContaining({
+        petConfigId,
+        desktopKnownVersion: BigInt(exportedConfigVersion),
+        packageState: 'pulled',
+        requiresLocalConfirmation: true,
+        lastSyncAt: reportedAt,
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        lastErrorDetail: null,
+      }),
+      update: expect.objectContaining({
+        desktopKnownVersion: BigInt(exportedConfigVersion),
+        packageState: 'pulled',
+        requiresLocalConfirmation: true,
+        lastSyncAt: reportedAt,
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        lastErrorDetail: null,
+      }),
+    });
+    expect(status.packageState).toBe('pulled');
+    expect(status.desktopKnownVersion).toBe(exportedConfigVersion);
+    expect(status.summaryKind).toBe('localConfirmationRequired');
+    expect(status.primaryAction).toBe('confirmInDesktop');
+  });
+
+  it('config pull refreshes lastSyncAt without downgrading same-version applied state', async () => {
+    const exportedConfigVersion = updatedAt.getTime();
+    const staleSyncAt = new Date('2026-06-27T09:50:00.000Z');
+    const appliedAt = new Date('2026-06-27T10:02:00.000Z');
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(exportedConfigVersion),
+      desktopAppliedVersion: BigInt(exportedConfigVersion),
+      packageState: 'applied',
+      requiresLocalConfirmation: false,
+      lastSyncAt: staleSyncAt,
+      lastAppliedAt: appliedAt,
+    }));
+    mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(exportedConfigVersion),
+      desktopAppliedVersion: BigInt(exportedConfigVersion),
+      packageState: 'applied',
+      requiresLocalConfirmation: false,
+      lastSyncAt: reportedAt,
+      lastAppliedAt: appliedAt,
+    }));
+
+    const status = await petSyncStatusService.reportConfigPull(
+      userId,
+      workspaceId,
+      {
+        desktopKnownVersion: exportedConfigVersion,
+        lastSyncAt: reportedAtIso,
+      },
+      exportedConfigVersion
+    );
+
+    expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({
+        desktopKnownVersion: BigInt(exportedConfigVersion),
+        packageState: 'applied',
+        requiresLocalConfirmation: false,
+        lastSyncAt: reportedAt,
+      }),
+    }));
+    expect(status.lastSyncAt).toBe(reportedAt);
+    expect(status.packageState).toBe('applied');
+    expect(status.requiresLocalConfirmation).toBe(false);
+    expect(status.summaryKind).toBe('upToDate');
+  });
+
+  it('config pull clears stale older-version failure when Web exports a newer version', async () => {
+    const exportedConfigVersion = updatedAt.getTime();
+    const olderVersion = exportedConfigVersion - 1;
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+    mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(olderVersion),
+      packageState: 'failed',
+      requiresLocalConfirmation: true,
+      lastErrorCode: 'PACKAGE_APPLY_FAILED',
+      lastErrorMessage: 'Old failure',
+      lastErrorDetail: 'Old detail',
+    }));
+    mockPrismaClient.petSyncStatus.upsert.mockResolvedValue(makeSyncStatusRow({
+      desktopKnownVersion: BigInt(exportedConfigVersion),
+      packageState: 'pulled',
+      requiresLocalConfirmation: true,
+      lastSyncAt: reportedAt,
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      lastErrorDetail: null,
+    }));
+
+    const status = await petSyncStatusService.reportConfigPull(
+      userId,
+      workspaceId,
+      { lastSyncAt: reportedAtIso },
+      exportedConfigVersion
+    );
+
+    expect(mockPrismaClient.petSyncStatus.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({
+        desktopKnownVersion: BigInt(exportedConfigVersion),
+        packageState: 'pulled',
+        requiresLocalConfirmation: true,
+        lastSyncAt: reportedAt,
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        lastErrorDetail: null,
+      }),
+    }));
+    expect(status.packageState).toBe('pulled');
+    expect(status.desktopKnownVersion).toBe(exportedConfigVersion);
+    expect(status.lastError).toBeNull();
+    expect(status.summaryKind).toBe('localConfirmationRequired');
+  });
+
+  it('config pull rejects invalid explicit desktopKnownVersion values', async () => {
+    mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
+
+    await expect(petSyncStatusService.reportConfigPull(
+      userId,
+      workspaceId,
+      {
+        desktopKnownVersion: 0,
+        lastSyncAt: reportedAtIso,
+      },
+      updatedAt.getTime()
+    )).rejects.toThrow('Desktop packageVersion must be a positive safe integer');
+    expect(mockPrismaClient.petSyncStatus.findUnique).not.toHaveBeenCalled();
+    expect(mockPrismaClient.petSyncStatus.upsert).not.toHaveBeenCalled();
+  });
+
   it('packageStaged report updates known version and returns localConfirmationRequired', async () => {
     mockPrismaClient.petConfig.findUnique.mockResolvedValue(makePetConfig());
     mockPrismaClient.petSyncStatus.findUnique.mockResolvedValue(null);

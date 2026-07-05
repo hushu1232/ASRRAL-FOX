@@ -21,6 +21,14 @@ export interface ReportPetSyncMilestoneInput {
   } | null;
 }
 
+export interface ReportPetSyncPullInput {
+  clientVersion?: string;
+  capabilities?: string[];
+  lastSyncAt?: string | null;
+  desktopKnownVersion?: number | null;
+  packageVersion?: number | null;
+}
+
 interface PetConfigRow {
   id: string;
   userId: string;
@@ -105,6 +113,38 @@ export const petSyncStatusService = {
     }
 
     return statusFromRow(row, webConfigVersion);
+  },
+
+  async reportConfigPull(
+    userId: string,
+    workspaceId: string,
+    input: ReportPetSyncPullInput,
+    exportedConfigVersion: number
+  ): Promise<DesktopSyncStatus> {
+    const prisma = getPetSyncStatusPrisma();
+    const petConfig = await findPetConfig(prisma, userId, workspaceId);
+    const webConfigVersion = webConfigVersionFromPetConfig(petConfig);
+    const reportedAt = normalizeReportedAt(input.lastSyncAt);
+    const explicitVersion = input.desktopKnownVersion ?? input.packageVersion;
+    const packageVersion = normalizePackageVersion(explicitVersion);
+    const desktopKnownVersion = BigInt(packageVersion ?? exportedConfigVersion);
+    const currentRow = await prisma.petSyncStatus.findUnique({ where: { petConfigId: petConfig.id } });
+    const data = buildConfigPullUpdateData(currentRow, desktopKnownVersion, reportedAt);
+
+    if (data === null) {
+      return statusFromRow(currentRow as PetSyncStatusRow, webConfigVersion, reportedAt);
+    }
+
+    const row = await prisma.petSyncStatus.upsert({
+      where: { petConfigId: petConfig.id },
+      create: {
+        petConfigId: petConfig.id,
+        ...data,
+      },
+      update: data,
+    });
+
+    return statusFromRow(row, webConfigVersion, reportedAt);
   },
 
   async reportMilestone(
@@ -308,6 +348,46 @@ function shouldIgnoreStaleMilestone(
 
   const currentPackageState = toDesktopPackageState(currentRow.packageState);
   return PACKAGE_STATE_RANK[incomingPackageState] < PACKAGE_STATE_RANK[currentPackageState];
+}
+
+function buildConfigPullUpdateData(
+  currentRow: PetSyncStatusRow | null,
+  desktopKnownVersion: bigint,
+  reportedAt: Date
+): Record<string, unknown> | null {
+  const currentVersion = currentRow
+    ? maxVersion(currentRow.desktopKnownVersion, currentRow.desktopAppliedVersion)
+    : null;
+
+  if (currentVersion !== null && desktopKnownVersion < currentVersion) {
+    return null;
+  }
+
+  if (currentRow && currentVersion !== null && desktopKnownVersion === currentVersion) {
+    const currentPackageState = toDesktopPackageState(currentRow.packageState);
+
+    if (PACKAGE_STATE_RANK[currentPackageState] > PACKAGE_STATE_RANK.pulled) {
+      return {
+        desktopKnownVersion,
+        packageState: currentPackageState,
+        requiresLocalConfirmation: currentRow.requiresLocalConfirmation,
+        lastSyncAt: reportedAt,
+        lastErrorCode: currentRow.lastErrorCode,
+        lastErrorMessage: currentRow.lastErrorMessage,
+        lastErrorDetail: currentRow.lastErrorDetail,
+      };
+    }
+  }
+
+  return {
+    desktopKnownVersion,
+    packageState: 'pulled',
+    requiresLocalConfirmation: true,
+    lastSyncAt: reportedAt,
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    lastErrorDetail: null,
+  };
 }
 
 function maxVersion(
