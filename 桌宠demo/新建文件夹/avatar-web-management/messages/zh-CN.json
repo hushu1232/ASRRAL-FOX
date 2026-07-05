@@ -1031,6 +1031,42 @@
       "show": "显示诊断",
       "hide": "收起诊断"
     },
+    "alifeLocalHealth": {
+      "title": "Alife 本地健康",
+      "source": "本地 API",
+      "loading": "正在检查 Alife 本地健康...",
+      "advisory": "仅供提示。Web 不能启动、停止、重启或应用 Alife 运行时变更。",
+      "refresh": "检查本地健康",
+      "notReported": "未上报",
+      "agent": "Agent",
+      "version": "版本",
+      "qchat": "QChat",
+      "vision": "视觉",
+      "tts": "TTS",
+      "outbox": "Outbox",
+      "lastChecked": "上次检查",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "ready": "就绪",
+      "notReady": "未就绪",
+      "reason": "原因",
+      "state": {
+        "notConfigured": "未配置",
+        "reachable": "可访问",
+        "unreachable": "不可访问",
+        "authRequired": "需要认证",
+        "invalidResponse": "响应无效",
+        "error": "错误"
+      },
+      "description": {
+        "notConfigured": "此服务器尚未配置 Alife 本地健康检查。",
+        "reachable": "已连接到经过脱敏的 Alife 本地健康端点。",
+        "unreachable": "无法访问 Alife 本地健康端点。",
+        "authRequired": "Alife 本地健康端点需要服务端认证。",
+        "invalidResponse": "Alife 本地健康端点返回了非预期数据。",
+        "error": "Alife 本地健康检查在读取运行时数据前失败。"
+      }
+    },
     "syncDiagnostics": {
       "title": "实时 WebBridge 诊断",
       "liveData": "实时数据",

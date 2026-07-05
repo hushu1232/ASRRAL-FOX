@@ -1023,6 +1023,42 @@
       "show": "診断を表示",
       "hide": "診断を閉じる"
     },
+    "alifeLocalHealth": {
+      "title": "Alife ローカルヘルス",
+      "source": "ローカル API",
+      "loading": "Alife ローカルヘルスを確認しています...",
+      "advisory": "参照専用です。Web から Alife ランタイムの起動、停止、再起動、適用はできません。",
+      "refresh": "ローカルヘルスを確認",
+      "notReported": "未報告",
+      "agent": "Agent",
+      "version": "バージョン",
+      "qchat": "QChat",
+      "vision": "Vision",
+      "tts": "TTS",
+      "outbox": "Outbox",
+      "lastChecked": "最終確認",
+      "enabled": "有効",
+      "disabled": "無効",
+      "ready": "準備完了",
+      "notReady": "未準備",
+      "reason": "理由",
+      "state": {
+        "notConfigured": "未設定",
+        "reachable": "到達可能",
+        "unreachable": "到達不可",
+        "authRequired": "認証が必要",
+        "invalidResponse": "無効な応答",
+        "error": "エラー"
+      },
+      "description": {
+        "notConfigured": "このサーバーでは Alife ローカルヘルス確認が設定されていません。",
+        "reachable": "サニタイズ済みの Alife ローカルヘルスエンドポイントに到達できます。",
+        "unreachable": "Alife ローカルヘルスエンドポイントに到達できませんでした。",
+        "authRequired": "Alife ローカルヘルスエンドポイントにはサーバー側認証が必要です。",
+        "invalidResponse": "Alife ローカルヘルスエンドポイントから想定外のデータが返されました。",
+        "error": "ランタイムデータを読む前に Alife ローカルヘルス確認が失敗しました。"
+      }
+    },
     "syncDiagnostics": {
       "title": "ライブ WebBridge 診断",
       "liveData": "ライブデータ",

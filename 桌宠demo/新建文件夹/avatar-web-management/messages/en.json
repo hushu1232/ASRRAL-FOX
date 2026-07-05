@@ -1031,6 +1031,42 @@
       "show": "Show diagnostics",
       "hide": "Hide diagnostics"
     },
+    "alifeLocalHealth": {
+      "title": "Alife local health",
+      "source": "Local API",
+      "loading": "Checking Alife local health...",
+      "advisory": "Advisory only. Web cannot start, stop, restart, or apply Alife runtime changes.",
+      "refresh": "Check local health",
+      "notReported": "Not reported",
+      "agent": "Agent",
+      "version": "Version",
+      "qchat": "QChat",
+      "vision": "Vision",
+      "tts": "TTS",
+      "outbox": "Outbox",
+      "lastChecked": "Last checked",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "ready": "Ready",
+      "notReady": "Not ready",
+      "reason": "Reason",
+      "state": {
+        "notConfigured": "Not configured",
+        "reachable": "Reachable",
+        "unreachable": "Unreachable",
+        "authRequired": "Auth required",
+        "invalidResponse": "Invalid response",
+        "error": "Error"
+      },
+      "description": {
+        "notConfigured": "Local Alife health checks are not configured for this server.",
+        "reachable": "The sanitized Alife local health endpoint is reachable.",
+        "unreachable": "The local Alife health endpoint could not be reached.",
+        "authRequired": "The local Alife health endpoint requires server-side auth.",
+        "invalidResponse": "The local Alife health endpoint returned unexpected data.",
+        "error": "The local Alife health check failed before it could read runtime data."
+      }
+    },
     "syncDiagnostics": {
       "title": "Live WebBridge diagnostics",
       "liveData": "Live data",

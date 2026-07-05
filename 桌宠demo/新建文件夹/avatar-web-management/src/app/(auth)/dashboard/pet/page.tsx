@@ -11,9 +11,11 @@ import PetSetupReadiness from '@/components/pet/PetSetupReadiness';
 import PetPreviewCard from '@/components/pet/PetPreviewCard';
 import PetConfigEditor, { type PetAssetPickerType } from '@/components/pet/PetConfigEditor';
 import PetDiagnosticsSection from '@/components/pet/sync/PetDiagnosticsSection';
+import AlifeLocalHealthPanel from '@/components/pet/sync/AlifeLocalHealthPanel';
 import PetSyncDiagnosticsPanel from '@/components/pet/sync/PetSyncDiagnosticsPanel';
 import PetSyncStatusPanel from '@/components/pet/sync/PetSyncStatusPanel';
 import WebBridgeMockStatusPanel from '@/components/pet/sync/WebBridgeMockStatusPanel';
+import type { AlifeLocalHealthView } from '@/lib/alife/local-health';
 import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
 
 interface PetConfig {
@@ -52,6 +54,8 @@ export default function PetConfigPage() {
   const [wizardDismissed, setWizardDismissed] = useState(false);
   const [syncStatus, setSyncStatus] = useState<DesktopSyncStatus | null>(null);
   const [syncStatusLoading, setSyncStatusLoading] = useState(false);
+  const [alifeLocalHealth, setAlifeLocalHealth] = useState<AlifeLocalHealthView | null>(null);
+  const [alifeLocalHealthLoading, setAlifeLocalHealthLoading] = useState(false);
   const [form] = Form.useForm();
 
   const fetchConfig = async () => {
@@ -78,8 +82,23 @@ export default function PetConfigPage() {
     }
   };
 
+  const fetchAlifeLocalHealth = async () => {
+    setAlifeLocalHealthLoading(true);
+    try {
+      const res = await apiGet<AlifeLocalHealthView>('/api/pet/alife/local-health');
+      if (res.success && res.data) {
+        setAlifeLocalHealth(res.data);
+      }
+    } finally {
+      setAlifeLocalHealthLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetchConfig().then(() => fetchSyncStatus());
+    fetchConfig().then(() => {
+      fetchSyncStatus();
+      fetchAlifeLocalHealth();
+    });
   }, []);
 
   useEffect(() => {
@@ -205,6 +224,12 @@ export default function PetConfigPage() {
           status={syncStatus}
           loading={syncStatusLoading}
           onRefresh={fetchSyncStatus}
+        />
+
+        <AlifeLocalHealthPanel
+          health={alifeLocalHealth}
+          loading={alifeLocalHealthLoading}
+          onRefresh={fetchAlifeLocalHealth}
         />
 
         <PetSyncStatusPanel
