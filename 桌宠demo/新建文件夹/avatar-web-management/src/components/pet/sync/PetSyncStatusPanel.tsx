@@ -3,6 +3,7 @@
 import { Alert, Button, Descriptions, Space, Spin, Steps, Tag, Tooltip, Typography } from 'antd';
 import { DesktopOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import EvidenceGrid from '@/components/ui/EvidenceGrid';
 import OperationPanel from '@/components/ui/OperationPanel';
 import MetricTile from '@/components/ui/MetricTile';
 import StatusChip from '@/components/ui/StatusChip';
@@ -80,14 +81,7 @@ export default function PetSyncStatusPanel({
           </Text>
         </Space>
 
-        <div
-          data-testid="live-sync-evidence-grid"
-          style={{
-            display: 'grid',
-            gap: 12,
-            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))',
-          }}
-        >
+        <EvidenceGrid data-testid="live-sync-evidence-grid">
           <MetricTile label={t('webVersion')} value={status.webConfigVersion} />
           <MetricTile
             label={t('desktopKnownVersion')}
@@ -101,7 +95,7 @@ export default function PetSyncStatusPanel({
             label={t('localConfirmation')}
             value={status.requiresLocalConfirmation ? t('required') : t('notRequired')}
           />
-        </div>
+        </EvidenceGrid>
 
         <Steps
           size="small"

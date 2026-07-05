@@ -67,4 +67,16 @@ describe('pet console responsive guardrails', () => {
       "background: 'var(--bg-card)',\n        border: '1px solid var(--border-subtle)',\n        borderRadius: 'var(--ds-panel-radius)'",
     );
   });
+
+  it('uses the shared EvidenceGrid for primary runtime and sync evidence', () => {
+    const runtimeSummary = readSource('src/components/pet/PetRuntimeSummary.tsx');
+    const syncStatusPanel = readSource('src/components/pet/sync/PetSyncStatusPanel.tsx');
+
+    for (const source of [runtimeSummary, syncStatusPanel]) {
+      expect(source).toContain("import EvidenceGrid from '@/components/ui/EvidenceGrid'");
+      expect(source).not.toContain(
+        "gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))'",
+      );
+    }
+  });
 });

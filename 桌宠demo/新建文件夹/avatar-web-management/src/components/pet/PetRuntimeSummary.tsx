@@ -4,6 +4,7 @@ import { DesktopOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Space, Tooltip, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
 import { useId } from 'react';
+import EvidenceGrid from '@/components/ui/EvidenceGrid';
 import MetricTile from '@/components/ui/MetricTile';
 import OperationPanel from '@/components/ui/OperationPanel';
 import StatusChip from '@/components/ui/StatusChip';
@@ -48,14 +49,7 @@ export default function PetRuntimeSummary({ status, loading, onRefresh }: PetRun
       extra={renderPrimaryAction(status.primaryAction, loading, onRefresh, tSync)}
     >
       <Space vertical size="middle" style={{ width: '100%' }}>
-        <div
-          data-testid="sync-command-strip"
-          style={{
-            display: 'grid',
-            gap: 12,
-            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))',
-          }}
-        >
+        <EvidenceGrid data-testid="sync-command-strip">
           <div>
             <Text
               type="secondary"
@@ -110,15 +104,8 @@ export default function PetRuntimeSummary({ status, loading, onRefresh }: PetRun
               {tPet(`runtimeSummary.nextAction.${status.primaryAction}`)}
             </div>
           </div>
-        </div>
-        <div
-          data-testid="sync-runtime-metrics-grid"
-          style={{
-            display: 'grid',
-            gap: 12,
-            gridTemplateColumns: 'repeat(auto-fit, minmax(var(--ds-panel-gridMinWidth), 1fr))',
-          }}
-        >
+        </EvidenceGrid>
+        <EvidenceGrid data-testid="sync-runtime-metrics-grid">
           <MetricTile label={tSync('webVersion')} value={status.webConfigVersion} />
           <MetricTile
             label={tSync('desktopKnownVersion')}
@@ -132,7 +119,7 @@ export default function PetRuntimeSummary({ status, loading, onRefresh }: PetRun
             label={tSync('localConfirmation')}
             value={status.requiresLocalConfirmation ? tSync('required') : tSync('notRequired')}
           />
-        </div>
+        </EvidenceGrid>
       </Space>
     </OperationPanel>
   );
