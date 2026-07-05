@@ -240,6 +240,24 @@ describe('Alife local health adapter', () => {
     expect(serialized).not.toContain('127.0.0.1:8787');
   });
 
+  it('rejects allowed response strings that embed short configured tokens', async () => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(healthResponse({ service: 'Alife abc' })))
+      .mockResolvedValueOnce(jsonResponse(statusResponse()));
+
+    const view = await getAlifeLocalHealth({
+      env: {
+        ...enabledEnv,
+        FOXD_ALIFE_LOCAL_HEALTH_TOKEN: 'abc',
+      },
+      fetch: fetchImpl,
+    });
+
+    expect(view.state).toBe('invalidResponse');
+    expect(JSON.stringify(view)).not.toContain('abc');
+  });
+
   it.each([401, 403])('maps HTTP %s to authRequired without leaking the token', async (status) => {
     const fetchImpl = jest.fn().mockResolvedValueOnce(jsonResponse({ error: 'nope' }, status));
 

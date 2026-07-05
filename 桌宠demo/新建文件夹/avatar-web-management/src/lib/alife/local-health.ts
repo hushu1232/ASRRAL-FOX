@@ -387,7 +387,7 @@ function collectSensitiveValues({
   statusData: unknown;
 }): string[] {
   const values = new Set<string>();
-  addSensitiveValue(values, token);
+  addSensitiveValue(values, token, 1);
   addSensitiveValue(values, baseUrl);
 
   try {
@@ -422,13 +422,13 @@ function addNamedSensitiveValues(values: Set<string>, data: unknown): void {
   }
 }
 
-function addSensitiveValue(values: Set<string>, value: unknown): void {
+function addSensitiveValue(values: Set<string>, value: unknown, minimumLength = 4): void {
   if (typeof value !== 'string') {
     return;
   }
 
   const normalized = value.trim();
-  if (normalized.length >= 4) {
+  if (normalized.length >= minimumLength) {
     values.add(normalized);
   }
 }
