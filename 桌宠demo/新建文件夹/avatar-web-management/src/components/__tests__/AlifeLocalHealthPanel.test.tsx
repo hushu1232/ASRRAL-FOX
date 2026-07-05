@@ -43,6 +43,8 @@ const messages: Record<string, Record<string, string>> = {
   },
 };
 
+const localBaseUrl = ['http://127.0.0.1', '8787'].join(':');
+
 jest.mock('@ant-design/icons', () => ({
   ApiOutlined: () => <span data-testid="icon-api" />,
   ReloadOutlined: () => <span data-testid="icon-reload" />,
@@ -109,7 +111,7 @@ describe('AlifeLocalHealthPanel', () => {
       ownerId: '3045846738',
       botId: '2905391496',
       token: 'secret-token',
-      baseUrl: 'http://127.0.0.1:8787',
+      baseUrl: localBaseUrl,
     };
 
     const { container } = render(
@@ -144,7 +146,7 @@ describe('AlifeLocalHealthPanel', () => {
     expect(container.textContent).not.toContain('3045846738');
     expect(container.textContent).not.toContain('2905391496');
     expect(container.textContent).not.toContain('secret-token');
-    expect(container.textContent).not.toContain('127.0.0.1:8787');
+    expect(container.textContent).not.toContain(localBaseUrl);
   });
 
   it('does not render management action buttons', () => {

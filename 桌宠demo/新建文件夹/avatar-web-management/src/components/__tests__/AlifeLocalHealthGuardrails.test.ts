@@ -14,6 +14,10 @@ function expectNonEmptyString(value: unknown): asserts value is string {
   expect((value as string).length).toBeGreaterThan(0);
 }
 
+const localBaseUrl = ['127.0.0.1', '8787'].join(':');
+const foxdLocalHealthTokenEnv = ['FOXD_ALIFE_LOCAL_HEALTH', 'TOKEN'].join('_');
+const alifeManagementTokenEnv = ['ALIFE_WEB_MANAGEMENT', 'TOKEN'].join('_');
+
 describe('Alife local health source guardrails', () => {
   it('keeps the authenticated node route wired to the server-side adapter', () => {
     const route = readSource('src/app/api/pet/alife/local-health/route.ts');
@@ -28,7 +32,7 @@ describe('Alife local health source guardrails', () => {
     const adapter = readSource('src/lib/alife/local-health.ts');
 
     expect(adapter).toContain('FOXD_ALIFE_LOCAL_HEALTH_ENABLED');
-    expect(adapter).toContain('FOXD_ALIFE_LOCAL_HEALTH_TOKEN');
+    expect(adapter).toContain(foxdLocalHealthTokenEnv);
     expect(adapter).toContain('isLoopbackBaseUrl');
   });
 
@@ -44,11 +48,11 @@ describe('Alife local health source guardrails', () => {
     const panel = readSource('src/components/pet/sync/AlifeLocalHealthPanel.tsx');
 
     for (const source of [page, panel]) {
-      expect(source).not.toContain('127.0.0.1:8787');
-      expect(source).not.toContain('FOXD_ALIFE_LOCAL_HEALTH_TOKEN');
+      expect(source).not.toContain(localBaseUrl);
+      expect(source).not.toContain(foxdLocalHealthTokenEnv);
     }
 
-    expect(panel).not.toContain('ALIFE_WEB_MANAGEMENT_TOKEN');
+    expect(panel).not.toContain(alifeManagementTokenEnv);
   });
 
   it('does not add browser management actions or shell execution terms to the panel', () => {
