@@ -63,6 +63,10 @@ const envSchema = z.object({
   RIGGING_CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().int().positive().default(5),
   GPT_SOVITS_URL: z.string().url().default('http://localhost:8002'),
   OLLAMA_URL: z.string().url().default('http://localhost:11434'),
+  FOXD_ALIFE_LOCAL_HEALTH_ENABLED: z.enum(['true', 'false']).optional(),
+  FOXD_ALIFE_LOCAL_HEALTH_BASE_URL: z.string().url().optional(),
+  FOXD_ALIFE_LOCAL_HEALTH_TOKEN: z.string().optional(),
+  FOXD_ALIFE_LOCAL_HEALTH_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
 
   // Sentry（可选）
   SENTRY_DSN: z.string().optional(),
@@ -99,19 +103,13 @@ export function validateEnv(): Env {
   // 生产环境额外检查
   if (env.NODE_ENV === 'production') {
     if (!env.JWT_PRIVATE_KEY && !env.JWT_SECRET) {
-      throw new Error(
-        '[Env] 生产环境必须设置 JWT_PRIVATE_KEY（推荐）或 JWT_SECRET'
-      );
+      throw new Error('[Env] 生产环境必须设置 JWT_PRIVATE_KEY（推荐）或 JWT_SECRET');
     }
     if (!env.DATABASE_PATH && !env.DATABASE_URL) {
-      throw new Error(
-        '[Env] 生产环境必须设置 DATABASE_PATH 或 DATABASE_URL'
-      );
+      throw new Error('[Env] 生产环境必须设置 DATABASE_PATH 或 DATABASE_URL');
     }
     if (env.JWT_SECRET && env.JWT_SECRET.length < 32) {
-      throw new Error(
-        '[Env] 生产环境 JWT_SECRET 长度不足（至少需要 32 个字符）'
-      );
+      throw new Error('[Env] 生产环境 JWT_SECRET 长度不足（至少需要 32 个字符）');
     }
   }
 

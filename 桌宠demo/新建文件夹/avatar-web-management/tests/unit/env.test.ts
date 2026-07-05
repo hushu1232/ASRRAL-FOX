@@ -32,4 +32,19 @@ describe('env validation', () => {
 
     expect(() => validateEnv()).toThrow(/RIGGING_SERVICE_URL/);
   });
+
+  it('preserves optional Alife local health adapter settings', async () => {
+    process.env.FOXD_ALIFE_LOCAL_HEALTH_ENABLED = 'true';
+    process.env.FOXD_ALIFE_LOCAL_HEALTH_BASE_URL = 'http://127.0.0.1:8787';
+    process.env.FOXD_ALIFE_LOCAL_HEALTH_TOKEN = 'local-token';
+    process.env.FOXD_ALIFE_LOCAL_HEALTH_TIMEOUT_MS = '1500';
+
+    const { validateEnv } = await import('@/env');
+    const env = validateEnv();
+
+    expect(env.FOXD_ALIFE_LOCAL_HEALTH_ENABLED).toBe('true');
+    expect(env.FOXD_ALIFE_LOCAL_HEALTH_BASE_URL).toBe('http://127.0.0.1:8787');
+    expect(env.FOXD_ALIFE_LOCAL_HEALTH_TOKEN).toBe('local-token');
+    expect(env.FOXD_ALIFE_LOCAL_HEALTH_TIMEOUT_MS).toBe(1500);
+  });
 });

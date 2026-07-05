@@ -294,6 +294,50 @@ describe('Alife local health adapter', () => {
     },
   );
 
+  it.each([
+    'http://[0:0:0:0:0:0:0:1]:8787',
+    'http://2130706433:8787',
+    'http://0x7f000001:8787',
+    'http://017700000001:8787',
+  ])('rejects canonical loopback URL forms embedded in public strings', async (leakedAlias) => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(healthResponse({ service: `Alife ${leakedAlias}` })))
+      .mockResolvedValueOnce(jsonResponse(statusResponse()));
+
+    const view = await getAlifeLocalHealth({
+      env: enabledEnv,
+      fetch: fetchImpl,
+    });
+
+    expect(view.state).toBe('invalidResponse');
+    expect(JSON.stringify(view)).not.toContain(leakedAlias);
+  });
+
+  it.each([
+    'D:\\Alife\\models\\voice.bin',
+    'C:\\Users\\foxd\\AppData\\Local\\Alife\\cache.json',
+    '\\\\localhost\\Alife\\cache.json',
+    'file:///D:/Alife/models/voice.bin',
+    '/home/foxd/.cache/alife/model.bin',
+  ])('rejects local filesystem paths embedded in public strings', async (localPath) => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(healthResponse()))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          statusResponse({
+            visionReason: `loaded ${localPath}`,
+          }),
+        ),
+      );
+
+    const view = await getAlifeLocalHealth({ env: enabledEnv, fetch: fetchImpl });
+
+    expect(view.state).toBe('invalidResponse');
+    expect(JSON.stringify(view)).not.toContain(localPath);
+  });
+
   it('rejects public strings that embed nested sensitive identifiers', async () => {
     const fetchImpl = jest
       .fn()
@@ -499,6 +543,53 @@ describe('Alife local health adapter', () => {
       await Promise.resolve();
       expect(bodyReadStarted).toBe(true);
       jest.advanceTimersByTime(5);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const result = await Promise.race([viewPromise, Promise.resolve({ state: 'stillPending' })]);
+
+      expect(result).toEqual({
+        state: 'unreachable',
+        configured: true,
+        checkedAt: expect.any(String),
+        reason: 'requestFailed',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('clamps overlarge timeout configuration to the advisory health-check budget', async () => {
+    jest.useFakeTimers();
+
+    try {
+      const fetchImpl = jest.fn(
+        async (_url: string, init?: RequestInit) =>
+          ({
+            ok: true,
+            status: 200,
+            json: () =>
+              new Promise((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => {
+                  reject(new DOMException('Aborted', 'AbortError'));
+                });
+              }),
+          }) as Response,
+      );
+
+      const viewPromise = getAlifeLocalHealth({
+        env: {
+          ...enabledEnv,
+          FOXD_ALIFE_LOCAL_HEALTH_TIMEOUT_MS: '999999',
+        },
+        fetch: fetchImpl,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      jest.advanceTimersByTime(10_000);
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();

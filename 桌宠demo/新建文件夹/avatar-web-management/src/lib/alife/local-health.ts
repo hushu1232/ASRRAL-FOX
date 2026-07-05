@@ -50,6 +50,7 @@ type JsonFetchErrorResult = Exclude<JsonFetchResult, { kind: 'ok' }>;
 const DEFAULT_ENABLED = 'false';
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8787';
 const DEFAULT_TIMEOUT_MS = 1500;
+const MAX_TIMEOUT_MS = 10_000;
 
 export async function getAlifeLocalHealth(
   options: GetAlifeLocalHealthOptions = {},
@@ -175,11 +176,16 @@ export function isLoopbackBaseUrl(value: string): boolean {
   }
 
   const hostname = url.hostname.toLowerCase();
+  return isLoopbackHostname(hostname);
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
   return (
-    hostname === '127.0.0.1' ||
-    hostname === 'localhost' ||
-    hostname === '[::1]' ||
-    hostname === '::1'
+    normalized === '127.0.0.1' ||
+    normalized === 'localhost' ||
+    normalized === '[::1]' ||
+    normalized === '::1'
   );
 }
 
@@ -369,7 +375,9 @@ function normalizeTimeoutMs(value: string | undefined): number {
   }
 
   const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TIMEOUT_MS;
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.min(parsed, MAX_TIMEOUT_MS)
+    : DEFAULT_TIMEOUT_MS;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -528,13 +536,42 @@ function publicStringField(
     return null;
   }
 
-  return containsSensitiveValue(value, sensitiveValues) ? null : value;
+  return containsSensitiveValue(value, sensitiveValues) ||
+    containsLoopbackUrl(value) ||
+    containsLocalFilesystemPath(value)
+    ? null
+    : value;
 }
 
 function containsSensitiveValue(value: string, sensitiveValues: string[]): boolean {
   const normalizedValue = value.toLowerCase();
   return sensitiveValues.some((sensitiveValue) =>
     normalizedValue.includes(sensitiveValue.toLowerCase()),
+  );
+}
+
+function containsLoopbackUrl(value: string): boolean {
+  const urlMatches = value.match(/\bhttps?:\/\/[^\s"'<>]+/gi) ?? [];
+
+  return urlMatches.some((match) => {
+    const candidate = match.replace(/[),.;]+$/g, '');
+    try {
+      const url = new URL(candidate);
+      return isLoopbackHostname(url.hostname);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function containsLocalFilesystemPath(value: string): boolean {
+  return (
+    /\bfile:\/\//i.test(value) ||
+    /(?:^|[\s"'(])[A-Za-z]:[\\/][^\s"'<>]*/.test(value) ||
+    /(?:^|[\s"'(])\\\\[^\\/\s"'<>]+\\[^\s"'<>]+/.test(value) ||
+    /(?:^|[\s"'(])\/(?:home|users|var|tmp|opt|etc|usr|mnt|volumes|root|workspace|cache|app|data)\//i.test(
+      value,
+    )
   );
 }
 

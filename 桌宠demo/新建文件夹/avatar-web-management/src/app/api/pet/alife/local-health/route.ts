@@ -10,7 +10,9 @@ const log = createLogger('api:pet:alife:local-health');
 export const GET = withAuth(async (_req, _user) => {
   try {
     const localHealth = await getAlifeLocalHealth();
-    return success(localHealth);
+    const response = success(localHealth);
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
   } catch (err) {
     log.error({ err }, 'Alife local health failed');
     return error(err);

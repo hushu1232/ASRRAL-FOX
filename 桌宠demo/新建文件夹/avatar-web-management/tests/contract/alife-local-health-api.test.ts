@@ -18,10 +18,13 @@ jest.mock('@/lib/auth/middleware', () => ({
   withAuth: jest.fn((handler: Function) => {
     return async (req: Request, ctx?: unknown) => {
       if (!req.headers.get('authorization')) {
-        return new Response(JSON.stringify({ success: false, error: 'Missing authorization header' }), {
-          status: 401,
-          headers: { 'content-type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({ success: false, error: 'Missing authorization header' }),
+          {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
       }
       return handler(req, testUser, ctx);
     };
@@ -80,6 +83,7 @@ describe('/api/pet/alife/local-health contract', () => {
     const { status, body } = await parseResponse(res);
 
     expect(status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(body).toEqual({ success: true, data: localHealth });
     expect(JSON.stringify(body)).not.toContain('secret-token');
     expect(JSON.stringify(body)).not.toContain('127.0.0.1:8787');
