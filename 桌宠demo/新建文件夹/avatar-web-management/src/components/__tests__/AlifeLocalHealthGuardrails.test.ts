@@ -25,7 +25,9 @@ describe('Alife local health source guardrails', () => {
     expect(route).toContain("export const runtime = 'nodejs'");
     expect(route).toContain('withAuth');
     expect(route).toContain('getAlifeLocalHealth');
-    expect(route).toContain('export const GET = withAuth');
+    expect(route).toContain('const getLocalHealth = withAuth');
+    expect(route).toContain('export async function GET');
+    expect(route).toContain("response.headers.set('Cache-Control', NO_STORE)");
   });
 
   it('keeps local health configuration and loopback validation server-side', () => {

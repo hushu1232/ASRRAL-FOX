@@ -51,6 +51,7 @@ const DEFAULT_ENABLED = 'false';
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8787';
 const DEFAULT_TIMEOUT_MS = 1500;
 const MAX_TIMEOUT_MS = 10_000;
+const MIN_TOKEN_LENGTH = 8;
 
 export async function getAlifeLocalHealth(
   options: GetAlifeLocalHealthOptions = {},
@@ -71,7 +72,7 @@ export async function getAlifeLocalHealth(
   const baseUrl = env.FOXD_ALIFE_LOCAL_HEALTH_BASE_URL ?? DEFAULT_BASE_URL;
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
 
-  if (!normalizedBaseUrl || !isLoopbackBaseUrl(normalizedBaseUrl)) {
+  if (!normalizedBaseUrl || !isLoopbackBaseUrl(baseUrl)) {
     return {
       state: 'error',
       configured: true,
@@ -87,6 +88,14 @@ export async function getAlifeLocalHealth(
       configured: true,
       checkedAt,
       reason: 'tokenMissing',
+    };
+  }
+  if (token.length < MIN_TOKEN_LENGTH) {
+    return {
+      state: 'authRequired',
+      configured: true,
+      checkedAt,
+      reason: 'tokenTooShort',
     };
   }
 
@@ -164,6 +173,10 @@ export function isLoopbackBaseUrl(value: string): boolean {
     return false;
   }
 
+  if (!hasAllowedConfiguredLoopbackHost(value)) {
+    return false;
+  }
+
   let url: URL;
   try {
     url = new URL(normalized);
@@ -187,6 +200,44 @@ function isLoopbackHostname(hostname: string): boolean {
     normalized === '[::1]' ||
     normalized === '::1'
   );
+}
+
+function hasAllowedConfiguredLoopbackHost(value: string): boolean {
+  const rawAuthority = extractRawHttpAuthority(value);
+  if (!rawAuthority) {
+    return false;
+  }
+
+  if (rawAuthority.includes('@')) {
+    return false;
+  }
+
+  const hostname = extractRawHostname(rawAuthority);
+  return (
+    hostname === '127.0.0.1' ||
+    hostname === 'localhost' ||
+    hostname === '[::1]' ||
+    hostname === '::1'
+  );
+}
+
+function extractRawHttpAuthority(value: string): string | null {
+  const match = value.trim().match(/^http:\/\/([^/?#]+)(?:[/?#]|$)/i);
+  return match?.[1].toLowerCase() ?? null;
+}
+
+function extractRawHostname(authority: string): string {
+  if (authority.startsWith('[')) {
+    const end = authority.indexOf(']');
+    return end >= 0 ? authority.slice(0, end + 1) : authority;
+  }
+
+  if (authority === '::1' || authority.startsWith('::1:')) {
+    return '::1';
+  }
+
+  const colon = authority.indexOf(':');
+  return colon >= 0 ? authority.slice(0, colon) : authority;
 }
 
 async function fetchJson(
@@ -436,6 +487,7 @@ function addNamedSensitiveValues(
   values: Set<string>,
   data: unknown,
   seen = new WeakSet<object>(),
+  sensitiveContainer = false,
 ): void {
   if (typeof data !== 'object' || data === null) {
     return;
@@ -454,10 +506,13 @@ function addNamedSensitiveValues(
   }
 
   for (const [key, value] of Object.entries(data)) {
-    if (isSensitiveResponseKey(key)) {
+    const keyIsSensitive = isSensitiveResponseKey(key);
+    const childIsSensitiveContainer = sensitiveContainer || isSensitiveContainerKey(key);
+
+    if (keyIsSensitive || (sensitiveContainer && isSensitiveIdentifierLeafKey(key))) {
       addSensitiveLeafValues(values, value, seen);
     }
-    addNamedSensitiveValues(values, value, seen);
+    addNamedSensitiveValues(values, value, seen, childIsSensitiveContainer);
   }
 }
 
@@ -499,7 +554,7 @@ function addSensitiveValue(values: Set<string>, value: unknown, minimumLength = 
 }
 
 function isSensitiveResponseKey(key: string): boolean {
-  const normalized = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const normalized = normalizeResponseKey(key);
   const sensitiveKeys = new Set([
     'apikey',
     'authorization',
@@ -526,6 +581,20 @@ function isSensitiveResponseKey(key: string): boolean {
   );
 }
 
+function isSensitiveContainerKey(key: string): boolean {
+  return new Set(['bot', 'client', 'owner', 'session', 'user', 'workspace']).has(
+    normalizeResponseKey(key),
+  );
+}
+
+function isSensitiveIdentifierLeafKey(key: string): boolean {
+  return new Set(['id', 'ids', 'identifier', 'identifiers']).has(normalizeResponseKey(key));
+}
+
+function normalizeResponseKey(key: string): string {
+  return key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+
 function publicStringField(
   data: Record<string, unknown>,
   key: string,
@@ -545,23 +614,65 @@ function publicStringField(
 
 function containsSensitiveValue(value: string, sensitiveValues: string[]): boolean {
   const normalizedValue = value.toLowerCase();
-  return sensitiveValues.some((sensitiveValue) =>
-    normalizedValue.includes(sensitiveValue.toLowerCase()),
-  );
+  return sensitiveValues.some((sensitiveValue) => {
+    const normalizedSensitiveValue = sensitiveValue.toLowerCase();
+    if (normalizedSensitiveValue.length < 4) {
+      return new RegExp(
+        `(^|[^a-z0-9])${escapeRegExp(normalizedSensitiveValue)}($|[^a-z0-9])`,
+        'i',
+      ).test(value);
+    }
+
+    return normalizedValue.includes(normalizedSensitiveValue);
+  });
 }
 
 function containsLoopbackUrl(value: string): boolean {
   const urlMatches = value.match(/\bhttps?:\/\/[^\s"'<>]+/gi) ?? [];
 
-  return urlMatches.some((match) => {
+  if (
+    urlMatches.some((match) => {
+      const candidate = match.replace(/[),.;]+$/g, '');
+      try {
+        const url = new URL(candidate);
+        return isPublicLoopbackHostname(url.hostname);
+      } catch {
+        return false;
+      }
+    })
+  ) {
+    return true;
+  }
+
+  const bareMatches =
+    value.match(
+      /(?:^|[\s"'(])(\[[0-9a-f:.]+\]:\d+|(?:0x[0-9a-f]+|0[0-7]+|\d+|(?:\d{1,3}\.){0,3}\d{1,3}):\d+)(?=$|[\s"'),.;])/gi,
+    ) ?? [];
+
+  return bareMatches.some((match) => {
     const candidate = match.replace(/[),.;]+$/g, '');
+    const trimmedCandidate = candidate.replace(/^[\s"'(]+/, '');
     try {
-      const url = new URL(candidate);
-      return isLoopbackHostname(url.hostname);
+      const url = new URL(`http://${trimmedCandidate}`);
+      return isPublicLoopbackHostname(url.hostname);
     } catch {
       return false;
     }
   });
+}
+
+function isPublicLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[(.*)\]$/, '$1');
+  return (
+    isLoopbackHostname(hostname) ||
+    normalized === '0:0:0:0:0:0:0:1' ||
+    normalized === '::ffff:127.0.0.1' ||
+    normalized === '::ffff:7f00:1'
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function containsLocalFilesystemPath(value: string): boolean {

@@ -106,6 +106,52 @@ describe('Alife local health adapter', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('rejects short configured tokens before fetching', async () => {
+    const fetchImpl = jest.fn();
+
+    const view = await getAlifeLocalHealth({
+      env: {
+        ...enabledEnv,
+        FOXD_ALIFE_LOCAL_HEALTH_TOKEN: 'abc',
+      },
+      fetch: fetchImpl,
+    });
+
+    expect(view).toEqual({
+      state: 'authRequired',
+      configured: true,
+      checkedAt: expect.any(String),
+      reason: 'tokenTooShort',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'http://2130706433:8787',
+    'http://0x7f000001:8787',
+    'http://017700000001:8787',
+    'http://127.1:8787',
+  ])('rejects configured loopback alias %s before fetching', async (baseUrl) => {
+    const fetchImpl = jest.fn();
+
+    const view = await getAlifeLocalHealth({
+      env: {
+        ...enabledEnv,
+        FOXD_ALIFE_LOCAL_HEALTH_BASE_URL: baseUrl,
+      },
+      fetch: fetchImpl,
+    });
+
+    expect(isLoopbackBaseUrl(baseUrl)).toBe(false);
+    expect(view).toEqual({
+      state: 'error',
+      configured: true,
+      checkedAt: expect.any(String),
+      reason: 'baseUrlMustBeLoopback',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('normalizes configured loopback base URLs to the local endpoint origin', async () => {
     const fetchImpl = jest
       .fn()
@@ -242,22 +288,22 @@ describe('Alife local health adapter', () => {
     expect(serialized).not.toContain('127.0.0.1:8787');
   });
 
-  it('rejects allowed response strings that embed short configured tokens', async () => {
+  it('rejects allowed response strings that embed configured tokens', async () => {
     const fetchImpl = jest
       .fn()
-      .mockResolvedValueOnce(jsonResponse(healthResponse({ service: 'Alife abc' })))
+      .mockResolvedValueOnce(jsonResponse(healthResponse({ service: 'Alife abcd1234' })))
       .mockResolvedValueOnce(jsonResponse(statusResponse()));
 
     const view = await getAlifeLocalHealth({
       env: {
         ...enabledEnv,
-        FOXD_ALIFE_LOCAL_HEALTH_TOKEN: 'abc',
+        FOXD_ALIFE_LOCAL_HEALTH_TOKEN: 'abcd1234',
       },
       fetch: fetchImpl,
     });
 
     expect(view.state).toBe('invalidResponse');
-    expect(JSON.stringify(view)).not.toContain('abc');
+    expect(JSON.stringify(view)).not.toContain('abcd1234');
   });
 
   it.each([
@@ -293,6 +339,27 @@ describe('Alife local health adapter', () => {
       expect(JSON.stringify(view)).not.toContain(leakedAlias);
     },
   );
+
+  it.each([
+    '2130706433:8787',
+    '0x7f000001:8787',
+    '017700000001:8787',
+    '127.1:8787',
+    '[::ffff:127.0.0.1]:8787',
+  ])('rejects bare loopback aliases embedded in public strings', async (leakedAlias) => {
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(healthResponse({ service: `Alife ${leakedAlias}` })))
+      .mockResolvedValueOnce(jsonResponse(statusResponse()));
+
+    const view = await getAlifeLocalHealth({
+      env: enabledEnv,
+      fetch: fetchImpl,
+    });
+
+    expect(view.state).toBe('invalidResponse');
+    expect(JSON.stringify(view)).not.toContain(leakedAlias);
+  });
 
   it.each([
     'http://[0:0:0:0:0:0:0:1]:8787',
@@ -398,6 +465,57 @@ describe('Alife local health adapter', () => {
     expect(serialized).not.toContain('workspace-raw-1');
     expect(serialized).not.toContain('api-key-raw-1');
   });
+
+  it.each([
+    {
+      label: 'owner.id',
+      metadata: { owner: { id: 'abc' } },
+      publicFields: { agent: 'local abc' },
+      leakedValue: 'abc',
+    },
+    {
+      label: 'bot.id',
+      metadata: { bot: { id: 'b2' } },
+      publicFields: { visionReason: 'ready for b2' },
+      leakedValue: 'b2',
+    },
+    {
+      label: 'workspace.ids',
+      metadata: { workspace: { ids: ['ws-a'] } },
+      publicFields: { ttsReason: 'workspace ws-a' },
+      leakedValue: 'ws-a',
+    },
+    {
+      label: 'numeric session.id',
+      metadata: { session: { id: 91 } },
+      publicFields: { ttsReason: 'session 91' },
+      leakedValue: '91',
+    },
+  ])(
+    'rejects public strings that embed contextual nested sensitive identifiers from $label',
+    async ({ metadata, publicFields, leakedValue }) => {
+      const fetchImpl = jest
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(healthResponse()))
+        .mockResolvedValueOnce(
+          jsonResponse(
+            statusResponse({
+              metadata,
+              ...publicFields,
+            }),
+          ),
+        );
+
+      const view = await getAlifeLocalHealth({
+        env: enabledEnv,
+        fetch: fetchImpl,
+        now: () => new Date('2026-05-04T00:00:00.000Z'),
+      });
+
+      expect(view.state).toBe('invalidResponse');
+      expect(JSON.stringify(view)).not.toContain(leakedValue);
+    },
+  );
 
   it.each([
     {

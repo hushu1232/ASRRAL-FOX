@@ -96,7 +96,21 @@ describe('/api/pet/alife/local-health contract', () => {
     const { status, body } = await parseResponse(res);
 
     expect(status).toBe(401);
+    expect(res.headers.get('cache-control')).toBe('no-store');
     expect(body.success).toBe(false);
     expect(mockGetAlifeLocalHealth).not.toHaveBeenCalled();
+  });
+
+  it('GET returns no-store on adapter failures', async () => {
+    mockGetAlifeLocalHealth.mockRejectedValue(new Error('local probe failed'));
+
+    const { GET } = await import('@/app/api/pet/alife/local-health/route');
+    const res = await GET(mockRequest('GET', '/api/pet/alife/local-health'));
+    const { status, body } = await parseResponse(res);
+
+    expect(status).toBe(500);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(body.success).toBe(false);
+    expect(mockGetAlifeLocalHealth).toHaveBeenCalledTimes(1);
   });
 });
