@@ -5,6 +5,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { App } from 'antd';
 import type { ReactNode } from 'react';
+import type { AlifeLocalHealthView } from '@/lib/alife/local-health';
 import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
 
 const mockApiGet = jest.fn();
@@ -70,18 +71,34 @@ jest.mock('@/components/pet/sync/PetSyncStatusPanel', () => ({
 
 jest.mock('@/components/pet/sync/PetSyncDiagnosticsPanel', () => ({
   __esModule: true,
-  default: ({
-    status,
-    loading,
-  }: {
-    status: DesktopSyncStatus | null;
-    loading: boolean;
-  }) => (
+  default: ({ status, loading }: { status: DesktopSyncStatus | null; loading: boolean }) => (
     <section data-testid="pet-sync-diagnostics-panel">
       <span>Live WebBridge diagnostics</span>
       <span data-testid="diagnostics-status-props">
         {loading ? 'loading' : status ? status.summaryKind : 'empty'}
       </span>
+    </section>
+  ),
+}));
+
+jest.mock('@/components/pet/sync/AlifeLocalHealthPanel', () => ({
+  __esModule: true,
+  default: ({
+    health,
+    loading,
+    onRefresh,
+  }: {
+    health: AlifeLocalHealthView | null;
+    loading: boolean;
+    onRefresh: () => void;
+  }) => (
+    <section data-testid="alife-local-health-panel">
+      <span data-testid="alife-local-health-props">
+        {loading ? 'loading' : health ? `${health.state}:${health.reason ?? 'none'}` : 'empty'}
+      </span>
+      <button type="button" onClick={onRefresh}>
+        refresh-alife-health
+      </button>
     </section>
   ),
 }));
@@ -130,6 +147,34 @@ function createStatus(overrides: Partial<DesktopSyncStatus> = {}): DesktopSyncSt
   };
 }
 
+function createLocalHealth(overrides: Partial<AlifeLocalHealthView> = {}): AlifeLocalHealthView {
+  return {
+    state: 'reachable',
+    configured: true,
+    checkedAt: '2026-07-05T03:04:05.000Z',
+    health: {
+      status: 'healthy',
+      service: 'alife-local',
+      version: '1.2.3',
+      timestampUtc: '2026-07-05T03:04:04.000Z',
+    },
+    runtime: {
+      status: 'ready',
+      agent: 'FoxAgent',
+      qchatEnabled: true,
+      visionEnabled: true,
+      visionStatus: 'ready',
+      visionReason: '',
+      ttsEnabled: false,
+      ttsStatus: 'notReady',
+      ttsReason: 'voice model offline',
+      outboxEnabled: true,
+      timestampUtc: '2026-07-05T03:04:04.000Z',
+    },
+    ...overrides,
+  };
+}
+
 function mockSuccessfulApis(status: DesktopSyncStatus = createStatus()) {
   mockApiGet.mockImplementation(async (url: string) => {
     if (url === '/api/pet/config') {
@@ -138,6 +183,10 @@ function mockSuccessfulApis(status: DesktopSyncStatus = createStatus()) {
 
     if (url === '/api/pet/sync/status') {
       return { success: true, data: status };
+    }
+
+    if (url === '/api/pet/alife/local-health') {
+      return { success: true, data: createLocalHealth() };
     }
 
     return { success: false, error: `Unexpected GET ${url}` };
@@ -167,11 +216,23 @@ describe('PetConfigPage desktop sync', () => {
 
     expect(mockApiGet).toHaveBeenCalledWith('/api/pet/config');
     expect(mockApiGet).toHaveBeenCalledWith('/api/pet/sync/status');
-    expect(mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/config')).toBeLessThan(
-      mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/sync/status'),
+    expect(mockApiGet).toHaveBeenCalledWith('/api/pet/alife/local-health');
+    const configCallIndex = mockApiGet.mock.calls.findIndex(([url]) => url === '/api/pet/config');
+    const syncCallIndex = mockApiGet.mock.calls.findIndex(
+      ([url]) => url === '/api/pet/sync/status',
     );
+    const localHealthCallIndex = mockApiGet.mock.calls.findIndex(
+      ([url]) => url === '/api/pet/alife/local-health',
+    );
+    expect(configCallIndex).toBeGreaterThanOrEqual(0);
+    expect(syncCallIndex).toBeGreaterThanOrEqual(0);
+    expect(localHealthCallIndex).toBeGreaterThanOrEqual(0);
+    expect(configCallIndex).toBeLessThan(syncCallIndex);
+    expect(configCallIndex).toBeLessThan(localHealthCallIndex);
     const syncStatusPanel = screen.getByTestId('pet-sync-status-panel');
     expect(syncStatusPanel).toBeDefined();
+    expect(screen.getByTestId('alife-local-health-panel')).toBeDefined();
+    expect(screen.getByTestId('alife-local-health-props').textContent).toBe('reachable:none');
     expect(screen.getByText('wizard.title')).toBeDefined();
     expect(screen.getByText('wizard.step5Desc')).toBeDefined();
     expect(screen.getByText('wizard.step6Desc')).toBeDefined();
@@ -189,12 +250,10 @@ describe('PetConfigPage desktop sync', () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      syncStatusPanel.compareDocumentPosition(previewPanelTitle) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      syncStatusPanel.compareDocumentPosition(previewPanelTitle) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      syncStatusPanel.compareDocumentPosition(editorBasicName) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      syncStatusPanel.compareDocumentPosition(editorBasicName) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
       syncStatusPanel.compareDocumentPosition(diagnosticsSection) &
@@ -220,7 +279,7 @@ describe('PetConfigPage desktop sync', () => {
     ).toBeTruthy();
     expect(screen.getByText('Alife .NET 9')).toBeDefined();
     expect(screen.getByText('No live Alife calls')).toBeDefined();
-    expect(mockApiGet).toHaveBeenCalledTimes(2);
+    expect(mockApiGet).toHaveBeenCalledTimes(3);
   });
 
   it('waits for first-run config creation before requesting desktop sync status', async () => {
@@ -236,6 +295,10 @@ describe('PetConfigPage desktop sync', () => {
         return { success: true, data: createStatus({ summaryKind: 'pendingPull' }) };
       }
 
+      if (url === '/api/pet/alife/local-health') {
+        return { success: true, data: createLocalHealth() };
+      }
+
       return { success: false, error: `Unexpected GET ${url}` };
     });
 
@@ -246,7 +309,42 @@ describe('PetConfigPage desktop sync', () => {
       expect(screen.getByTestId('sync-status-summary').textContent).toBe('pendingPull');
     });
 
-    expect(calls).toEqual(['/api/pet/config', '/api/pet/sync/status']);
+    expect(calls).toContain('/api/pet/config');
+    expect(calls).toContain('/api/pet/sync/status');
+    expect(calls).toContain('/api/pet/alife/local-health');
+    expect(calls.indexOf('/api/pet/config')).toBeLessThan(calls.indexOf('/api/pet/sync/status'));
+    expect(calls.indexOf('/api/pet/config')).toBeLessThan(
+      calls.indexOf('/api/pet/alife/local-health'),
+    );
+  });
+
+  it('maps failed local health requests to an advisory dashboard error state', async () => {
+    mockApiGet.mockImplementation(async (url: string) => {
+      if (url === '/api/pet/config') {
+        return { success: true, data: petConfig };
+      }
+
+      if (url === '/api/pet/sync/status') {
+        return { success: true, data: createStatus({ summaryKind: 'pendingPull' }) };
+      }
+
+      if (url === '/api/pet/alife/local-health') {
+        return { success: false, error: 'raw server detail with secret-token' };
+      }
+
+      return { success: false, error: `Unexpected GET ${url}` };
+    });
+
+    render(<PetConfigPage />, { wrapper: Wrapper });
+    await flushPageEffects();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('alife-local-health-props').textContent).toBe(
+        'error:apiRequestFailed',
+      );
+    });
+    expect(screen.queryByText(/raw server detail/)).toBeNull();
+    expect(screen.queryByText(/secret-token/)).toBeNull();
   });
 
   it('saving config calls apiPut and refreshes desktop sync status', async () => {

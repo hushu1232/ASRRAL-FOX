@@ -88,7 +88,11 @@ export default function PetConfigPage() {
       const res = await apiGet<AlifeLocalHealthView>('/api/pet/alife/local-health');
       if (res.success && res.data) {
         setAlifeLocalHealth(res.data);
+      } else {
+        setAlifeLocalHealth(createAlifeLocalHealthRequestFailure());
       }
+    } catch {
+      setAlifeLocalHealth(createAlifeLocalHealthRequestFailure());
     } finally {
       setAlifeLocalHealthLoading(false);
     }
@@ -329,4 +333,13 @@ export default function PetConfigPage() {
       </Modal>
     </div>
   );
+}
+
+function createAlifeLocalHealthRequestFailure(): AlifeLocalHealthView {
+  return {
+    state: 'error',
+    configured: true,
+    checkedAt: new Date().toISOString(),
+    reason: 'apiRequestFailed',
+  };
 }

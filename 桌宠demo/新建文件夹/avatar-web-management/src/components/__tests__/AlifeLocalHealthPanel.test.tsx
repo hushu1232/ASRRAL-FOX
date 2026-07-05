@@ -86,10 +86,7 @@ function createReachableHealth(
   };
 }
 
-function createStateHealth(
-  state: AlifeLocalHealthState,
-  reason: string,
-): AlifeLocalHealthView {
+function createStateHealth(state: AlifeLocalHealthState, reason: string): AlifeLocalHealthView {
   return {
     state,
     configured: state !== 'notConfigured',
@@ -98,15 +95,22 @@ function createStateHealth(
   };
 }
 
+type SensitiveHealthFixture = AlifeLocalHealthView & {
+  ownerId: string;
+  botId: string;
+  token: string;
+  baseUrl: string;
+};
+
 describe('AlifeLocalHealthPanel', () => {
   it('renders reachable sanitized health with labels, values, status, source, and advisory copy', () => {
-    const health = {
+    const health: SensitiveHealthFixture = {
       ...createReachableHealth(),
       ownerId: '3045846738',
       botId: '2905391496',
       token: 'secret-token',
       baseUrl: 'http://127.0.0.1:8787',
-    } as AlifeLocalHealthView;
+    };
 
     const { container } = render(
       <AlifeLocalHealthPanel health={health} loading={false} onRefresh={jest.fn()} />,
@@ -116,7 +120,9 @@ describe('AlifeLocalHealthPanel', () => {
     expect(screen.getByText('Alife local health')).toBeDefined();
     expect(screen.getByText('Local API')).toBeDefined();
     expect(screen.getByText('Reachable')).toBeDefined();
-    expect(screen.getByText('The sanitized Alife local health endpoint is reachable.')).toBeDefined();
+    expect(
+      screen.getByText('The sanitized Alife local health endpoint is reachable.'),
+    ).toBeDefined();
     expect(
       screen.getByText(
         'Advisory only. Web cannot start, stop, restart, or apply Alife runtime changes.',
@@ -187,7 +193,9 @@ describe('AlifeLocalHealthPanel', () => {
     );
 
     expect(screen.getByText('Not configured')).toBeDefined();
-    expect(screen.getByText('Local Alife health checks are not configured for this server.')).toBeDefined();
+    expect(
+      screen.getByText('Local Alife health checks are not configured for this server.'),
+    ).toBeDefined();
     expect(screen.queryByText('FoxAgent')).toBeNull();
     expect(screen.queryByText('1.2.3')).toBeNull();
     expect(screen.getAllByText('Not reported').length).toBeGreaterThanOrEqual(5);
@@ -209,7 +217,9 @@ describe('AlifeLocalHealthPanel', () => {
     );
 
     expect(screen.getByText(label)).toBeDefined();
-    expect(screen.getByText(messages['pet.alifeLocalHealth'][`description.${state}`])).toBeDefined();
+    expect(
+      screen.getByText(messages['pet.alifeLocalHealth'][`description.${state}`]),
+    ).toBeDefined();
     expect(screen.getByText('Reason')).toBeDefined();
     expect(screen.getByText(reason)).toBeDefined();
   });

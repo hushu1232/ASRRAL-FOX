@@ -5,6 +5,15 @@ function readSource(relativePath: string): string {
   return fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
 }
 
+function readJson(relativePath: string): unknown {
+  return JSON.parse(readSource(relativePath));
+}
+
+function expectNonEmptyString(value: unknown): asserts value is string {
+  expect(typeof value).toBe('string');
+  expect((value as string).length).toBeGreaterThan(0);
+}
+
 describe('Alife local health source guardrails', () => {
   it('keeps the authenticated node route wired to the server-side adapter', () => {
     const route = readSource('src/app/api/pet/alife/local-health/route.ts');
@@ -61,16 +70,54 @@ describe('Alife local health source guardrails', () => {
 
   it('defines required locale keys for every supported locale', () => {
     const localePaths = ['messages/en.json', 'messages/zh-CN.json', 'messages/ja.json'];
+    const requiredStates = [
+      'notConfigured',
+      'reachable',
+      'unreachable',
+      'authRequired',
+      'invalidResponse',
+      'error',
+    ];
 
     for (const localePath of localePaths) {
-      const source = readSource(localePath);
+      const locale = readJson(localePath) as {
+        pet?: {
+          alifeLocalHealth?: {
+            state?: Record<string, unknown>;
+            description?: Record<string, unknown>;
+          } & Record<string, unknown>;
+        };
+      };
+      const alifeLocalHealth = locale.pet?.alifeLocalHealth;
 
-      expect(source).toContain('"alifeLocalHealth"');
-      expect(source).toContain('"notConfigured"');
-      expect(source).toContain('"reachable"');
-      expect(source).toContain('"unreachable"');
-      expect(source).toContain('"authRequired"');
-      expect(source).toContain('"invalidResponse"');
+      expect(alifeLocalHealth).toEqual(expect.any(Object));
+      for (const key of [
+        'title',
+        'source',
+        'loading',
+        'advisory',
+        'refresh',
+        'notReported',
+        'agent',
+        'version',
+        'qchat',
+        'vision',
+        'tts',
+        'outbox',
+        'lastChecked',
+        'enabled',
+        'disabled',
+        'ready',
+        'notReady',
+        'reason',
+      ]) {
+        expectNonEmptyString(alifeLocalHealth?.[key]);
+      }
+
+      for (const state of requiredStates) {
+        expectNonEmptyString(alifeLocalHealth?.state?.[state]);
+        expectNonEmptyString(alifeLocalHealth?.description?.[state]);
+      }
     }
   });
 });
