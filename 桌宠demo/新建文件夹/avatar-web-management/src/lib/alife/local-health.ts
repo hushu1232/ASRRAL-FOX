@@ -212,7 +212,11 @@ async function fetchJson(
       return { kind: 'requestFailed' };
     }
 
-    return { kind: 'invalidJson' };
+    if (isSyntaxError(error)) {
+      return { kind: 'invalidJson' };
+    }
+
+    return { kind: 'requestFailed' };
   } finally {
     clearTimeout(timeout);
   }
@@ -364,4 +368,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isAbortError(error: unknown): boolean {
   return isRecord(error) && error.name === 'AbortError';
+}
+
+function isSyntaxError(error: unknown): boolean {
+  return error instanceof SyntaxError || (isRecord(error) && error.name === 'SyntaxError');
 }

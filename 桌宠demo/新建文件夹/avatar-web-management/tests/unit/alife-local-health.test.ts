@@ -250,6 +250,24 @@ describe('Alife local health adapter', () => {
     });
   });
 
+  it('maps interrupted response body streams to unreachable requestFailed', async () => {
+    const fetchImpl = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new TypeError('terminated')),
+    } as Response);
+
+    const view = await getAlifeLocalHealth({ env: enabledEnv, fetch: fetchImpl });
+
+    expect(view).toEqual({
+      state: 'unreachable',
+      configured: true,
+      checkedAt: expect.any(String),
+      reason: 'requestFailed',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the timeout active while parsing the response body', async () => {
     jest.useFakeTimers();
 
