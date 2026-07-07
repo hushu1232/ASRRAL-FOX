@@ -9,6 +9,33 @@
 - Active product direction: FOXD Web control plane plus Alife .NET 9 local runtime.
 - Unity desktop pet work is abandoned legacy context unless explicitly reopened.
 
+## 2026-07-07 Checkpoint
+
+Latest verified FOXD commit:
+
+```text
+30e6719 test: lock pet dashboard sync-first order
+```
+
+Current status:
+
+- `master` is pushed to `github/master` at `30e6719`.
+- `/dashboard/pet` has the shared `EvidenceGrid` evidence layout across runtime, sync, advisory health, live diagnostics, and mock diagnostics panels.
+- WebBridge mock diagnostics are localized through `pet.webbridgeMock` in `en`, `zh-CN`, and `ja`.
+- Raw evidence remains exact: `pendingActivation`, `401 package file`, `PACKAGE_HASH_MISMATCH`, `PACKAGE_SECURITY_BLOCKED`, and `autoApply=false, requiresLocalConfirmation=true`.
+- Alife local health is integrated as advisory, authenticated, server-side, opt-in, and read-only.
+- The browser UI still does not start, stop, restart, shell out to, or directly mutate the local Alife runtime.
+
+Latest verification on merged `master`:
+
+```text
+npm run test -- --runInBand: 99 suites, 992 tests passed
+npm run typecheck: passed
+npm run build: passed with temporary JWT_SECRET and DATABASE_URL
+```
+
+Build note: a bare production build still requires normal production env values such as `JWT_SECRET` and `DATABASE_URL`; this is an environment prerequisite, not a pet dashboard regression.
+
 ## Runtime And Repository Roles
 
 ### FOXD
@@ -127,15 +154,14 @@ D:\Alife status: clean
 ## Known Gaps
 
 1. Web does not execute local smoke commands from the browser, by design.
-2. Web still does not clearly consume Alife local management API health endpoints as a live runtime dependency.
-3. Alife `PushState()` exists, but Web `/api/pet/sync` is not yet a full persisted desktop-state round trip.
-4. The broader UI component/text-style normalization is pending.
-5. The `alife-service` gitlink is older than the canonical `D:\Alife` checkout and should only be updated when a pinned parent checkpoint is required.
+2. Active desktop runtime apply evidence remains separate from the isolated staged-to-applied smoke.
+3. Asset sync should stay disabled until a dedicated asset smoke is planned.
+4. The `alife-service` gitlink is older than the canonical `D:\Alife` checkout and should only be updated when a pinned parent checkpoint is required.
+5. Any further UI normalization should stay in small verified batches, not mixed with protocol changes.
 
 ## Recommended Next Sequence
 
-1. Update docs and runbooks to the 2026-07-03 state.
-2. Draft the UI component/text-style specification using the current Pet/WebBridge console as the reference implementation.
-3. Normalize shared component and text usage across the Web app in small page groups.
-4. Add live Alife local management health only after the local API source, port, and user consent model are documented.
-5. Keep Alife commits in `D:\Alife` and FOXD commits in `D:\FOXD`; never upload Alife as a copied source snapshot.
+1. Pick exactly one remaining protocol gap if engineering continues.
+2. Prefer active desktop runtime apply evidence or a dedicated asset-sync smoke; do not combine both.
+3. Keep protocol changes separate from UI polish.
+4. Keep Alife commits in `D:\Alife` and FOXD commits in `D:\FOXD`; never upload Alife as a copied source snapshot.

@@ -14,6 +14,32 @@ FOXD Web Control Plane -> WebBridge HTTP contract -> Alife .NET 9 runtime integr
 
 Unity is not an active runtime for this path.
 
+## 2026-07-07 Checkpoint
+
+Latest verified FOXD commit:
+
+```text
+30e6719 test: lock pet dashboard sync-first order
+```
+
+Since the 2026-07-03 baseline:
+
+- `/dashboard/pet` sync diagnostics were normalized around the shared `EvidenceGrid` primitive.
+- WebBridge mock diagnostics visible copy moved to `pet.webbridgeMock` locale keys in `en`, `zh-CN`, and `ja`.
+- Advisory Alife local health remains read-only and server-mediated.
+- The page order is guarded as `PetRuntimeSummary` before `AlifeLocalHealthPanel` before `PetSyncStatusPanel`.
+- Browser-side diagnostics still do not call Alife directly, run PowerShell, spawn processes, or auto-apply packages.
+
+Latest merged-master verification:
+
+```text
+npm run test -- --runInBand: 99 suites, 992 tests passed
+npm run typecheck: passed
+npm run build: passed with temporary JWT_SECRET and DATABASE_URL
+```
+
+Build note: production build collection requires normal env values such as `JWT_SECRET` and `DATABASE_URL`.
+
 ## Current Evidence
 
 FOXD verified commit:
@@ -113,9 +139,9 @@ FOXD now exposes an authenticated, disabled-by-default server-side adapter for A
 
 ## Recommended Next Engineering Direction
 
-Use the verified WebBridge status as the stable baseline for UI/spec work:
+Use the verified WebBridge status as the stable baseline. UI/spec Batch A has been completed and pushed, so the next engineering step should be exactly one protocol gap, not another mixed UI/protocol batch:
 
-1. Draft the shared component/text-style specification.
-2. Normalize dashboard and pet-console components first.
-3. Keep local Alife health advisory, opt-in, server-side, and documented before adding any broader management API dependency.
-4. Keep protocol changes separate from UI polish.
+1. Active desktop runtime apply evidence, or
+2. Dedicated asset sync smoke.
+
+Keep local Alife health advisory, opt-in, server-side, and documented before adding any broader management API dependency. Keep protocol changes separate from UI polish.
