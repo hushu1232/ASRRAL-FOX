@@ -41,9 +41,9 @@ export default function VoiceCloningWizard() {
   const t = useTranslations('pet.voiceCloning');
 
   const STEPS = [
-    { title: t('step.step1.title'), description: t('step.step1.description') },
-    { title: t('step.step2.title'), description: t('step.step2.description') },
-    { title: t('step.step3.title'), description: t('step.step3.description') },
+    { title: t('step.step1.title'), content: t('step.step1.description') },
+    { title: t('step.step2.title'), content: t('step.step2.description') },
+    { title: t('step.step3.title'), content: t('step.step3.description') },
   ];
 
   const STAGE_LABELS: Record<string, string> = {
