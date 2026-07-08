@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from 'antd';
 import ModelViewer from '@/components/pet/preview/ModelViewer';
 
@@ -98,20 +98,23 @@ describe('ModelViewer', () => {
     it('renders ModelError when onError is triggered by Live2D', () => {
       const { container } = render(<ModelViewer {...baseProps} />, { wrapper: Wrapper });
       const errorBtn = screen.getByTestId('trigger-error');
-      errorBtn.click();
+      fireEvent.click(errorBtn);
       // Error component should appear with the error message
       expect(container.querySelector('.text-4xl')).toBeDefined();
     });
   });
 
   describe('VRM mode', () => {
-    it('renders VRMViewer when modelType is vrm', () => {
+    it('renders VRMViewer when modelType is vrm', async () => {
       const { container } = render(
         <ModelViewer {...baseProps} modelType="vrm" />,
         { wrapper: Wrapper }
       );
-      // VRM viewer renders in a container div
+      // VRM viewer renders before async initialization falls back in jsdom.
       expect(container.querySelector('.text-xs')).toBeDefined();
+      await waitFor(() => {
+        expect(container.querySelector('.text-4xl')).toBeDefined();
+      });
     });
   });
 });
