@@ -17,6 +17,27 @@ import { useUIStore } from '@/stores/uiStore';
 import { sidebarEnter } from '@/lib/motion';
 import './style.scss';
 
+export function resolveSelectedSidebarKey(pathname: string, itemKeys: string[]): string {
+  const normalizedPathname = normalizeSidebarPath(pathname);
+
+  return (
+    [...itemKeys]
+      .sort((a, b) => b.length - a.length)
+      .find((key) => {
+        const normalizedKey = normalizeSidebarPath(key);
+        return normalizedPathname === normalizedKey || normalizedPathname.startsWith(`${normalizedKey}/`);
+      }) ?? pathname
+  );
+}
+
+function normalizeSidebarPath(path: string): string {
+  if (path.length > 1 && path.endsWith('/')) {
+    return path.slice(0, -1);
+  }
+
+  return path;
+}
+
 export default function Sidebar() {
   const t = useTranslations('layout.sidebar');
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
@@ -80,7 +101,7 @@ export default function Sidebar() {
     })
     .filter((g) => g.visibleItems.length > 0);
 
-  const selectedKey = menuItemDefs.find((item) => pathname.startsWith(item.key))?.key || pathname;
+  const selectedKey = resolveSelectedSidebarKey(pathname, menuItemDefs.map((item) => item.key));
 
   const sidebarItems = visibleGroups.flatMap((group, gi) => {
     const children = group.visibleItems.map((item) => ({

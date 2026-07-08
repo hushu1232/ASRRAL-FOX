@@ -4,7 +4,7 @@
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import { App } from 'antd';
-import Sidebar from '@/components/layout/Sidebar';
+import Sidebar, { resolveSelectedSidebarKey } from '@/components/layout/Sidebar';
 
 // jest.mock factories are hoisted — use a mutable ref pattern
 let mockToggleSidebar = jest.fn();
@@ -95,6 +95,24 @@ beforeEach(() => {
 });
 
 describe('Sidebar', () => {
+  describe('selected navigation key', () => {
+    const itemKeys = ['/dashboard', '/dashboard/pet', '/marketplace', '/assets'];
+
+    it('selects exact top-level routes', () => {
+      expect(resolveSelectedSidebarKey('/dashboard', itemKeys)).toBe('/dashboard');
+    });
+
+    it('selects the most specific nested route', () => {
+      expect(resolveSelectedSidebarKey('/dashboard/pet', itemKeys)).toBe('/dashboard/pet');
+      expect(resolveSelectedSidebarKey('/dashboard/pet/voice', itemKeys)).toBe('/dashboard/pet');
+      expect(resolveSelectedSidebarKey('/marketplace/new', itemKeys)).toBe('/marketplace');
+    });
+
+    it('does not treat same-prefix paths as nested routes', () => {
+      expect(resolveSelectedSidebarKey('/marketplace-extra', itemKeys)).toBe('/marketplace-extra');
+    });
+  });
+
   describe('rendering', () => {
     it('renders the sidebar with menu items', () => {
       render(<Sidebar />, { wrapper: Wrapper });
