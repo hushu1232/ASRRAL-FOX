@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { App } from 'antd';
 import { apiGet } from '@/lib/api-client';
 import PetPreview from '@/components/pet/preview/PetPreview';
@@ -192,6 +192,14 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   return <App>{children}</App>;
 }
 
+async function renderPetPreview() {
+  const result = render(<PetPreview />, { wrapper: Wrapper });
+  await act(async () => {
+    await Promise.all(mockApiGet.mock.results.map(({ value }) => value));
+  });
+  return result;
+}
+
 describe('PetPreview', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -216,52 +224,52 @@ describe('PetPreview', () => {
   });
 
   describe('loading state', () => {
-    it('shows Spin when config is loading', () => {
+    it('shows Spin when config is loading', async () => {
       storeState.configLoading = true;
       storeState.config = null;
-      render(<PetPreview />, { wrapper: Wrapper });
+      await renderPetPreview();
       expect(screen.getByText('加载配置中...')).toBeDefined();
     });
   });
 
   describe('error state', () => {
-    it('shows error message and reload button', () => {
+    it('shows error message and reload button', async () => {
       storeState.configError = '配置加载失败';
-      render(<PetPreview />, { wrapper: Wrapper });
+      await renderPetPreview();
       expect(screen.getByText('配置加载失败')).toBeDefined();
       expect(screen.getByText('重新加载')).toBeDefined();
     });
 
-    it('calls loadConfig on reload button click', () => {
+    it('calls loadConfig on reload button click', async () => {
       storeState.configError = '配置加载失败';
-      render(<PetPreview />, { wrapper: Wrapper });
+      await renderPetPreview();
       fireEvent.click(screen.getByText('重新加载'));
       expect(mockLoadConfig).toHaveBeenCalled();
     });
   });
 
   describe('normal rendering', () => {
-    it('renders pet name and web preview label', () => {
-      render(<PetPreview />, { wrapper: Wrapper });
+    it('renders pet name and web preview label', async () => {
+      await renderPetPreview();
       expect(screen.getByText(/TestPet/)).toBeDefined();
       expect(screen.getByText(/Web预览/)).toBeDefined();
     });
 
-    it('renders ModelViewer and ChatPanel', () => {
-      render(<PetPreview />, { wrapper: Wrapper });
+    it('renders ModelViewer and ChatPanel', async () => {
+      await renderPetPreview();
       expect(screen.getByTestId('model-viewer')).toBeDefined();
       expect(screen.getByTestId('chat-panel')).toBeDefined();
     });
 
-    it('renders TimeAwarenessOverlay', () => {
-      render(<PetPreview />, { wrapper: Wrapper });
+    it('renders TimeAwarenessOverlay', async () => {
+      await renderPetPreview();
       expect(screen.getByTestId('time-awareness')).toBeDefined();
     });
 
     it('renders desktop status chip after loading sync status', async () => {
-      render(<PetPreview />, { wrapper: Wrapper });
+      await renderPetPreview();
 
-      expect(await screen.findByTestId('desktop-status-chip')).toBeDefined();
+      expect(screen.getByTestId('desktop-status-chip')).toBeDefined();
       await waitFor(() => {
         expect(mockApiGet).toHaveBeenCalledWith('/api/pet/sync/status');
       });
@@ -269,11 +277,11 @@ describe('PetPreview', () => {
   });
 
   describe('null config', () => {
-    it('returns null when config is null', () => {
+    it('returns null when config is null', async () => {
       storeState.config = null;
       storeState.configLoading = false;
       storeState.configError = null;
-      render(<PetPreview />, { wrapper: Wrapper });
+      await renderPetPreview();
       // PetPreview returns null — no pet name, chat, or model viewer rendered
       expect(screen.queryByText(/TestPet/)).toBeNull();
       expect(screen.queryByTestId('chat-panel')).toBeNull();
@@ -282,36 +290,36 @@ describe('PetPreview', () => {
   });
 
   describe('voice state label', () => {
-    it('shows listening label when voiceState is listening', () => {
+    it('shows listening label when voiceState is listening', async () => {
       storeState.voiceState = 'listening';
-      render(<PetPreview />, { wrapper: Wrapper });
+      await renderPetPreview();
       expect(screen.getByText('正在听')).toBeDefined();
     });
 
-    it('shows thinking label when voiceState is thinking', () => {
+    it('shows thinking label when voiceState is thinking', async () => {
       storeState.voiceState = 'thinking';
-      render(<PetPreview />, { wrapper: Wrapper });
+      await renderPetPreview();
       expect(screen.getByText('思考中')).toBeDefined();
     });
 
-    it('hides label when voiceState is idle', () => {
-      render(<PetPreview />, { wrapper: Wrapper });
+    it('hides label when voiceState is idle', async () => {
+      await renderPetPreview();
       expect(screen.queryByText('正在听')).toBeNull();
     });
   });
 
   describe('clear chat', () => {
-    it('disables clear button when no messages', () => {
+    it('disables clear button when no messages', async () => {
       storeState.messages = [];
-      render(<PetPreview />, { wrapper: Wrapper });
+      await renderPetPreview();
       const clearBtn = screen.getByTestId('icon-reload').closest('button')!;
       expect(clearBtn).toBeDisabled();
     });
   });
 
   describe('send message', () => {
-    it('calls store.sendMessage when ChatPanel sends', () => {
-      render(<PetPreview />, { wrapper: Wrapper });
+    it('calls store.sendMessage when ChatPanel sends', async () => {
+      await renderPetPreview();
       fireEvent.click(screen.getByTestId('send-btn'));
       expect(mockSendMessage).toHaveBeenCalledWith('test');
     });
