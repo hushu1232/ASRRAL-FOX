@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, Tag, Pagination, Button, App } from 'antd';
+import { Tag, Pagination, Button, App } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -119,7 +119,7 @@ export default function NotificationsPage() {
           <Button
             icon={<CheckOutlined />}
             onClick={handleReadAll}
-            className="!border-purple-500/20 !text-purple-400 hover:!border-purple-500/40 hover:!text-purple-300"
+            style={{ borderColor: 'var(--border-subtle)', color: 'var(--accent)' }}
           >
             {t('markAllRead')}
           </Button>
@@ -136,13 +136,17 @@ export default function NotificationsPage() {
           />
         </OperationPanel>
       ) : (
-        <Card className="!border-purple-500/10 !p-0 overflow-hidden">
+        <OperationPanel data-testid="notifications-list-panel" title={null}>
           {items.map((item, i) => (
             <div
               key={item.id}
-              className={`px-5 py-4 flex items-start gap-4 cursor-pointer transition-colors hover:bg-purple-500/5 ${
-                !item.is_read ? 'bg-purple-500/[0.03]' : ''
-              } ${i < items.length - 1 ? 'border-b border-purple-500/5' : ''}`}
+              className={`px-5 py-4 flex items-start gap-4 cursor-pointer transition-colors hover:bg-[var(--bg-card-hover)] ${
+                i < items.length - 1 ? 'border-b' : ''
+              }`}
+              style={{
+                background: item.is_read ? 'transparent' : 'var(--bg-card-hover)',
+                borderColor: 'var(--border-subtle)',
+              }}
               onClick={() => handleClick(item)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleClick(item); } }}
               role="button"
@@ -176,7 +180,7 @@ export default function NotificationsPage() {
               <span className="text-xs text-gray-600 shrink-0 mt-1">{formatDate(item.created_at)}</span>
             </div>
           ))}
-        </Card>
+        </OperationPanel>
       )}
 
       {total > PAGE_SIZE && (

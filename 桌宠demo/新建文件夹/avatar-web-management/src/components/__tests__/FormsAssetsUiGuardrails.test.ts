@@ -38,6 +38,33 @@ describe('forms and asset UI guardrails', () => {
     expect(notificationsSource).toContain('data-testid="notifications-empty-panel"');
   });
 
+  it('keeps marketplace cards on neutral shared surfaces', () => {
+    const source = readSource('src/app/(auth)/marketplace/page.tsx');
+
+    expect(source).toContain('data-testid="marketplace-grid"');
+    expect(source).toContain("borderRadius: 'var(--ds-panel-radius)'");
+    expect(source).toContain("background: 'var(--bg-card)'");
+    expect(source).toContain("borderColor: 'var(--border-subtle)'");
+    expect(source).toContain("style={{ background: 'var(--bg-card-hover)' }}");
+    expect(source).not.toContain('!border-purple-500/10');
+    expect(source).not.toContain('hover:!border-purple-500/30');
+    expect(source).not.toContain('bg-gradient-to-br from-purple-900/40 to-blue-900/40');
+    expect(source).not.toContain('bg-gradient-to-r from-purple-600 to-blue-600');
+  });
+
+  it('keeps notifications list inside a shared panel without purple border utilities', () => {
+    const source = readSource('src/app/(auth)/notifications/page.tsx');
+
+    expect(source).toContain('data-testid="notifications-list-panel"');
+    expect(source).toContain("background: item.is_read ? 'transparent' : 'var(--bg-card-hover)'");
+    expect(source).toContain("borderColor: 'var(--border-subtle)'");
+    expect(source).not.toContain('!border-purple-500/10');
+    expect(source).not.toContain('hover:bg-purple-500/5');
+    expect(source).not.toContain('bg-purple-500/[0.03]');
+    expect(source).not.toContain('border-purple-500/5');
+    expect(source).not.toContain('!border-purple-500/20');
+  });
+
   it('keeps asset cards responsive and free of broad purple gradient styling', () => {
     const source = readSource('src/app/(auth)/assets/page.tsx');
 

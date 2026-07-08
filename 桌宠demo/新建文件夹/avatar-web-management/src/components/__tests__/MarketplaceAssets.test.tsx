@@ -152,6 +152,7 @@ describe('MarketplacePage', () => {
       },
     };
     render(<MarketplacePage />, { wrapper: Wrapper });
+    expect(screen.getByTestId('marketplace-grid')).toBeDefined();
     expect(screen.getByText('酷炫机器人模型')).toBeDefined();
     expect(screen.getByText('sellerA')).toBeDefined();
     expect(screen.getByText('¥9900')).toBeDefined();
@@ -224,6 +225,34 @@ describe('NotificationsPage', () => {
     expect(screen.getByTestId('notifications-empty-panel')).toBeDefined();
     expect(screen.getByTestId('empty-state')).toBeDefined();
     expect(screen.getByText('noNotifications')).toBeDefined();
+  });
+
+  it('renders notifications inside the shared list panel', async () => {
+    mockPaginatedData = {
+      success: true,
+      data: {
+        items: [
+          {
+            id: 'n1',
+            type: 'system',
+            title: 'Desktop sync ready',
+            body: 'Your pet package can be reviewed now.',
+            resource_type: null,
+            resource_id: null,
+            is_read: 0,
+            created_at: new Date().toISOString(),
+          },
+        ],
+        total: 1,
+      },
+    };
+
+    render(<NotificationsPage />, { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('notifications-list-panel')).toBeDefined();
+    });
+    expect(screen.getByText('Desktop sync ready')).toBeDefined();
   });
 });
 
