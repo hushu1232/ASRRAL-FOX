@@ -41,6 +41,46 @@ jest.mock('next/dynamic', () => ({
   },
 }));
 
+jest.mock('three', () => ({
+  Scene: jest.fn().mockImplementation(() => ({
+    add: jest.fn(),
+  })),
+  PerspectiveCamera: jest.fn().mockImplementation(() => ({
+    position: {
+      set: jest.fn(),
+    },
+  })),
+  WebGLRenderer: jest.fn().mockImplementation(() => ({
+    domElement: document.createElement('canvas'),
+    render: jest.fn(),
+    setPixelRatio: jest.fn(),
+    setSize: jest.fn(),
+  })),
+  DirectionalLight: jest.fn(),
+  AmbientLight: jest.fn(),
+}));
+
+jest.mock('three/examples/jsm/loaders/GLTFLoader.js', () => ({
+  GLTFLoader: jest.fn().mockImplementation(() => ({
+    register: jest.fn(),
+    loadAsync: jest.fn().mockResolvedValue({
+      userData: {
+        vrm: {
+          scene: {},
+          update: jest.fn(),
+        },
+      },
+    }),
+  })),
+}));
+
+jest.mock('@pixiv/three-vrm', () => ({
+  VRMLoaderPlugin: jest.fn(),
+  VRMUtils: {
+    rotateVRM0: jest.fn(),
+  },
+}));
+
 function Wrapper({ children }: { children: React.ReactNode }) {
   return <App>{children}</App>;
 }
@@ -105,16 +145,16 @@ describe('ModelViewer', () => {
   });
 
   describe('VRM mode', () => {
-    it('renders VRMViewer when modelType is vrm', async () => {
+    it('renders VRMViewer without requiring real WebGL in jsdom', async () => {
       const { container } = render(
         <ModelViewer {...baseProps} modelType="vrm" />,
         { wrapper: Wrapper }
       );
-      // VRM viewer renders before async initialization falls back in jsdom.
       expect(container.querySelector('.text-xs')).toBeDefined();
       await waitFor(() => {
-        expect(container.querySelector('.text-4xl')).toBeDefined();
+        expect(container.querySelector('canvas')).toBeDefined();
       });
+      expect(container.querySelector('.text-4xl')).toBeNull();
     });
   });
 });
