@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { App } from 'antd';
 import MarketplacePage from '@/app/(auth)/marketplace/page';
 import AssetLibraryPage from '@/app/(auth)/assets/page';
@@ -332,53 +332,56 @@ describe('AssetLibraryPage', () => {
     });
   }
 
+  async function renderAssetLibraryPage() {
+    const result = render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+    return result;
+  }
+
   it('renders heading', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await renderAssetLibraryPage();
     expect(screen.getByText('title')).toBeDefined();
   });
 
   it('renders "uploadButton" button', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await renderAssetLibraryPage();
     expect(screen.getByText('uploadButton')).toBeDefined();
   });
 
   it('renders search input', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await renderAssetLibraryPage();
     expect(screen.getByPlaceholderText('upload.searchFiles')).toBeDefined();
   });
 
   it('renders Tree sidebar with category labels', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await renderAssetLibraryPage();
     expect(screen.getByText('upload.allAssets')).toBeDefined();
     expect(screen.getByText('upload.directory')).toBeDefined();
   });
 
   it('renders view mode toggle buttons', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await renderAssetLibraryPage();
     expect(screen.getByTestId('icon-grid')).toBeDefined();
     expect(screen.getByTestId('icon-list')).toBeDefined();
   });
 
   it('fetches assets on mount', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    });
+    await renderAssetLibraryPage();
+    expect(mockApiGet).toHaveBeenCalledTimes(1);
     expect(mockApiGet).toHaveBeenCalledWith('/api/assets', { page: '1', pageSize: '24' });
   });
 
   it('shows empty state after loading', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    });
+    await renderAssetLibraryPage();
     await waitFor(() => {
       expect(screen.getByText('noAssets')).toBeDefined();
     });
@@ -386,10 +389,7 @@ describe('AssetLibraryPage', () => {
 
   it('renders asset cards in grid view', async () => {
     mockAssetsWithData();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    });
+    await renderAssetLibraryPage();
     await waitFor(() => {
       expect(screen.getByText('character.glb')).toBeDefined();
       expect(screen.getByText('texture_diffuse.png')).toBeDefined();
@@ -413,10 +413,7 @@ describe('AssetLibraryPage', () => {
         total: 50,
       },
     });
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    });
+    await renderAssetLibraryPage();
     await waitFor(() => {
       expect(screen.getByText('upload.paginationTotal')).toBeDefined();
     });
