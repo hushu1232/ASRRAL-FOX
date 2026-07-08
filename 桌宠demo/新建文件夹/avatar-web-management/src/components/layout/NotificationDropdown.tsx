@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Dropdown, Badge, List, Button, Spin, Empty, App } from 'antd';
+import { Dropdown, Badge, Button, Spin, Empty, App } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { apiGet, apiPut } from '@/lib/api-client';
@@ -101,11 +101,10 @@ export default function NotificationDropdown() {
       ) : notifs.length === 0 ? (
         <Empty description={t('noNotifications')} image={Empty.PRESENTED_IMAGE_SIMPLE} className="py-4" />
       ) : (
-        <List
-          className="max-h-80 overflow-y-auto"
-          dataSource={notifs}
-          renderItem={item => (
+        <div className="max-h-80 overflow-y-auto">
+          {notifs.map(item => (
             <div
+              key={item.id}
               className="px-4 py-3 cursor-pointer transition-colors"
               style={{
                 background: item.is_read ? 'transparent' : 'var(--bg-card-hover)',
@@ -133,8 +132,8 @@ export default function NotificationDropdown() {
                 </div>
               </div>
             </div>
-          )}
-        />
+          ))}
+        </div>
       )}
     </div>
   );

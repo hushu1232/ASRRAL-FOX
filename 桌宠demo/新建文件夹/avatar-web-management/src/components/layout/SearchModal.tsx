@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Modal, Input, List, Tag, Empty, Spin } from 'antd';
+import { Modal, Input, Tag, Empty, Spin } from 'antd';
 import { SearchOutlined, FileOutlined, UserOutlined, ShopOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -86,10 +86,10 @@ export default function SearchModal({ open, onClose }: { open: boolean; onClose:
               {results.avatars.length > 0 && (
                 <div>
                   <div className="px-4 py-2 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{t('categories.avatars')}</div>
-                  <List
-                    dataSource={results.avatars}
-                    renderItem={item => (
+                  <div>
+                    {results.avatars.map(item => (
                       <div className="px-4 py-2 cursor-pointer flex items-center gap-3 hover:bg-[var(--bg-card-hover)]"
+                        key={item.id}
                         onClick={() => { router.push(`/avatars/${item.id}`); onClose(); }}
                         onKeyDown={(e) => { if (e.key === 'Enter') { router.push(`/avatars/${item.id}`); onClose(); } }}
                         role="button"
@@ -99,17 +99,17 @@ export default function SearchModal({ open, onClose }: { open: boolean; onClose:
                         <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{item.name}</span>
                         <Tag className="ml-auto text-xs">{item.style}</Tag>
                       </div>
-                    )}
-                  />
+                    ))}
+                  </div>
                 </div>
               )}
               {results.templates.length > 0 && (
                 <div>
                   <div className="px-4 py-2 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{t('categories.templates')}</div>
-                  <List
-                    dataSource={results.templates}
-                    renderItem={item => (
+                  <div>
+                    {results.templates.map(item => (
                       <div className="px-4 py-2 cursor-pointer flex items-center gap-3 hover:bg-[var(--bg-card-hover)]"
+                        key={item.id}
                         onClick={() => { router.push('/marketplace'); onClose(); }}
                         onKeyDown={(e) => { if (e.key === 'Enter') { router.push('/marketplace'); onClose(); } }}
                         role="button"
@@ -119,17 +119,17 @@ export default function SearchModal({ open, onClose }: { open: boolean; onClose:
                         <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{item.name}</span>
                         <Tag className="ml-auto text-xs">{item.style}</Tag>
                       </div>
-                    )}
-                  />
+                    ))}
+                  </div>
                 </div>
               )}
               {results.assets.length > 0 && (
                 <div>
                   <div className="px-4 py-2 text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{t('categories.assets')}</div>
-                  <List
-                    dataSource={results.assets}
-                    renderItem={item => (
+                  <div>
+                    {results.assets.map(item => (
                       <div className="px-4 py-2 cursor-pointer flex items-center gap-3 hover:bg-[var(--bg-card-hover)]"
+                        key={item.id}
                         onClick={() => { router.push('/assets'); onClose(); }}
                         onKeyDown={(e) => { if (e.key === 'Enter') { router.push('/assets'); onClose(); } }}
                         role="button"
@@ -139,8 +139,8 @@ export default function SearchModal({ open, onClose }: { open: boolean; onClose:
                         <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{item.filename}</span>
                         <Tag color={typeColors[item.asset_type]} className="ml-auto text-xs">{item.asset_type}</Tag>
                       </div>
-                    )}
-                  />
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
