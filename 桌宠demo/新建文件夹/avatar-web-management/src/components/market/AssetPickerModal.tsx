@@ -87,7 +87,7 @@ export default function AssetPickerModal({ open, onClose, onSelect, filterType }
       okText={t('picker.confirm', { count: selected.size })}
       cancelText={tc('cancel')}
       width={720}
-      destroyOnClose
+      destroyOnHidden
     >
       {loading ? (
         <div className="flex justify-center py-16"><Spin size="large" /></div>
