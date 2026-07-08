@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { App } from 'antd';
 import Sidebar, { resolveSelectedSidebarKey } from '@/components/layout/Sidebar';
 
@@ -87,6 +87,14 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   return <App>{children}</App>;
 }
 
+async function renderSidebar() {
+  const result = render(<Sidebar />, { wrapper: Wrapper });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  return result;
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockToggleSidebar = jest.fn();
@@ -114,78 +122,78 @@ describe('Sidebar', () => {
   });
 
   describe('rendering', () => {
-    it('renders the sidebar with menu items', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('renders the sidebar with menu items', async () => {
+      await renderSidebar();
       expect(screen.getByText('dashboard')).toBeDefined();
       expect(screen.getByText('avatars')).toBeDefined();
       expect(screen.getByText('assets')).toBeDefined();
       expect(screen.getByText('settings')).toBeDefined();
     });
 
-    it('renders create avatar button', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('renders create avatar button', async () => {
+      await renderSidebar();
       expect(screen.getByText('newAvatar')).toBeDefined();
     });
 
-    it('renders collapse toggle button', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('renders collapse toggle button', async () => {
+      await renderSidebar();
       expect(screen.getByLabelText('collapse')).toBeDefined();
     });
 
-    it('shows brand name when expanded', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('shows brand name when expanded', async () => {
+      await renderSidebar();
       expect(screen.getByText('brand')).toBeDefined();
     });
   });
 
   describe('role-based visibility', () => {
-    it('hides admin menu from regular users', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('hides admin menu from regular users', async () => {
+      await renderSidebar();
       expect(screen.queryByText('admin')).toBeNull();
     });
 
-    it('hides workspace_admin menus from regular users', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('hides workspace_admin menus from regular users', async () => {
+      await renderSidebar();
       expect(screen.queryByText('apiDocs')).toBeNull();
     });
   });
 
   describe('interaction', () => {
-    it('calls toggleSidebar on collapse button click', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('calls toggleSidebar on collapse button click', async () => {
+      await renderSidebar();
       fireEvent.click(screen.getByLabelText('collapse'));
       expect(mockToggleSidebar).toHaveBeenCalled();
     });
 
-    it('navigates to avatars page on create button click', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('navigates to avatars page on create button click', async () => {
+      await renderSidebar();
       fireEvent.click(screen.getByText('newAvatar'));
       expect(mockPush).toHaveBeenCalledWith('/avatars');
     });
 
-    it('navigates to dashboard on menu item click', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('navigates to dashboard on menu item click', async () => {
+      await renderSidebar();
       fireEvent.click(screen.getByText('dashboard'));
       expect(mockPush).toHaveBeenCalledWith('/dashboard');
     });
 
-    it('navigates to marketplace on menu item click', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('navigates to marketplace on menu item click', async () => {
+      await renderSidebar();
       fireEvent.click(screen.getByText('marketplace'));
       expect(mockPush).toHaveBeenCalledWith('/marketplace');
     });
 
-    it('navigates to settings on menu item click', () => {
-      render(<Sidebar />, { wrapper: Wrapper });
+    it('navigates to settings on menu item click', async () => {
+      await renderSidebar();
       fireEvent.click(screen.getByText('settings'));
       expect(mockPush).toHaveBeenCalledWith('/settings');
     });
   });
 
   describe('admin visibility', () => {
-    it('shows admin and workspace_admin menus for super_admin user', () => {
+    it('shows admin and workspace_admin menus for super_admin user', async () => {
       mockUserRole = 'super_admin';
-      render(<Sidebar />, { wrapper: Wrapper });
+      await renderSidebar();
       expect(screen.getByText('admin')).toBeDefined();
       expect(screen.getByText('apiDocs')).toBeDefined();
       expect(screen.getByText('sellerCenter')).toBeDefined();
@@ -193,21 +201,21 @@ describe('Sidebar', () => {
   });
 
   describe('collapsed state', () => {
-    it('hides brand name when collapsed', () => {
+    it('hides brand name when collapsed', async () => {
       mockSidebarCollapsed = true;
-      render(<Sidebar />, { wrapper: Wrapper });
+      await renderSidebar();
       expect(screen.queryByText('brand')).toBeNull();
     });
 
-    it('hides new avatar button text when collapsed', () => {
+    it('hides new avatar button text when collapsed', async () => {
       mockSidebarCollapsed = true;
-      render(<Sidebar />, { wrapper: Wrapper });
+      await renderSidebar();
       expect(screen.queryByText('newAvatar')).toBeNull();
     });
 
-    it('shows expand label on toggle button when collapsed', () => {
+    it('shows expand label on toggle button when collapsed', async () => {
       mockSidebarCollapsed = true;
-      render(<Sidebar />, { wrapper: Wrapper });
+      await renderSidebar();
       expect(screen.getByLabelText('expand')).toBeDefined();
     });
   });
