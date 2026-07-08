@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Tag, Pagination, Button, App } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
@@ -69,13 +69,13 @@ export default function NotificationsPage() {
     pageSize: String(PAGE_SIZE),
   });
 
-  const currentItems = data?.success ? data.data?.items || [] : [];
   const total = data?.success ? (data.data?.total ?? 0) : 0;
 
-  // Sync items to local state for optimistic read marking
-  if (currentItems !== items && currentItems.length > 0) {
-    setItems(currentItems);
-  }
+  useEffect(() => {
+    if (data?.success) {
+      setItems(data.data?.items || []);
+    }
+  }, [data]);
 
   const handleReadOne = async (id: string) => {
     const res = await apiPut(`/api/notifications/${id}/read`);

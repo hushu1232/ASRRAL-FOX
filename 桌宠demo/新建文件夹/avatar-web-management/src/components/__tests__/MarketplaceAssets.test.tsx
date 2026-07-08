@@ -254,6 +254,41 @@ describe('NotificationsPage', () => {
     });
     expect(screen.getByText('Desktop sync ready')).toBeDefined();
   });
+
+  it('clears stale notifications when refreshed data is empty', async () => {
+    mockPaginatedData = {
+      success: true,
+      data: {
+        items: [
+          {
+            id: 'n1',
+            type: 'system',
+            title: 'Desktop sync ready',
+            body: 'Your pet package can be reviewed now.',
+            resource_type: null,
+            resource_id: null,
+            is_read: 0,
+            created_at: new Date().toISOString(),
+          },
+        ],
+        total: 1,
+      },
+    };
+
+    const { rerender } = render(<NotificationsPage />, { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText('Desktop sync ready')).toBeDefined();
+    });
+
+    mockPaginatedData = { success: true, data: { items: [], total: 0 } };
+    rerender(<NotificationsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('notifications-empty-panel')).toBeDefined();
+    });
+    expect(screen.queryByText('Desktop sync ready')).toBeNull();
+  });
 });
 
 // ──── Assets ────
