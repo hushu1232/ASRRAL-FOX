@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { App } from 'antd';
 import VoiceCloningWizard from '@/components/pet/VoiceCloningWizard';
 
@@ -93,6 +93,12 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   return <App>{children}</App>;
 }
 
+async function renderWizard() {
+  await act(async () => {
+    render(<VoiceCloningWizard />, { wrapper: Wrapper });
+  });
+}
+
 const mockVoices = [
   { voice_id: 'voice_abc123_001', has_reference_audio: true, prompt_text: '你好世界', gpt_model_size_mb: 45, sovits_model_size_mb: 32 },
   { voice_id: 'voice_def456_002', has_reference_audio: true, prompt_text: '', gpt_model_size_mb: 52, sovits_model_size_mb: 38 },
@@ -105,48 +111,48 @@ describe('VoiceCloningWizard', () => {
   });
 
   describe('step 1: upload', () => {
-    it('renders step 1 with recording tips', () => {
-      render(<VoiceCloningWizard />, { wrapper: Wrapper });
+    it('renders step 1 with recording tips', async () => {
+      await renderWizard();
       expect(screen.getByText('录音建议')).toBeDefined();
       expect(screen.getByText('录制1-5分钟纯人声')).toBeDefined();
       expect(screen.getByText('使用正常语速')).toBeDefined();
     });
 
-    it('renders upload dragger', () => {
-      render(<VoiceCloningWizard />, { wrapper: Wrapper });
+    it('renders upload dragger', async () => {
+      await renderWizard();
       expect(screen.getByText('点击或拖拽上传')).toBeDefined();
       expect(screen.getByText('支持WAV/MP3/OGG/FLAC')).toBeDefined();
     });
 
-    it('renders voice name input and prompt text textarea', () => {
-      render(<VoiceCloningWizard />, { wrapper: Wrapper });
+    it('renders voice name input and prompt text textarea', async () => {
+      await renderWizard();
       expect(screen.getByPlaceholderText('例如：我的声音')).toBeDefined();
       expect(screen.getByPlaceholderText('输入音频文字内容')).toBeDefined();
     });
 
-    it('shows warning when proceeding without upload', () => {
-      render(<VoiceCloningWizard />, { wrapper: Wrapper });
+    it('shows warning when proceeding without upload', async () => {
+      await renderWizard();
       fireEvent.click(screen.getByText('下一步：启动训练'));
       // Ant Design message.warning would be called
     });
 
-    it('next button is disabled when no file', () => {
-      render(<VoiceCloningWizard />, { wrapper: Wrapper });
+    it('next button is disabled when no file', async () => {
+      await renderWizard();
       const btn = screen.getByText('下一步：启动训练');
       expect(btn.closest('button')).toBeDisabled();
     });
   });
 
   describe('step 2: training', () => {
-    const renderStep2 = () => {
-      render(<VoiceCloningWizard />, { wrapper: Wrapper });
+    const renderStep2 = async () => {
+      await renderWizard();
       // Set up state to reach step 2
       const nameInput = screen.getByPlaceholderText('例如：我的声音') as HTMLInputElement;
       fireEvent.change(nameInput, { target: { value: '我的音色' } });
     };
 
-    it('shows training description before starting', () => {
-      renderStep2();
+    it('shows training description before starting', async () => {
+      await renderStep2();
       // Need file uploaded to proceed — the test shows step 1 state
       expect(screen.getByText('录音建议')).toBeDefined();
     });
@@ -154,7 +160,7 @@ describe('VoiceCloningWizard', () => {
 
   describe('step 3: voice list', () => {
     it('shows loaded voices', async () => {
-      render(<VoiceCloningWizard />, { wrapper: Wrapper });
+      await renderWizard();
       await waitFor(() => {
         expect(mockApiGet).toHaveBeenCalledWith('/api/tts/voices');
       });
@@ -162,8 +168,8 @@ describe('VoiceCloningWizard', () => {
   });
 
   describe('title and description', () => {
-    it('renders title and description', () => {
-      render(<VoiceCloningWizard />, { wrapper: Wrapper });
+    it('renders title and description', async () => {
+      await renderWizard();
       expect(screen.getByText('自定义音色')).toBeDefined();
       expect(screen.getByText('上传声音样本训练专属语音模型')).toBeDefined();
     });
