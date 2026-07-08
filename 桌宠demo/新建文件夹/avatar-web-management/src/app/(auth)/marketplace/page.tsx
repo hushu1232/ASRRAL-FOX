@@ -1,14 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, Tabs, Button, Tag, Input, Select, App, Spin, Rate, Empty, Pagination } from 'antd';
-import { SearchOutlined, DownloadOutlined, StarFilled } from '@ant-design/icons';
+import { Card, Tabs, Button, Input, Select, Rate, Pagination } from 'antd';
+import { SearchOutlined, DownloadOutlined } from '@ant-design/icons';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import PageHeader from '@/components/layout/PageHeader';
+import OperationPanel from '@/components/ui/OperationPanel';
+import EmptyState from '@/components/ui/EmptyState';
+import LoadingState from '@/components/ui/LoadingState';
 import { useApiPaginated } from '@/lib/use-api';
-import type { PaginatedResponse } from '@/lib/use-api';
 
 interface MarketItem {
   id: string;
@@ -45,7 +47,6 @@ export default function MarketplacePage() {
   const t = useTranslations('marketplace');
   const tc = useTranslations('marketplace.categories');
   const ts = useTranslations('marketplace.sort');
-  const { message } = App.useApp();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
@@ -137,9 +138,11 @@ export default function MarketplacePage() {
       />
 
       {isLoading ? (
-        <div className="flex justify-center py-20"><Spin size="large" /></div>
+        <LoadingState />
       ) : items.length === 0 ? (
-        <Empty description={t('noItems')} className="py-20" />
+        <OperationPanel data-testid="marketplace-empty-panel" title={null}>
+          <EmptyState description={t('noItems')} />
+        </OperationPanel>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

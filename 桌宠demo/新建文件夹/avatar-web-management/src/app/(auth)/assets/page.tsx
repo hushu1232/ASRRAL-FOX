@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, Button, Input, Select, Table, Tag, Tree, App, Spin, Pagination, Progress, Tooltip } from 'antd';
+import { Card, Button, Input, Select, Table, Tag, Tree, App, Pagination, Tooltip } from 'antd';
 import { UploadOutlined, AppstoreOutlined, UnorderedListOutlined, FolderOutlined, FileOutlined, SearchOutlined, ShopOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -9,6 +9,7 @@ import Image from 'next/image';
 import PageHeader from '@/components/layout/PageHeader';
 import OperationPanel from '@/components/ui/OperationPanel';
 import EmptyState from '@/components/ui/EmptyState';
+import LoadingState from '@/components/ui/LoadingState';
 import { apiGet } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/authStore';
 import type { PaginatedResponse } from '@/lib/api-client';
@@ -231,7 +232,7 @@ export default function AssetLibraryPage() {
           </OperationPanel>
 
           {loading ? (
-            <div className="flex min-h-[220px] items-center justify-center"><Spin size="large" /></div>
+            <LoadingState />
           ) : assets.length === 0 ? (
             <OperationPanel data-testid="asset-empty-panel" title={null}>
               <EmptyState description={t('noAssets')} />

@@ -1,11 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, Tag, Spin, Pagination, Empty, Button, App } from 'antd';
+import { Card, Tag, Pagination, Button, App } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import PageHeader from '@/components/layout/PageHeader';
+import OperationPanel from '@/components/ui/OperationPanel';
+import EmptyState from '@/components/ui/EmptyState';
+import LoadingState from '@/components/ui/LoadingState';
 import { useApiPaginated } from '@/lib/use-api';
 import { apiPut } from '@/lib/api-client';
 
@@ -124,14 +127,14 @@ export default function NotificationsPage() {
       />
 
       {isLoading ? (
-        <div className="flex justify-center py-20"><Spin size="large" /></div>
+        <LoadingState />
       ) : items.length === 0 ? (
-        <Card className="!border-purple-500/10">
-          <Empty
-            image={<BellOutlined className="text-6xl text-gray-600" />}
-            description={<span className="text-gray-500">{t('noNotifications')}</span>}
+        <OperationPanel data-testid="notifications-empty-panel" title={null}>
+          <EmptyState
+            icon={<BellOutlined className="text-6xl text-gray-600" />}
+            description={t('noNotifications')}
           />
-        </Card>
+        </OperationPanel>
       ) : (
         <Card className="!border-purple-500/10 !p-0 overflow-hidden">
           {items.map((item, i) => (

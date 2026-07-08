@@ -6,6 +6,7 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { App } from 'antd';
 import MarketplacePage from '@/app/(auth)/marketplace/page';
 import AssetLibraryPage from '@/app/(auth)/assets/page';
+import NotificationsPage from '@/app/(auth)/notifications/page';
 
 // ──── mutable refs for per-test configuration ────
 const mockApiGet = jest.fn();
@@ -64,6 +65,8 @@ jest.mock('@ant-design/icons', () => ({
   FolderOutlined: () => <span data-testid="icon-folder" />,
   FileOutlined: () => <span data-testid="icon-file" />,
   ShopOutlined: () => <span data-testid="icon-shop" />,
+  BellOutlined: () => <span data-testid="icon-bell" />,
+  CheckOutlined: () => <span data-testid="icon-check" />,
 }));
 
 function Wrapper({ children }: { children: React.ReactNode }) {
@@ -118,6 +121,8 @@ describe('MarketplacePage', () => {
   it('shows empty state when no items', () => {
     mockPaginatedData = { success: true, data: { items: [], total: 0 } };
     render(<MarketplacePage />, { wrapper: Wrapper });
+    expect(screen.getByTestId('marketplace-empty-panel')).toBeDefined();
+    expect(screen.getByTestId('empty-state')).toBeDefined();
     expect(screen.getByText('noItems')).toBeDefined();
   });
 
@@ -206,6 +211,19 @@ describe('MarketplacePage', () => {
     };
     render(<MarketplacePage />, { wrapper: Wrapper });
     expect(screen.getByText('free')).toBeDefined();
+  });
+});
+
+// ──── Notifications ────
+
+describe('NotificationsPage', () => {
+  it('shows the shared empty state when there are no notifications', () => {
+    mockPaginatedData = { success: true, data: { items: [], total: 0 } };
+    render(<NotificationsPage />, { wrapper: Wrapper });
+
+    expect(screen.getByTestId('notifications-empty-panel')).toBeDefined();
+    expect(screen.getByTestId('empty-state')).toBeDefined();
+    expect(screen.getByText('noNotifications')).toBeDefined();
   });
 });
 

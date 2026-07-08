@@ -15,11 +15,27 @@ describe('forms and asset UI guardrails', () => {
 
     expect(source).toContain("import OperationPanel from '@/components/ui/OperationPanel'");
     expect(source).toContain("import EmptyState from '@/components/ui/EmptyState'");
+    expect(source).toContain("import LoadingState from '@/components/ui/LoadingState'");
     expect(source).toContain('data-testid="asset-directory-panel"');
     expect(source).toContain('data-testid="asset-filter-panel"');
     expect(source).toContain('data-testid="asset-empty-panel"');
     expect(source).toContain('data-testid="asset-list-panel"');
     expect(source).toContain('data-testid="asset-grid"');
+  });
+
+  it('uses shared loading and empty surfaces on marketplace and notifications pages', () => {
+    const marketplaceSource = readSource('src/app/(auth)/marketplace/page.tsx');
+    const notificationsSource = readSource('src/app/(auth)/notifications/page.tsx');
+
+    expect(marketplaceSource).toContain("import OperationPanel from '@/components/ui/OperationPanel'");
+    expect(marketplaceSource).toContain("import EmptyState from '@/components/ui/EmptyState'");
+    expect(marketplaceSource).toContain("import LoadingState from '@/components/ui/LoadingState'");
+    expect(marketplaceSource).toContain('data-testid="marketplace-empty-panel"');
+
+    expect(notificationsSource).toContain("import OperationPanel from '@/components/ui/OperationPanel'");
+    expect(notificationsSource).toContain("import EmptyState from '@/components/ui/EmptyState'");
+    expect(notificationsSource).toContain("import LoadingState from '@/components/ui/LoadingState'");
+    expect(notificationsSource).toContain('data-testid="notifications-empty-panel"');
   });
 
   it('keeps asset cards responsive and free of broad purple gradient styling', () => {
