@@ -1,7 +1,10 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createLocalServerRunConfig } from '../../scripts/test-integration-local';
+import {
+  createLocalServerRunConfig,
+  getLocalServerModePreconditionError,
+} from '../../scripts/test-integration-local';
 
 describe('test:integration:local runner', () => {
   it('uses a local runner instead of start-server-and-test', () => {
@@ -135,5 +138,16 @@ describe('test:integration:local runner', () => {
 
     expect(config.test.command).toContain('tsx');
     expect(config.test.args).toEqual(['scripts/check-webbridge-active-apply.ts']);
+  });
+
+  it('requires active WebBridge apply evidence opt-in before starting the local server', () => {
+    expect(getLocalServerModePreconditionError('webbridge-active-apply', {})).toBe(
+      'ALIFE_ACTIVE_APPLY_EVIDENCE must be set to true before active apply evidence can run.',
+    );
+    expect(
+      getLocalServerModePreconditionError('webbridge-active-apply', {
+        ALIFE_ACTIVE_APPLY_EVIDENCE: 'true',
+      }),
+    ).toBeNull();
   });
 });

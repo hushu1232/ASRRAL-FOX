@@ -49,6 +49,8 @@ const CONTRACTS_LIVE_TEST_ARGS = [
 ];
 
 const LOCAL_RUNNER_JWT_SECRET = 'local-integration-runner-secret-do-not-use-in-production';
+const ACTIVE_APPLY_EVIDENCE_OPT_IN_ERROR =
+  'ALIFE_ACTIVE_APPLY_EVIDENCE must be set to true before active apply evidence can run.';
 
 function resolvePackageFile(packageName: string, relativePath: string): string {
   return join(dirname(require.resolve(`${packageName}/package.json`)), relativePath);
@@ -238,6 +240,17 @@ export function createIntegrationLocalRunConfig(
   return createLocalServerRunConfig('integration', rootDir);
 }
 
+export function getLocalServerModePreconditionError(
+  mode: LocalServerMode,
+  env: EnvMap = process.env,
+): string | null {
+  if (mode === 'webbridge-active-apply' && env.ALIFE_ACTIVE_APPLY_EVIDENCE !== 'true') {
+    return ACTIVE_APPLY_EVIDENCE_OPT_IN_ERROR;
+  }
+
+  return null;
+}
+
 function spawnNodeScript(command: NodeScriptCommand): ChildProcess {
   return spawn(process.execPath, [command.command, ...command.args], {
     cwd: command.cwd,
@@ -354,9 +367,16 @@ function parseMode(argv: string[]): LocalServerMode {
 if (require.main === module) {
   const mode = parseMode(process.argv);
   const extraArgs = process.argv.slice(3);
-  runWithLocalServer(createLocalServerRunConfig(mode, process.cwd(), extraArgs)).then(
-    (exitCode) => {
-      process.exitCode = exitCode;
-    },
-  );
+  const preconditionError = getLocalServerModePreconditionError(mode);
+
+  if (preconditionError) {
+    console.error(preconditionError);
+    process.exitCode = 1;
+  } else {
+    runWithLocalServer(createLocalServerRunConfig(mode, process.cwd(), extraArgs)).then(
+      (exitCode) => {
+        process.exitCode = exitCode;
+      },
+    );
+  }
 }
