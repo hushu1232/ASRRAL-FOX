@@ -19,6 +19,7 @@ type ServerCommand = NodeScriptCommand & {
 };
 
 export type IntegrationLocalRunConfig = {
+  mode: LocalServerMode;
   server: ServerCommand;
   test: NodeScriptCommand;
 };
@@ -29,7 +30,8 @@ export type LocalServerMode =
   | 'e2e'
   | 'e2e-api'
   | 'webbridge'
-  | 'webbridge-smoke';
+  | 'webbridge-smoke'
+  | 'webbridge-active-apply';
 
 const INTEGRATION_TEST_ARGS = [
   '--verbose',
@@ -48,6 +50,8 @@ const CONTRACTS_LIVE_TEST_ARGS = [
 ];
 
 const LOCAL_RUNNER_JWT_SECRET = 'local-integration-runner-secret-do-not-use-in-production';
+const ACTIVE_APPLY_EVIDENCE_OPT_IN_ERROR =
+  'ALIFE_ACTIVE_APPLY_EVIDENCE must be set to true before active apply evidence can run.';
 
 function resolvePackageFile(packageName: string, relativePath: string): string {
   return join(dirname(require.resolve(`${packageName}/package.json`)), relativePath);
@@ -197,6 +201,13 @@ function createTestCommand(
         cwd: rootDir,
         env: process.env,
       };
+    case 'webbridge-active-apply':
+      return {
+        command: resolvePackageFile('tsx', 'dist/cli.mjs'),
+        args: ['scripts/check-webbridge-active-apply.ts', ...extraArgs],
+        cwd: rootDir,
+        env: process.env,
+      };
   }
 }
 
@@ -209,6 +220,7 @@ export function createLocalServerRunConfig(
   const serverEnv = loadLocalEnv(rootDir);
 
   return {
+    mode,
     server: {
       command: resolveStandaloneServer(rootDir),
       args: [],
@@ -228,6 +240,17 @@ export function createIntegrationLocalRunConfig(
   rootDir = process.cwd(),
 ): IntegrationLocalRunConfig {
   return createLocalServerRunConfig('integration', rootDir);
+}
+
+export function getLocalServerModePreconditionError(
+  mode: LocalServerMode,
+  env: EnvMap = process.env,
+): string | null {
+  if (mode === 'webbridge-active-apply' && env.ALIFE_ACTIVE_APPLY_EVIDENCE !== 'true') {
+    return ACTIVE_APPLY_EVIDENCE_OPT_IN_ERROR;
+  }
+
+  return null;
 }
 
 function spawnNodeScript(command: NodeScriptCommand): ChildProcess {
@@ -307,6 +330,11 @@ async function stopServer(server: ChildProcess): Promise<void> {
 }
 
 export async function runWithLocalServer(config = createLocalServerRunConfig()): Promise<number> {
+  const preconditionError = getLocalServerModePreconditionError(config.mode);
+  if (preconditionError) {
+    throw new Error(preconditionError);
+  }
+
   const server = spawnNodeScript(config.server);
 
   try {
@@ -334,7 +362,8 @@ function parseMode(argv: string[]): LocalServerMode {
     raw === 'e2e' ||
     raw === 'e2e-api' ||
     raw === 'webbridge' ||
-    raw === 'webbridge-smoke'
+    raw === 'webbridge-smoke' ||
+    raw === 'webbridge-active-apply'
   ) {
     return raw;
   }
@@ -348,6 +377,10 @@ if (require.main === module) {
   runWithLocalServer(createLocalServerRunConfig(mode, process.cwd(), extraArgs)).then(
     (exitCode) => {
       process.exitCode = exitCode;
+    },
+    (error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
     },
   );
 }

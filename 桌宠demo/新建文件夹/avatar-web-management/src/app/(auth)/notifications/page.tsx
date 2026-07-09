@@ -1,11 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { Card, Tag, Spin, Pagination, Empty, Button, App } from 'antd';
+import { useEffect, useState } from 'react';
+import { Tag, Pagination, Button, App } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import PageHeader from '@/components/layout/PageHeader';
+import OperationPanel from '@/components/ui/OperationPanel';
+import EmptyState from '@/components/ui/EmptyState';
+import LoadingState from '@/components/ui/LoadingState';
 import { useApiPaginated } from '@/lib/use-api';
 import { apiPut } from '@/lib/api-client';
 
@@ -66,13 +69,13 @@ export default function NotificationsPage() {
     pageSize: String(PAGE_SIZE),
   });
 
-  const currentItems = data?.success ? data.data?.items || [] : [];
   const total = data?.success ? (data.data?.total ?? 0) : 0;
 
-  // Sync items to local state for optimistic read marking
-  if (currentItems !== items && currentItems.length > 0) {
-    setItems(currentItems);
-  }
+  useEffect(() => {
+    if (data?.success) {
+      setItems(data.data?.items || []);
+    }
+  }, [data]);
 
   const handleReadOne = async (id: string) => {
     const res = await apiPut(`/api/notifications/${id}/read`);
@@ -116,7 +119,7 @@ export default function NotificationsPage() {
           <Button
             icon={<CheckOutlined />}
             onClick={handleReadAll}
-            className="!border-purple-500/20 !text-purple-400 hover:!border-purple-500/40 hover:!text-purple-300"
+            style={{ borderColor: 'var(--border-subtle)', color: 'var(--accent)' }}
           >
             {t('markAllRead')}
           </Button>
@@ -124,22 +127,26 @@ export default function NotificationsPage() {
       />
 
       {isLoading ? (
-        <div className="flex justify-center py-20"><Spin size="large" /></div>
+        <LoadingState />
       ) : items.length === 0 ? (
-        <Card className="!border-purple-500/10">
-          <Empty
-            image={<BellOutlined className="text-6xl text-gray-600" />}
-            description={<span className="text-gray-500">{t('noNotifications')}</span>}
+        <OperationPanel data-testid="notifications-empty-panel" title={null}>
+          <EmptyState
+            icon={<BellOutlined className="text-6xl text-gray-600" />}
+            description={t('noNotifications')}
           />
-        </Card>
+        </OperationPanel>
       ) : (
-        <Card className="!border-purple-500/10 !p-0 overflow-hidden">
+        <OperationPanel data-testid="notifications-list-panel" title={null}>
           {items.map((item, i) => (
             <div
               key={item.id}
-              className={`px-5 py-4 flex items-start gap-4 cursor-pointer transition-colors hover:bg-purple-500/5 ${
-                !item.is_read ? 'bg-purple-500/[0.03]' : ''
-              } ${i < items.length - 1 ? 'border-b border-purple-500/5' : ''}`}
+              className={`px-5 py-4 flex items-start gap-4 cursor-pointer transition-colors hover:bg-[var(--bg-card-hover)] ${
+                i < items.length - 1 ? 'border-b' : ''
+              }`}
+              style={{
+                background: item.is_read ? 'transparent' : 'var(--bg-card-hover)',
+                borderColor: 'var(--border-subtle)',
+              }}
               onClick={() => handleClick(item)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleClick(item); } }}
               role="button"
@@ -173,7 +180,7 @@ export default function NotificationsPage() {
               <span className="text-xs text-gray-600 shrink-0 mt-1">{formatDate(item.created_at)}</span>
             </div>
           ))}
-        </Card>
+        </OperationPanel>
       )}
 
       {total > PAGE_SIZE && (

@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from 'antd';
 import ModelViewer from '@/components/pet/preview/ModelViewer';
 
@@ -38,6 +38,46 @@ jest.mock('next/dynamic', () => ({
       </div>
     );
     return Comp;
+  },
+}));
+
+jest.mock('three', () => ({
+  Scene: jest.fn().mockImplementation(() => ({
+    add: jest.fn(),
+  })),
+  PerspectiveCamera: jest.fn().mockImplementation(() => ({
+    position: {
+      set: jest.fn(),
+    },
+  })),
+  WebGLRenderer: jest.fn().mockImplementation(() => ({
+    domElement: document.createElement('canvas'),
+    render: jest.fn(),
+    setPixelRatio: jest.fn(),
+    setSize: jest.fn(),
+  })),
+  DirectionalLight: jest.fn(),
+  AmbientLight: jest.fn(),
+}));
+
+jest.mock('three/examples/jsm/loaders/GLTFLoader.js', () => ({
+  GLTFLoader: jest.fn().mockImplementation(() => ({
+    register: jest.fn(),
+    loadAsync: jest.fn().mockResolvedValue({
+      userData: {
+        vrm: {
+          scene: {},
+          update: jest.fn(),
+        },
+      },
+    }),
+  })),
+}));
+
+jest.mock('@pixiv/three-vrm', () => ({
+  VRMLoaderPlugin: jest.fn(),
+  VRMUtils: {
+    rotateVRM0: jest.fn(),
   },
 }));
 
@@ -98,20 +138,23 @@ describe('ModelViewer', () => {
     it('renders ModelError when onError is triggered by Live2D', () => {
       const { container } = render(<ModelViewer {...baseProps} />, { wrapper: Wrapper });
       const errorBtn = screen.getByTestId('trigger-error');
-      errorBtn.click();
+      fireEvent.click(errorBtn);
       // Error component should appear with the error message
       expect(container.querySelector('.text-4xl')).toBeDefined();
     });
   });
 
   describe('VRM mode', () => {
-    it('renders VRMViewer when modelType is vrm', () => {
+    it('renders VRMViewer without requiring real WebGL in jsdom', async () => {
       const { container } = render(
         <ModelViewer {...baseProps} modelType="vrm" />,
         { wrapper: Wrapper }
       );
-      // VRM viewer renders in a container div
       expect(container.querySelector('.text-xs')).toBeDefined();
+      await waitFor(() => {
+        expect(container.querySelector('canvas')).toBeDefined();
+      });
+      expect(container.querySelector('.text-4xl')).toBeNull();
     });
   });
 });

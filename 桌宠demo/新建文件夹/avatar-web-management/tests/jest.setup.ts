@@ -49,19 +49,13 @@ if (typeof window !== 'undefined') {
     } as unknown as typeof ResizeObserver;
   }
 
-  // jsdom does not implement getComputedStyle for pseudo-elements.
-  // @rc-component/table calls getComputedStyle(elt, '::-webkit-scrollbar')
-  // to measure scrollbar size, which throws. Override to return empty decl.
+  // jsdom logs a not-implemented error when called with pseudo-elements.
+  // rc-component only needs this for scrollbar measurement, so use the
+  // base element style as the test fallback.
   const originalGetComputedStyle = window.getComputedStyle.bind(window);
   window.getComputedStyle = (elt: Element, pseudoElt?: string | null) => {
     if (pseudoElt) {
-      try {
-        // Try the original first — some pseudo-elements may be supported
-        return originalGetComputedStyle(elt, pseudoElt);
-      } catch {
-        // Return the non-pseudo computed style as fallback
-        return originalGetComputedStyle(elt);
-      }
+      return originalGetComputedStyle(elt);
     }
     return originalGetComputedStyle(elt);
   };
@@ -107,7 +101,7 @@ jest.mock('next/image', () => ({
   },
 }));
 
-// Note: global.fetch is intentionally NOT mocked — integration tests
+// Note: global.fetch is intentionally NOT mocked; integration tests
 // (smoke, security) use the native Node.js fetch for real API calls.
 // Unit tests that need a fetch mock should set it up in their own describe block.
 

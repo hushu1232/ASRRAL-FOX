@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import SearchModal from '@/components/layout/SearchModal';
 
 const mockPush = jest.fn();
@@ -56,7 +56,10 @@ describe('SearchModal', () => {
       expect(document.querySelector('.ant-spin')).toBeDefined();
     });
 
-    resolvePromise!(mockResults);
+    await act(async () => {
+      resolvePromise!(mockResults);
+      await deferred;
+    });
   });
 
   it('renders search results across categories', async () => {

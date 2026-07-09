@@ -1,14 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, Tabs, Button, Tag, Input, Select, App, Spin, Rate, Empty, Pagination } from 'antd';
-import { SearchOutlined, DownloadOutlined, StarFilled } from '@ant-design/icons';
+import { Card, Tabs, Button, Input, Select, Rate, Pagination } from 'antd';
+import { SearchOutlined, DownloadOutlined } from '@ant-design/icons';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import PageHeader from '@/components/layout/PageHeader';
+import OperationPanel from '@/components/ui/OperationPanel';
+import EmptyState from '@/components/ui/EmptyState';
+import LoadingState from '@/components/ui/LoadingState';
 import { useApiPaginated } from '@/lib/use-api';
-import type { PaginatedResponse } from '@/lib/use-api';
 
 interface MarketItem {
   id: string;
@@ -45,7 +47,6 @@ export default function MarketplacePage() {
   const t = useTranslations('marketplace');
   const tc = useTranslations('marketplace.categories');
   const ts = useTranslations('marketplace.sort');
-  const { message } = App.useApp();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
@@ -94,7 +95,6 @@ export default function MarketplacePage() {
           <Button
             type="primary"
             onClick={() => router.push('/marketplace/new')}
-            className="bg-gradient-to-r from-purple-600 to-blue-600 border-0"
           >
             {t('listItem')}
           </Button>
@@ -137,12 +137,17 @@ export default function MarketplacePage() {
       />
 
       {isLoading ? (
-        <div className="flex justify-center py-20"><Spin size="large" /></div>
+        <LoadingState />
       ) : items.length === 0 ? (
-        <Empty description={t('noItems')} className="py-20" />
+        <OperationPanel data-testid="marketplace-empty-panel" title={null}>
+          <EmptyState description={t('noItems')} />
+        </OperationPanel>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div
+            data-testid="marketplace-grid"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+          >
             {items.map(item => {
               const images = parseImages(item.preview_images);
               const hasPreview = images.length > 0;
@@ -150,10 +155,18 @@ export default function MarketplacePage() {
                 <Card
                   key={item.id}
                   hoverable
-                  className="!border-purple-500/10 hover:!border-purple-500/30 transition-all cursor-pointer"
+                  className="transition-all cursor-pointer"
+                  style={{
+                    borderColor: 'var(--border-subtle)',
+                    borderRadius: 'var(--ds-panel-radius)',
+                    background: 'var(--bg-card)',
+                  }}
                   onClick={() => router.push(`/marketplace/${item.id}`)}
                   cover={
-                    <div className="h-44 bg-gradient-to-br from-purple-900/40 to-blue-900/40 flex items-center justify-center relative overflow-hidden">
+                    <div
+                      className="h-44 flex items-center justify-center relative overflow-hidden"
+                      style={{ background: 'var(--bg-card-hover)' }}
+                    >
                       {hasPreview ? (
                         <Image
                           src={images[0].src}
@@ -171,11 +184,14 @@ export default function MarketplacePage() {
                           unoptimized
                         />
                       )}
-                      <span className={`absolute top-2 right-2 text-xs px-2 py-0.5 rounded-full font-bold ${
-                        item.price === 0
-                          ? 'bg-green-500/90 text-black'
-                          : 'bg-purple-500/90 text-white'
-                      }`}>
+                      <span
+                        className={`absolute top-2 right-2 text-xs px-2 py-0.5 rounded-full font-bold ${
+                          item.price === 0
+                            ? 'text-black'
+                            : 'text-white'
+                        }`}
+                        style={{ background: item.price === 0 ? 'var(--success)' : 'var(--accent)' }}
+                      >
                         {formatPrice(item.price, item.currency)}
                       </span>
                     </div>
@@ -184,7 +200,8 @@ export default function MarketplacePage() {
                   <div className="text-white font-medium text-sm mb-1 truncate">{item.title}</div>
                   <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
                     <span
-                      className="text-purple-400 hover:text-purple-300 hover:underline truncate max-w-[120px]"
+                      className="hover:underline truncate max-w-[120px]"
+                      style={{ color: 'var(--accent)' }}
                       onClick={(e) => { e.stopPropagation(); router.push(`/marketplace/seller/${item.seller_id}`); }}
                     >
                       {item.seller_username}

@@ -52,7 +52,7 @@ Safe boundaries:
 - Do not write into the default `AlifePath.StorageFolderPath\WebBridge`.
 - Do not delete `Runtime`, `Storage`, `Outputs`, or any live task directories.
 - Use the smoke runner's isolated package root.
-- Treat the apply step in `npm run check:webbridge:smoke` as isolated smoke evidence, not as active runtime activation.
+- Treat the apply step in `npm run check:webbridge:smoke` as isolated smoke evidence, not as live already-running desktop process activation.
 
 Current observed isolated smoke output root on `master`:
 
@@ -166,7 +166,42 @@ ActiveConfigPath
 CatalogPath
 ```
 
-The smoke proves the WebBridge package can move through the staged-to-applied loop in an isolated harness. It does not prove that the active desktop runtime has applied a package in its default runtime storage.
+The smoke proves the WebBridge package can move through the staged-to-applied loop in an isolated harness. It does not prove that a live already-running desktop process has applied a package in its default runtime storage.
+
+## Active WebBridge Service Apply Evidence
+
+The stronger active-service evidence check is opt-in. Run from the Web app root:
+
+```powershell
+$env:ALIFE_ACTIVE_APPLY_EVIDENCE='true'
+$env:DOTNET_EXE='C:\Users\hu shu\.dotnet\dotnet.exe'
+$env:ALIFE_ROOT='D:\Alife'
+$env:WEBBRIDGE_PACKAGE_ROOT='D:\tmp\foxd-active-apply-evidence'
+npm run check:webbridge:active-apply
+```
+
+Expected evidence:
+
+```text
+Active WebBridge apply evidence passed.
+EvidenceMode: active-service-apply
+InstallStatus: pendingActivation
+ApplyStatus: applied
+InstalledFiles: 1
+PackageRootPath: D:\tmp\foxd-active-apply-evidence\Packages\current-pet-character-bundle
+ManifestPath: D:\tmp\foxd-active-apply-evidence\Manifests\current-pet-character-bundle.json
+ConfigDraftPath: D:\tmp\foxd-active-apply-evidence\ConfigDrafts\current-pet-character-bundle.json
+CharacterCardPath: D:\tmp\foxd-active-apply-evidence\Packages\current-pet-character-bundle\characters\current-pet\card.json
+ActiveConfigPath: D:\tmp\foxd-active-apply-evidence\ActiveConfig\current-pet-character-bundle.json
+CatalogPath: D:\tmp\foxd-active-apply-evidence\catalog.json
+DefaultRuntimeStorageTouched: false
+WebStatus: staged/localConfirmationRequired/confirmInDesktop
+WebStatus: applied/upToDate/none/requiresLocalConfirmation=false
+```
+
+Evidence captured on 2026-07-08 used package `current-pet-character-bundle` under `D:\tmp\foxd-active-apply-evidence`, installed one file, and reported the manifest, config draft, character card, active config, and catalog paths under that explicit package root.
+
+This verifies the canonical Alife .NET WebBridge service apply path through `WebBridgeService.ApplyPackage(...)` and `packageApplied` milestone reporting while using an explicit package root. It still does not claim that an already-running desktop process applied a package in default runtime storage.
 
 ## Alife .NET 9 Verification
 

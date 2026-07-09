@@ -5,14 +5,13 @@
 import { render, screen } from '@testing-library/react';
 import Live2DViewer from '@/components/live2d/Live2DViewer';
 
-jest.mock('@/lib/live2d/cubism5.js', () => ({
-  AppDelegate: class MockAppDelegate {
-    initialize() {}
-    run() {}
-    stop() {}
-    release() {}
-    changeModel(_path: string) {}
-  },
+jest.mock('@/lib/live2d/adapter', () => ({
+  ensureCoreLoaded: jest.fn(() => new Promise(() => {})),
+  createAppDelegate: jest.fn(),
+  attachCanvas: jest.fn(),
+  dispatchPointerMove: jest.fn(),
+  dispatchPointerDown: jest.fn(),
+  dispatchPointerUp: jest.fn(),
 }));
 
 describe('Live2DViewer', () => {

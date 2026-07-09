@@ -44,4 +44,12 @@ describe('package test scripts', () => {
       'tsx scripts/test-integration-local.ts webbridge-smoke',
     );
   });
+
+  it('exposes an opt-in active WebBridge apply evidence check', () => {
+    const pkg = readPackageJson();
+
+    expect(pkg.scripts['check:webbridge:active-apply']).toBe(
+      'tsx scripts/test-integration-local.ts webbridge-active-apply',
+    );
+  });
 });

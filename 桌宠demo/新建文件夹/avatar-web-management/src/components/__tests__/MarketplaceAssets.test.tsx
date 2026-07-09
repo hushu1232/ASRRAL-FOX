@@ -2,10 +2,11 @@
  * @jest-environment jsdom
  */
 
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { App } from 'antd';
 import MarketplacePage from '@/app/(auth)/marketplace/page';
 import AssetLibraryPage from '@/app/(auth)/assets/page';
+import NotificationsPage from '@/app/(auth)/notifications/page';
 
 // ──── mutable refs for per-test configuration ────
 const mockApiGet = jest.fn();
@@ -64,6 +65,8 @@ jest.mock('@ant-design/icons', () => ({
   FolderOutlined: () => <span data-testid="icon-folder" />,
   FileOutlined: () => <span data-testid="icon-file" />,
   ShopOutlined: () => <span data-testid="icon-shop" />,
+  BellOutlined: () => <span data-testid="icon-bell" />,
+  CheckOutlined: () => <span data-testid="icon-check" />,
 }));
 
 function Wrapper({ children }: { children: React.ReactNode }) {
@@ -118,6 +121,8 @@ describe('MarketplacePage', () => {
   it('shows empty state when no items', () => {
     mockPaginatedData = { success: true, data: { items: [], total: 0 } };
     render(<MarketplacePage />, { wrapper: Wrapper });
+    expect(screen.getByTestId('marketplace-empty-panel')).toBeDefined();
+    expect(screen.getByTestId('empty-state')).toBeDefined();
     expect(screen.getByText('noItems')).toBeDefined();
   });
 
@@ -147,6 +152,7 @@ describe('MarketplacePage', () => {
       },
     };
     render(<MarketplacePage />, { wrapper: Wrapper });
+    expect(screen.getByTestId('marketplace-grid')).toBeDefined();
     expect(screen.getByText('酷炫机器人模型')).toBeDefined();
     expect(screen.getByText('sellerA')).toBeDefined();
     expect(screen.getByText('¥9900')).toBeDefined();
@@ -209,6 +215,82 @@ describe('MarketplacePage', () => {
   });
 });
 
+// ──── Notifications ────
+
+describe('NotificationsPage', () => {
+  it('shows the shared empty state when there are no notifications', () => {
+    mockPaginatedData = { success: true, data: { items: [], total: 0 } };
+    render(<NotificationsPage />, { wrapper: Wrapper });
+
+    expect(screen.getByTestId('notifications-empty-panel')).toBeDefined();
+    expect(screen.getByTestId('empty-state')).toBeDefined();
+    expect(screen.getByText('noNotifications')).toBeDefined();
+  });
+
+  it('renders notifications inside the shared list panel', async () => {
+    mockPaginatedData = {
+      success: true,
+      data: {
+        items: [
+          {
+            id: 'n1',
+            type: 'system',
+            title: 'Desktop sync ready',
+            body: 'Your pet package can be reviewed now.',
+            resource_type: null,
+            resource_id: null,
+            is_read: 0,
+            created_at: new Date().toISOString(),
+          },
+        ],
+        total: 1,
+      },
+    };
+
+    render(<NotificationsPage />, { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('notifications-list-panel')).toBeDefined();
+    });
+    expect(screen.getByText('Desktop sync ready')).toBeDefined();
+  });
+
+  it('clears stale notifications when refreshed data is empty', async () => {
+    mockPaginatedData = {
+      success: true,
+      data: {
+        items: [
+          {
+            id: 'n1',
+            type: 'system',
+            title: 'Desktop sync ready',
+            body: 'Your pet package can be reviewed now.',
+            resource_type: null,
+            resource_id: null,
+            is_read: 0,
+            created_at: new Date().toISOString(),
+          },
+        ],
+        total: 1,
+      },
+    };
+
+    const { rerender } = render(<NotificationsPage />, { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText('Desktop sync ready')).toBeDefined();
+    });
+
+    mockPaginatedData = { success: true, data: { items: [], total: 0 } };
+    rerender(<NotificationsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('notifications-empty-panel')).toBeDefined();
+    });
+    expect(screen.queryByText('Desktop sync ready')).toBeNull();
+  });
+});
+
 // ──── Assets ────
 
 describe('AssetLibraryPage', () => {
@@ -250,53 +332,56 @@ describe('AssetLibraryPage', () => {
     });
   }
 
+  async function renderAssetLibraryPage() {
+    const result = render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+    return result;
+  }
+
   it('renders heading', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await renderAssetLibraryPage();
     expect(screen.getByText('title')).toBeDefined();
   });
 
   it('renders "uploadButton" button', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await renderAssetLibraryPage();
     expect(screen.getByText('uploadButton')).toBeDefined();
   });
 
   it('renders search input', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await renderAssetLibraryPage();
     expect(screen.getByPlaceholderText('upload.searchFiles')).toBeDefined();
   });
 
   it('renders Tree sidebar with category labels', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await renderAssetLibraryPage();
     expect(screen.getByText('upload.allAssets')).toBeDefined();
     expect(screen.getByText('upload.directory')).toBeDefined();
   });
 
   it('renders view mode toggle buttons', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
+    await renderAssetLibraryPage();
     expect(screen.getByTestId('icon-grid')).toBeDefined();
     expect(screen.getByTestId('icon-list')).toBeDefined();
   });
 
   it('fetches assets on mount', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    });
+    await renderAssetLibraryPage();
+    expect(mockApiGet).toHaveBeenCalledTimes(1);
     expect(mockApiGet).toHaveBeenCalledWith('/api/assets', { page: '1', pageSize: '24' });
   });
 
   it('shows empty state after loading', async () => {
     mockEmptyAssets();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    });
+    await renderAssetLibraryPage();
     await waitFor(() => {
       expect(screen.getByText('noAssets')).toBeDefined();
     });
@@ -304,10 +389,7 @@ describe('AssetLibraryPage', () => {
 
   it('renders asset cards in grid view', async () => {
     mockAssetsWithData();
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    });
+    await renderAssetLibraryPage();
     await waitFor(() => {
       expect(screen.getByText('character.glb')).toBeDefined();
       expect(screen.getByText('texture_diffuse.png')).toBeDefined();
@@ -331,10 +413,7 @@ describe('AssetLibraryPage', () => {
         total: 50,
       },
     });
-    render(<AssetLibraryPage />, { wrapper: Wrapper });
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    });
+    await renderAssetLibraryPage();
     await waitFor(() => {
       expect(screen.getByText('upload.paginationTotal')).toBeDefined();
     });

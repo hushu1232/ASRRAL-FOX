@@ -104,7 +104,7 @@ export default function PetPreview() {
   if (store.configLoading) {
     return (
       <div className="flex items-center justify-center min-h-[600px]">
-        <Spin size="large" tip={t('preview.loadingConfig')} />
+        <Spin size="large" description={t('preview.loadingConfig')} />
       </div>
     );
   }
