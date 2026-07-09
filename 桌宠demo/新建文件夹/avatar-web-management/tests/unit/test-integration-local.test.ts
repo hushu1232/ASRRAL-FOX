@@ -129,4 +129,11 @@ describe('test:integration:local runner', () => {
     expect(config.test.command).toContain('tsx');
     expect(config.test.args).toEqual(['scripts/check-webbridge-staged-applied.ts']);
   });
+
+  it('supports opt-in active WebBridge apply evidence checks against the local standalone server', () => {
+    const config = createLocalServerRunConfig('webbridge-active-apply');
+
+    expect(config.test.command).toContain('tsx');
+    expect(config.test.args).toEqual(['scripts/check-webbridge-active-apply.ts']);
+  });
 });
