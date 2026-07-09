@@ -29,7 +29,8 @@ export type LocalServerMode =
   | 'e2e'
   | 'e2e-api'
   | 'webbridge'
-  | 'webbridge-smoke';
+  | 'webbridge-smoke'
+  | 'webbridge-active-apply';
 
 const INTEGRATION_TEST_ARGS = [
   '--verbose',
@@ -197,6 +198,13 @@ function createTestCommand(
         cwd: rootDir,
         env: process.env,
       };
+    case 'webbridge-active-apply':
+      return {
+        command: resolvePackageFile('tsx', 'dist/cli.mjs'),
+        args: ['scripts/check-webbridge-active-apply.ts', ...extraArgs],
+        cwd: rootDir,
+        env: process.env,
+      };
   }
 }
 
@@ -334,7 +342,8 @@ function parseMode(argv: string[]): LocalServerMode {
     raw === 'e2e' ||
     raw === 'e2e-api' ||
     raw === 'webbridge' ||
-    raw === 'webbridge-smoke'
+    raw === 'webbridge-smoke' ||
+    raw === 'webbridge-active-apply'
   ) {
     return raw;
   }
