@@ -113,6 +113,17 @@ WebStatus: applied/upToDate/none/requiresLocalConfirmation=false
 
 The smoke is isolated. It does not start or mutate the active Alife desktop runtime.
 
+Active-service apply evidence is also available through `npm run check:webbridge:active-apply`, separate from the isolated smoke. The verified evidence includes:
+
+```text
+EvidenceMode: active-service-apply
+DefaultRuntimeStorageTouched: false
+WebStatus: staged/localConfirmationRequired/confirmInDesktop
+WebStatus: applied/upToDate/none/requiresLocalConfirmation=false
+```
+
+See `docs/webbridge-alife-local-integration.md` for the command details. This covers active-service apply evidence; live already-running desktop process confirmation remains a separate gap.
+
 ## Web UI State
 
 `/dashboard/pet` is now sync-first:
@@ -154,7 +165,7 @@ D:\Alife status: clean
 ## Known Gaps
 
 1. Web does not execute local smoke commands from the browser, by design.
-2. Active desktop runtime apply evidence remains separate from the isolated staged-to-applied smoke.
+2. Active WebBridge service apply evidence is available through `npm run check:webbridge:active-apply`; live already-running desktop process apply confirmation remains separate.
 3. Asset sync should stay disabled until a dedicated asset smoke is planned.
 4. The `alife-service` gitlink is older than the canonical `D:\Alife` checkout and should only be updated when a pinned parent checkpoint is required.
 5. Any further UI normalization should stay in small verified batches, not mixed with protocol changes.
@@ -162,6 +173,6 @@ D:\Alife status: clean
 ## Recommended Next Sequence
 
 1. Pick exactly one remaining protocol gap if engineering continues.
-2. Prefer active desktop runtime apply evidence or a dedicated asset-sync smoke; do not combine both.
+2. After active-service apply evidence, choose exactly one remaining gap such as live already-running desktop process confirmation or a dedicated asset-sync smoke.
 3. Keep protocol changes separate from UI polish.
 4. Keep Alife commits in `D:\Alife` and FOXD commits in `D:\FOXD`; never upload Alife as a copied source snapshot.

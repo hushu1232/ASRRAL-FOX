@@ -64,7 +64,7 @@ WebStatus: staged/localConfirmationRequired/confirmInDesktop
 WebStatus: applied/upToDate/none/requiresLocalConfirmation=false
 ```
 
-The smoke writes under an isolated local package root reported by the runner. It is not active desktop runtime activation.
+The smoke writes under an isolated local package root reported by the runner. It is not live already-running desktop process activation.
 
 ## Protocol Matrix
 
@@ -73,9 +73,10 @@ The smoke writes under an isolated local package root reported by the runner. It
 | Package manifest | `GET /api/webbridge/packages/[id]/manifest` | `WebApiClient.PullPackageManifest` | Implemented and smoke-tested | Manifest remains local-confirmation guarded. |
 | Package file download | `GET /api/webbridge/packages/[id]/files/[fileId]` | `WebApiClient.DownloadPackageFile` | Implemented and smoke-tested | Bearer auth and SHA-256 validation are covered. |
 | Package staging | Web manifest and file bytes | WebBridge package installer | Implemented and smoke-tested | Produces staged/local-confirmation-required Web status. |
-| Isolated apply | Smoke runner | Alife WebBridge apply path used by smoke | Implemented for isolated smoke | Produces applied/up-to-date Web status. |
+| Isolated staged-to-applied smoke | `npm run check:webbridge:smoke` | Isolated harness using the Alife WebBridge apply path | Implemented and smoke-tested | Isolated harness evidence only; uses the runner-reported package root and makes no active runtime or default storage activation claim. |
+| Active-service apply evidence | `npm run check:webbridge:active-apply` | `WebBridgeService.ApplyPackage(...)` and `packageApplied` milestone reporting | Implemented and evidence-tested | Opt-in via `ALIFE_ACTIVE_APPLY_EVIDENCE=true`; uses explicit `WEBBRIDGE_PACKAGE_ROOT`; verifies active-service apply evidence, not live already-running desktop process or default storage activation. |
 | Sync status query/report | `GET/POST /api/pet/sync/status` | Alife milestone/status reporting | Implemented and UI-visible | UI now exposes diagnostics evidence. |
-| Pet config pull | `GET/POST /api/pet/sync` | Alife config pull | Implemented and persisted | POST records a desktop config-pull snapshot in `PetSyncStatus`; active apply confirmation remains `/api/pet/sync/status`. |
+| Pet config pull | `GET/POST /api/pet/sync` | Alife config pull | Implemented and persisted | POST records a desktop config-pull snapshot in `PetSyncStatus`; live already-running desktop process confirmation remains separate from `/api/pet/sync`. |
 | Asset manifest pull | `GET /api/pet/assets` | Alife asset manifest pull | Fixed in Alife history | Keep `SyncAssetsEnabled=false` unless a dedicated asset smoke is planned. |
 | Local Alife management API | `GET /api/pet/alife/local-health` | Alife local API host | Advisory health integrated | Disabled by default, server-side only, and read-only. Broader management actions remain out of scope. |
 
@@ -131,9 +132,9 @@ FOXD now exposes an authenticated, disabled-by-default server-side adapter for A
 
 ## Open Protocol Gaps
 
-1. The active desktop runtime apply path has not been exercised through the real running Alife desktop process.
-2. Web local health awareness is advisory and disabled by default; it is not an active desktop runtime apply confirmation.
-3. Web `/api/pet/sync` POST now persists config-pull evidence; active desktop runtime apply evidence remains separate.
+1. Active Alife WebBridge service apply evidence is covered by `npm run check:webbridge:active-apply`; live already-running desktop process apply confirmation remains separate.
+2. Web local health awareness is advisory and disabled by default; it is not live already-running desktop process confirmation.
+3. Web `/api/pet/sync` POST now persists config-pull evidence; live already-running desktop process confirmation remains separate.
 4. Asset sync should stay disabled until a dedicated asset smoke is planned.
 5. The parent FOXD `alife-service` gitlink is a pinning mechanism, not the canonical Alife working tree.
 
@@ -141,7 +142,7 @@ FOXD now exposes an authenticated, disabled-by-default server-side adapter for A
 
 Use the verified WebBridge status as the stable baseline. UI/spec Batch A has been completed and pushed, so the next engineering step should be exactly one protocol gap, not another mixed UI/protocol batch:
 
-1. Active desktop runtime apply evidence, or
+1. Live already-running desktop process confirmation, or
 2. Dedicated asset sync smoke.
 
 Keep local Alife health advisory, opt-in, server-side, and documented before adding any broader management API dependency. Keep protocol changes separate from UI polish.
