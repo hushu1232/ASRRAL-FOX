@@ -1,12 +1,24 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
 import {
   createLocalServerRunConfig,
   getLocalServerModePreconditionError,
+  runWithLocalServer,
 } from '../../scripts/test-integration-local';
 
+const spawnMock = jest.fn();
+
+jest.mock('node:child_process', () => ({
+  spawn: (...args: unknown[]) => spawnMock(...args),
+}));
+
 describe('test:integration:local runner', () => {
+  beforeEach(() => {
+    spawnMock.mockReset();
+  });
+
   it('uses a local runner instead of start-server-and-test', () => {
     const config = createLocalServerRunConfig('integration');
 
@@ -149,5 +161,59 @@ describe('test:integration:local runner', () => {
         ALIFE_ACTIVE_APPLY_EVIDENCE: 'true',
       }),
     ).toBeNull();
+  });
+
+  it('rejects direct active WebBridge apply evidence local runs without spawning the server', async () => {
+    const previousOptIn = process.env.ALIFE_ACTIVE_APPLY_EVIDENCE;
+
+    delete process.env.ALIFE_ACTIVE_APPLY_EVIDENCE;
+
+    try {
+      const config = createLocalServerRunConfig('webbridge-active-apply');
+
+      await expect(runWithLocalServer(config)).rejects.toThrow(
+        'ALIFE_ACTIVE_APPLY_EVIDENCE must be set to true before active apply evidence can run.',
+      );
+      expect(spawnMock).not.toHaveBeenCalled();
+    } finally {
+      if (previousOptIn === undefined) {
+        delete process.env.ALIFE_ACTIVE_APPLY_EVIDENCE;
+      } else {
+        process.env.ALIFE_ACTIVE_APPLY_EVIDENCE = previousOptIn;
+      }
+    }
+  });
+
+  it('preserves normal local server behavior for other modes', async () => {
+    const server = new EventEmitter() as EventEmitter & {
+      exitCode: number | null;
+      kill: jest.Mock;
+    };
+    server.exitCode = null;
+    server.kill = jest.fn(() => {
+      server.exitCode = 0;
+      server.emit('exit', 0);
+      return true;
+    });
+    const test = new EventEmitter() as EventEmitter & { exitCode: number | null };
+    test.exitCode = null;
+
+    spawnMock
+      .mockReturnValueOnce(server)
+      .mockImplementationOnce(() => {
+        queueMicrotask(() => test.emit('exit', 0));
+        return test;
+      });
+
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+    } as Response);
+
+    try {
+      await expect(runWithLocalServer(createLocalServerRunConfig('integration'))).resolves.toBe(0);
+      expect(spawnMock).toHaveBeenCalledTimes(2);
+    } finally {
+      fetchMock.mockRestore();
+    }
   });
 });

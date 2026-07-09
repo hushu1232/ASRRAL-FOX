@@ -19,6 +19,7 @@ type ServerCommand = NodeScriptCommand & {
 };
 
 export type IntegrationLocalRunConfig = {
+  mode: LocalServerMode;
   server: ServerCommand;
   test: NodeScriptCommand;
 };
@@ -219,6 +220,7 @@ export function createLocalServerRunConfig(
   const serverEnv = loadLocalEnv(rootDir);
 
   return {
+    mode,
     server: {
       command: resolveStandaloneServer(rootDir),
       args: [],
@@ -328,6 +330,11 @@ async function stopServer(server: ChildProcess): Promise<void> {
 }
 
 export async function runWithLocalServer(config = createLocalServerRunConfig()): Promise<number> {
+  const preconditionError = getLocalServerModePreconditionError(config.mode);
+  if (preconditionError) {
+    throw new Error(preconditionError);
+  }
+
   const server = spawnNodeScript(config.server);
 
   try {
@@ -367,16 +374,13 @@ function parseMode(argv: string[]): LocalServerMode {
 if (require.main === module) {
   const mode = parseMode(process.argv);
   const extraArgs = process.argv.slice(3);
-  const preconditionError = getLocalServerModePreconditionError(mode);
-
-  if (preconditionError) {
-    console.error(preconditionError);
-    process.exitCode = 1;
-  } else {
-    runWithLocalServer(createLocalServerRunConfig(mode, process.cwd(), extraArgs)).then(
-      (exitCode) => {
-        process.exitCode = exitCode;
-      },
-    );
-  }
+  runWithLocalServer(createLocalServerRunConfig(mode, process.cwd(), extraArgs)).then(
+    (exitCode) => {
+      process.exitCode = exitCode;
+    },
+    (error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+    },
+  );
 }

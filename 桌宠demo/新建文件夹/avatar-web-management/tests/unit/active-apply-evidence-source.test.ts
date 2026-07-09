@@ -60,4 +60,27 @@ describe('active WebBridge apply evidence project source', () => {
     expect(program).toContain('PackageRootPath escaped explicit evidence root');
     expect(program).toContain('string.Equals(fullPath, fullRoot, StringComparison.OrdinalIgnoreCase)');
   });
+
+  it('asserts every reported evidence output path stays under the explicit package root', () => {
+    const program = readRepoFile('tools/webbridge-active-apply-evidence/Program.cs');
+
+    expect(program).toContain(
+      'Require(IsUnderRoot(packageRoot, installResult.ManifestPath), "ManifestPath escaped explicit evidence root.");',
+    );
+    expect(program).toContain(
+      'Require(IsUnderRoot(packageRoot, installResult.ConfigDraftPath), "ConfigDraftPath escaped explicit evidence root.");',
+    );
+    expect(program).toContain(
+      'Require(IsUnderRoot(packageRoot, applyResult.PackageRootPath), "Apply PackageRootPath escaped explicit evidence root.");',
+    );
+    expect(program).toContain(
+      'Require(IsUnderRoot(packageRoot, characterCardPath), "CharacterCardPath escaped explicit evidence root.");',
+    );
+    expect(program).toContain(
+      'Require(IsUnderRoot(packageRoot, activeConfigPath), "ActiveConfigPath escaped explicit evidence root.");',
+    );
+    expect(program).toContain(
+      'Require(IsUnderRoot(packageRoot, catalogPath), "CatalogPath escaped explicit evidence root.");',
+    );
+  });
 });

@@ -52,13 +52,17 @@ Require(installResult.PackageId == PackageId, $"Unexpected packageId: {installRe
 Require(installResult.Status == WebBridgePackageStatus.PendingActivation, $"Unexpected install status: {installResult.Status}");
 Require(installResult.InstalledFiles > 0, "No package files were installed.");
 Require(IsUnderRoot(packageRoot, installResult.PackageRootPath), "PackageRootPath escaped explicit evidence root.");
+Require(IsUnderRoot(packageRoot, installResult.ManifestPath), "ManifestPath escaped explicit evidence root.");
+Require(IsUnderRoot(packageRoot, installResult.ConfigDraftPath), "ConfigDraftPath escaped explicit evidence root.");
 Require(File.Exists(installResult.ManifestPath), $"Missing manifest: {installResult.ManifestPath}");
 Require(File.Exists(installResult.ConfigDraftPath), $"Missing config draft: {installResult.ConfigDraftPath}");
 string characterCardPath = Path.Combine(installResult.PackageRootPath, "characters", "current-pet", "card.json");
+Require(IsUnderRoot(packageRoot, characterCardPath), "CharacterCardPath escaped explicit evidence root.");
 Require(File.Exists(characterCardPath), $"Missing character card: {characterCardPath}");
 Require(File.ReadAllText(characterCardPath).Contains(characterExtraMarker), "Character card does not contain this characterExtra evidence marker.");
 
 string catalogPath = Path.Combine(packageRoot, "catalog.json");
+Require(IsUnderRoot(packageRoot, catalogPath), "CatalogPath escaped explicit evidence root.");
 Require(File.Exists(catalogPath), $"Missing catalog: {catalogPath}");
 Require(CatalogContainsStatus(catalogPath, PackageId, "pendingActivation"), "Catalog does not contain pendingActivation record.");
 
@@ -71,8 +75,10 @@ Require(WebStatusHasStagedPackage(stagedStatusJson), "Web sync status did not mo
 WebBridgeInstallResult applyResult = await service.ApplyPackage(PackageId, CancellationToken.None);
 Require(applyResult.PackageId == PackageId, $"Unexpected apply packageId: {applyResult.PackageId}");
 Require(applyResult.Status == WebBridgePackageStatus.Applied, $"Unexpected apply status: {applyResult.Status}");
+Require(IsUnderRoot(packageRoot, applyResult.PackageRootPath), "Apply PackageRootPath escaped explicit evidence root.");
 
 string activeConfigPath = Path.Combine(packageRoot, "ActiveConfig", $"{PackageId}.json");
+Require(IsUnderRoot(packageRoot, activeConfigPath), "ActiveConfigPath escaped explicit evidence root.");
 Require(File.Exists(activeConfigPath), $"Missing active config: {activeConfigPath}");
 Require(File.ReadAllText(activeConfigPath).Contains(evidenceMarker), "Active config does not contain this evidence marker.");
 Require(CatalogContainsStatus(catalogPath, PackageId, "applied"), "Catalog does not contain applied record.");
