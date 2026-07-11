@@ -124,6 +124,12 @@ WebStatus: applied/upToDate/none/requiresLocalConfirmation=false
 
 See `docs/webbridge-alife-local-integration.md` for the command details. This covers active-service apply evidence; live already-running desktop process confirmation remains a separate gap.
 
+### 2026-07-09 Live Desktop Confirmation Evidence Runner
+
+- Added opt-in `npm run check:webbridge:live-desktop-confirmation`.
+- The runner checks that an already-running Alife local management API is reachable, publishes a FOXD WebBridge package revision, waits for `staged/localConfirmationRequired/confirmInDesktop`, blocks for manual confirmation inside Alife desktop, then waits for `applied/upToDate/none/requiresLocalConfirmation=false`.
+- The runner intentionally does not call `WebBridgeService.ApplyPackage(...)`, does not expose browser-side local control, and does not enable asset sync.
+
 ## Web UI State
 
 `/dashboard/pet` is now sync-first:
@@ -165,14 +171,14 @@ D:\Alife status: clean
 ## Known Gaps
 
 1. Web does not execute local smoke commands from the browser, by design.
-2. Active WebBridge service apply evidence is available through `npm run check:webbridge:active-apply`; live already-running desktop process apply confirmation remains separate.
+2. Live already-running desktop confirmation has an opt-in FOXD runner (`npm run check:webbridge:live-desktop-confirmation`); a real pass still requires an already-running Alife desktop process that stages and confirms packages.
 3. Asset sync should stay disabled until a dedicated asset smoke is planned.
 4. The `alife-service` gitlink is older than the canonical `D:\Alife` checkout and should only be updated when a pinned parent checkpoint is required.
 5. Any further UI normalization should stay in small verified batches, not mixed with protocol changes.
 
 ## Recommended Next Sequence
 
-1. Pick exactly one remaining protocol gap if engineering continues.
-2. After active-service apply evidence, choose exactly one remaining gap such as live already-running desktop process confirmation or a dedicated asset-sync smoke.
+1. Run the live desktop confirmation evidence command against a real already-running Alife desktop process when available.
+2. Or choose a dedicated asset-sync smoke as the next protocol gap.
 3. Keep protocol changes separate from UI polish.
 4. Keep Alife commits in `D:\Alife` and FOXD commits in `D:\FOXD`; never upload Alife as a copied source snapshot.

@@ -203,6 +203,38 @@ Evidence captured on 2026-07-08 used package `current-pet-character-bundle` unde
 
 This verifies the canonical Alife .NET WebBridge service apply path through `WebBridgeService.ApplyPackage(...)` and `packageApplied` milestone reporting while using an explicit package root. It still does not claim that an already-running desktop process applied a package in default runtime storage.
 
+## Live Desktop Manual Confirmation Evidence
+
+The live desktop confirmation check is opt-in and manual. It is intended to prove that an already-running Alife desktop process participates in the local confirmation flow.
+
+Run it only after Alife desktop is already running and its local management API is reachable:
+
+```powershell
+$env:ALIFE_LIVE_DESKTOP_CONFIRMATION='true'
+$env:DOTNET_EXE='C:\Users\hu shu\.dotnet\dotnet.exe'
+$env:ALIFE_ROOT='D:\Alife'
+$env:ALIFE_LOCAL_HEALTH_TOKEN='<local-management-token>'
+npm run check:webbridge:live-desktop-confirmation
+```
+
+Expected successful evidence:
+
+```text
+Live desktop confirmation evidence passed.
+EvidenceMode: live-desktop-manual-confirmation
+AlifeProcessReachable: true
+ManualActionRequired: confirmInDesktop
+WebStatusBefore: staged/localConfirmationRequired/confirmInDesktop
+WebStatusAfter: applied/upToDate/none/requiresLocalConfirmation=false
+BrowserControlUsed: false
+LocalApiApplyEndpointUsed: false
+DefaultRuntimeStorageTouched: false
+```
+
+The runner does not call `WebBridgeService.ApplyPackage(...)`. It publishes a new FOXD package revision, waits for the already-running desktop process to report `confirmInDesktop`, asks the user to confirm inside Alife desktop, then observes the applied Web status.
+
+If the command times out before `confirmInDesktop`, that is honest evidence that the current live desktop process did not stage the package through this path. Do not replace this with active-service apply output.
+
 ## Alife .NET 9 Verification
 
 Run focused WebBridge tests with the .NET 9 SDK:
