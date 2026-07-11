@@ -231,6 +231,7 @@ describe('pet sync locale copy', () => {
       expectNonEmptyLocaleLeaves(locale.pet.syncStatus.healthGuidance);
       expectNonEmptyLocaleLeaves(locale.pet.syncDiagnostics.evidenceCatalog);
       expect(locale.pet.syncStatus.action.checkAgain.length).toBeGreaterThan(0);
+      expect(locale.pet.syncStatus.appliedSuccess.length).toBeGreaterThan(0);
       expect(locale.pet.syncDiagnostics.evidenceCatalog.liveDesktop.command).toBe(
         'npm run check:webbridge:live-desktop-confirmation',
       );

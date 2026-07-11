@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Form, Button, message, Modal, Table, Tag, Spin } from 'antd';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Form, Button, message, Modal, Table, Tag, Spin } from 'antd';
 import { ExportOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { apiGet, apiPut, apiPost } from '@/lib/api-client';
@@ -15,6 +15,12 @@ import AlifeLocalHealthPanel from '@/components/pet/sync/AlifeLocalHealthPanel';
 import PetSyncDiagnosticsPanel from '@/components/pet/sync/PetSyncDiagnosticsPanel';
 import PetSyncStatusPanel from '@/components/pet/sync/PetSyncStatusPanel';
 import WebBridgeMockStatusPanel from '@/components/pet/sync/WebBridgeMockStatusPanel';
+import {
+  APPLIED_SUCCESS_BANNER_MS,
+  CONFIRM_WAIT_POLL_MS,
+  isConfirmWaitStatus,
+  shouldShowAppliedSuccess,
+} from '@/components/pet/sync/confirmInDesktopPolling';
 import type { AlifeLocalHealthView } from '@/lib/alife/local-health';
 import type { DesktopSyncStatus } from '@/lib/webbridge/sync-status';
 
@@ -43,6 +49,7 @@ interface AssetEntry {
 
 export default function PetConfigPage() {
   const t = useTranslations('pet');
+  const tSync = useTranslations('pet.syncStatus');
   const [config, setConfig] = useState<PetConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -56,7 +63,10 @@ export default function PetConfigPage() {
   const [syncStatusLoading, setSyncStatusLoading] = useState(false);
   const [alifeLocalHealth, setAlifeLocalHealth] = useState<AlifeLocalHealthView | null>(null);
   const [alifeLocalHealthLoading, setAlifeLocalHealthLoading] = useState(false);
+  const [showAppliedSuccess, setShowAppliedSuccess] = useState(false);
   const [form] = Form.useForm();
+  const previousSyncStatusRef = useRef<DesktopSyncStatus | null>(null);
+  const syncStatusRef = useRef<DesktopSyncStatus | null>(null);
 
   const fetchConfig = async () => {
     setLoading(true);
@@ -70,19 +80,29 @@ export default function PetConfigPage() {
     }
   };
 
-  const fetchSyncStatus = async () => {
+  const applySyncStatus = useCallback((next: DesktopSyncStatus) => {
+    const previous = previousSyncStatusRef.current;
+    if (shouldShowAppliedSuccess(previous, next)) {
+      setShowAppliedSuccess(true);
+    }
+    previousSyncStatusRef.current = next;
+    syncStatusRef.current = next;
+    setSyncStatus(next);
+  }, []);
+
+  const fetchSyncStatus = useCallback(async () => {
     setSyncStatusLoading(true);
     try {
       const res = await apiGet<DesktopSyncStatus>('/api/pet/sync/status');
       if (res.success && res.data) {
-        setSyncStatus(res.data);
+        applySyncStatus(res.data);
       }
     } finally {
       setSyncStatusLoading(false);
     }
-  };
+  }, [applySyncStatus]);
 
-  const fetchAlifeLocalHealth = async () => {
+  const fetchAlifeLocalHealth = useCallback(async () => {
     setAlifeLocalHealthLoading(true);
     try {
       const res = await apiGet<AlifeLocalHealthView>('/api/pet/alife/local-health');
@@ -96,14 +116,14 @@ export default function PetConfigPage() {
     } finally {
       setAlifeLocalHealthLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchConfig().then(() => {
       fetchSyncStatus();
       fetchAlifeLocalHealth();
     });
-  }, []);
+  }, [fetchAlifeLocalHealth, fetchSyncStatus]);
 
   useEffect(() => {
     if (!config) {
@@ -127,6 +147,53 @@ export default function PetConfigPage() {
       setShowWizard(true);
     }
   }, [config, wizardDismissed]);
+
+  // Light polling while waiting for desktop confirmation; pause when tab hidden.
+  useEffect(() => {
+    if (!isConfirmWaitStatus(syncStatus)) {
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = () => {
+      timer = setTimeout(async () => {
+        if (cancelled) {
+          return;
+        }
+        if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+          schedule();
+          return;
+        }
+        if (!isConfirmWaitStatus(syncStatusRef.current)) {
+          return;
+        }
+        await Promise.all([fetchSyncStatus(), fetchAlifeLocalHealth()]);
+        if (!cancelled && isConfirmWaitStatus(syncStatusRef.current)) {
+          schedule();
+        }
+      }, CONFIRM_WAIT_POLL_MS);
+    };
+
+    schedule();
+
+    return () => {
+      cancelled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [fetchAlifeLocalHealth, fetchSyncStatus, syncStatus?.primaryAction, syncStatus?.summaryKind]);
+
+  useEffect(() => {
+    if (!showAppliedSuccess) {
+      return;
+    }
+
+    const timer = setTimeout(() => setShowAppliedSuccess(false), APPLIED_SUCCESS_BANNER_MS);
+    return () => clearTimeout(timer);
+  }, [showAppliedSuccess]);
 
   const handleSave = async () => {
     const values = form.getFieldsValue();
@@ -224,6 +291,17 @@ export default function PetConfigPage() {
       />
 
       <div className="space-y-4">
+        {showAppliedSuccess && (
+          <Alert
+            type="success"
+            showIcon
+            closable
+            data-testid="applied-success-banner"
+            title={tSync('appliedSuccess')}
+            onClose={() => setShowAppliedSuccess(false)}
+          />
+        )}
+
         <PetRuntimeSummary
           status={syncStatus}
           loading={syncStatusLoading}
@@ -275,7 +353,6 @@ export default function PetConfigPage() {
         </div>
       </div>
 
-      {/* Asset Picker Modal */}
       <Modal
         title={t('assetPicker.title', { type: assetTypeLabels[assetFilter] || assetFilter })}
         open={assetModalOpen}

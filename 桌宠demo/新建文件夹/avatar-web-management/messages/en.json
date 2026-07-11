@@ -1212,6 +1212,7 @@
       "rawState": "Raw state",
       "livePanelDescription": "Live WebBridge status from Alife .NET 9.",
       "localActionNotice": "Confirm this staged package inside Alife .NET.",
+      "appliedSuccess": "Desktop applied the current package.",
       "confirmSteps": {
         "title": "Confirm inside Alife desktop",
         "step1": "Open or focus the already-running Alife desktop.",

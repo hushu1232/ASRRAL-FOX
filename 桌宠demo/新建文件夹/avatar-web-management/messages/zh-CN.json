@@ -1212,6 +1212,7 @@
       "rawState": "原始状态",
       "livePanelDescription": "来自 Alife .NET 9 的实时 WebBridge 状态。",
       "localActionNotice": "请在 Alife .NET 中确认这个已暂存的包。",
+      "appliedSuccess": "桌面已应用当前包。",
       "confirmSteps": {
         "title": "在 Alife 桌面完成确认",
         "step1": "打开或切换到已运行的 Alife 桌面。",

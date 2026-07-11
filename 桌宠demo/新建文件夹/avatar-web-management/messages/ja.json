@@ -1204,6 +1204,7 @@
       "rawState": "内部状態",
       "livePanelDescription": "Alife .NET 9 から取得したライブ WebBridge 状態です。",
       "localActionNotice": "ステージ済みパッケージは Alife .NET で確認してください。",
+      "appliedSuccess": "デスクトップが現在のパッケージを適用しました。",
       "confirmSteps": {
         "title": "Alife デスクトップで確認する",
         "step1": "実行中の Alife デスクトップを開くか前面にします。",
