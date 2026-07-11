@@ -111,6 +111,9 @@ describe('live desktop local health probe', () => {
     );
 
     expect(result.reachable).toBe(true);
+    if (!result.reachable) {
+      throw new Error('expected reachable probe result');
+    }
     expect(result.healthStatus).toBe('ok');
     expect(result.runtimeStatus).toBe('running');
     expect(fetchImpl).toHaveBeenNthCalledWith(
