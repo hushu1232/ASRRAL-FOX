@@ -1161,6 +1161,26 @@
         "commandLabel": "ローカルスモークコマンド",
         "command": "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke",
         "readOnly": "読み取り専用リファレンス"
+      },
+      "evidenceCatalog": {
+        "title": "WebBridge エビデンスコマンド",
+        "readOnly": "読み取り専用リファレンス",
+        "webDoesNotRun": "Web はこれらのコマンドを実行しません。",
+        "smoke": {
+          "label": "分離スモーク",
+          "command": "npm run check:webbridge:smoke",
+          "purpose": "分離 harness の staged→applied スモーク。実行中デスクトップ証拠ではありません。"
+        },
+        "activeApply": {
+          "label": "アクティブサービス apply",
+          "command": "npm run check:webbridge:active-apply",
+          "purpose": "オプトインのアクティブ WebBridge サービス apply 証拠。ライブデスクトップ確認ではありません。"
+        },
+        "liveDesktop": {
+          "label": "実行中デスクトップ手動確認",
+          "command": "npm run check:webbridge:live-desktop-confirmation",
+          "purpose": "実行中デスクトップ + 手動確認。ALIFE_LIVE_DESKTOP_CONFIRMATION=true が必要です。"
+        }
       }
     },
     "syncStatus": {
@@ -1184,6 +1204,20 @@
       "rawState": "内部状態",
       "livePanelDescription": "Alife .NET 9 から取得したライブ WebBridge 状態です。",
       "localActionNotice": "ステージ済みパッケージは Alife .NET で確認してください。",
+      "confirmSteps": {
+        "title": "Alife デスクトップで確認する",
+        "step1": "実行中の Alife デスクトップを開くか前面にします。",
+        "step2": "Alife 内でステージ済みパッケージを確認します。",
+        "step3": "Web に戻り「再確認」をクリックします。"
+      },
+      "healthGuidance": {
+        "reachable": "ローカルヘルスはデスクトッププロセスに到達可能です。Alife 内で確認してください。",
+        "unreachable": "ローカルヘルスがデスクトップに接続できません。確認前に Alife を起動してください。",
+        "authRequired": "ローカルヘルスに認証が必要です。確認は引き続き Alife 内のみです。",
+        "invalidResponse": "ローカルヘルス応答が不正です。デスクトップ準備完了と見なさないでください。",
+        "error": "ローカルヘルス確認に失敗しました。確認前にデスクトップ側を調査してください。",
+        "notConfigured": "ローカルヘルスは未設定です。確認は引き続き Alife デスクトップ内のみです。"
+      },
       "summary": {
         "unknown": "不明",
         "desktopOffline": "Alife .NET オフライン",

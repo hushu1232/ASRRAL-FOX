@@ -66,6 +66,14 @@ jest.mock('next-intl', () => ({
         'packageStateDescription.failed': 'Review the failure before retrying.',
         rawState: 'Raw state',
         localActionNotice: 'Confirm this staged package inside Alife .NET.',
+        'confirmSteps.title': 'Confirm inside Alife desktop',
+        'confirmSteps.step1': 'Open or focus the already-running Alife desktop.',
+        'confirmSteps.step2': 'Confirm the staged package inside Alife.',
+        'confirmSteps.step3': 'Return to Web and click Check again.',
+        'healthGuidance.reachable':
+          'Local health shows the desktop process is reachable; confirm inside Alife.',
+        'healthGuidance.unreachable':
+          'Local health cannot reach the desktop; start Alife before confirming.',
         'connectionState.unknown': 'Unknown',
         'connectionState.checking': 'Checking',
         'connectionState.online': 'Online',
@@ -157,12 +165,41 @@ describe('PetSyncStatusPanel', () => {
     expect(screen.getByText('Alife .NET is waiting for local confirmation.')).toBeDefined();
     expect(screen.getByText('Raw state')).toBeDefined();
     expect(screen.getByText('staged')).toBeDefined();
-    expect(screen.getByText('Confirm this staged package inside Alife .NET.')).toBeDefined();
+    expect(screen.getByText('Confirm inside Alife desktop')).toBeDefined();
+    expect(screen.getByText('1. Open or focus the already-running Alife desktop.')).toBeDefined();
+    expect(screen.getByText('2. Confirm the staged package inside Alife.')).toBeDefined();
+    expect(screen.getByText('3. Return to Web and click Check again.')).toBeDefined();
     expect(screen.getAllByText('7').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('manifestFetched')).toBeDefined();
     expect(screen.getByText('confirmationRequested')).toBeDefined();
     expect(screen.getByRole('button', { name: /confirm in desktop/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /check again/i })).toBeEnabled();
     expect(screen.getByText('Required')).toBeDefined();
+  });
+
+  it('keeps confirmInDesktop primary disabled, exposes recheck, and shows health guidance', () => {
+    const onRefresh = jest.fn();
+    render(
+      <PetSyncStatusPanel
+        status={createStatus()}
+        loading={false}
+        onRefresh={onRefresh}
+        localHealth={{
+          state: 'reachable',
+          configured: true,
+          checkedAt: '2026-07-11T00:00:00.000Z',
+        }}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    expect(screen.getByTestId('confirm-in-desktop-callout')).toBeDefined();
+    expect(screen.getByTestId('confirm-health-guidance').textContent).toContain(
+      'Local health shows the desktop process is reachable',
+    );
+    expect(screen.getByRole('button', { name: /confirm in desktop/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /check again/i }));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
   it('marks the panel as the live Alife .NET sync source', () => {

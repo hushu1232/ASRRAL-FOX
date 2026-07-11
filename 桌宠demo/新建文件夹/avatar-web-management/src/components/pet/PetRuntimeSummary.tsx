@@ -137,11 +137,14 @@ function renderPrimaryAction(
 
   if (action === 'confirmInDesktop') {
     return (
-      <DesktopGuidanceAction
-        label={t('action.confirmInDesktop')}
-        hint={t('actionHint.confirmInDesktop')}
-        primary
-      />
+      <Space size="small" wrap align="start">
+        <DesktopGuidanceAction
+          label={t('action.confirmInDesktop')}
+          hint={t('actionHint.confirmInDesktop')}
+          primary
+        />
+        <RefreshAction loading={loading} onRefresh={onRefresh} label={t('action.checkAgain')} />
+      </Space>
     );
   }
 

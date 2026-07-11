@@ -240,6 +240,7 @@ export default function PetConfigPage() {
           status={syncStatus}
           loading={syncStatusLoading}
           onRefresh={fetchSyncStatus}
+          localHealth={alifeLocalHealth}
         />
 
         <PetDiagnosticsSection>

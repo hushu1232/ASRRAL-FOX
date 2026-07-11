@@ -50,6 +50,7 @@ export default function PetSyncDiagnosticsPanel({
           {renderBlockingReason(status, t)}
           {renderEvidenceTrail(status, t)}
           {renderSmokeMapping(t)}
+          {renderEvidenceCatalog(t)}
         </Space>
       )}
     </OperationPanel>
@@ -180,6 +181,36 @@ function renderSmokeMapping(t: (key: string) => string) {
         <Descriptions.Item label={t('smoke.commandLabel')}>
           <Text code>{t('smoke.command')}</Text>
         </Descriptions.Item>
+      </Descriptions>
+    </section>
+  );
+}
+
+function renderEvidenceCatalog(t: (key: string) => string) {
+  const entries = [
+    { key: 'smoke', labelKey: 'evidenceCatalog.smoke.label', commandKey: 'evidenceCatalog.smoke.command', purposeKey: 'evidenceCatalog.smoke.purpose' },
+    { key: 'activeApply', labelKey: 'evidenceCatalog.activeApply.label', commandKey: 'evidenceCatalog.activeApply.command', purposeKey: 'evidenceCatalog.activeApply.purpose' },
+    { key: 'liveDesktop', labelKey: 'evidenceCatalog.liveDesktop.label', commandKey: 'evidenceCatalog.liveDesktop.command', purposeKey: 'evidenceCatalog.liveDesktop.purpose' },
+  ] as const;
+
+  return (
+    <section data-testid="webbridge-evidence-catalog">
+      <Space align="center" size="small" wrap>
+        <SectionTitle>{t('evidenceCatalog.title')}</SectionTitle>
+        <Tag color="default">{t('evidenceCatalog.readOnly')}</Tag>
+      </Space>
+      <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+        {t('evidenceCatalog.webDoesNotRun')}
+      </Text>
+      <Descriptions column={1} size="small" style={{ marginTop: 8 }}>
+        {entries.map((entry) => (
+          <Descriptions.Item key={entry.key} label={t(entry.labelKey)}>
+            <Space vertical size={2}>
+              <Text code>{t(entry.commandKey)}</Text>
+              <Text type="secondary">{t(entry.purposeKey)}</Text>
+            </Space>
+          </Descriptions.Item>
+        ))}
       </Descriptions>
     </section>
   );

@@ -1169,6 +1169,26 @@
         "commandLabel": "Local smoke command",
         "command": "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke",
         "readOnly": "Read-only reference"
+      },
+      "evidenceCatalog": {
+        "title": "WebBridge evidence commands",
+        "readOnly": "Read-only reference",
+        "webDoesNotRun": "Web does not run these commands.",
+        "smoke": {
+          "label": "Isolated smoke",
+          "command": "npm run check:webbridge:smoke",
+          "purpose": "Isolated harness staged→applied smoke. Not live already-running desktop evidence."
+        },
+        "activeApply": {
+          "label": "Active-service apply",
+          "command": "npm run check:webbridge:active-apply",
+          "purpose": "Opt-in active WebBridge service apply evidence. Not live desktop confirmation."
+        },
+        "liveDesktop": {
+          "label": "Live desktop manual confirmation",
+          "command": "npm run check:webbridge:live-desktop-confirmation",
+          "purpose": "Already-running desktop + manual confirm. Requires ALIFE_LIVE_DESKTOP_CONFIRMATION=true."
+        }
       }
     },
     "syncStatus": {
@@ -1192,6 +1212,20 @@
       "rawState": "Raw state",
       "livePanelDescription": "Live WebBridge status from Alife .NET 9.",
       "localActionNotice": "Confirm this staged package inside Alife .NET.",
+      "confirmSteps": {
+        "title": "Confirm inside Alife desktop",
+        "step1": "Open or focus the already-running Alife desktop.",
+        "step2": "Confirm the staged package inside Alife.",
+        "step3": "Return to Web and click Check again."
+      },
+      "healthGuidance": {
+        "reachable": "Local health shows the desktop process is reachable; confirm inside Alife.",
+        "unreachable": "Local health cannot reach the desktop; start Alife before confirming.",
+        "authRequired": "Local health requires authentication; confirmation still only happens in Alife.",
+        "invalidResponse": "Local health response is invalid; do not assume the desktop is ready.",
+        "error": "Local health check failed; investigate the desktop side before confirming.",
+        "notConfigured": "Local health is not configured; confirmation still only happens in Alife desktop."
+      },
       "summary": {
         "unknown": "Unknown",
         "desktopOffline": "Alife .NET offline",

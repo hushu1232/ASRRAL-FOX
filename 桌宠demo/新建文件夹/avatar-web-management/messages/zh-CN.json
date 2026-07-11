@@ -1169,6 +1169,26 @@
         "commandLabel": "本地冒烟命令",
         "command": "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke",
         "readOnly": "只读参考"
+      },
+      "evidenceCatalog": {
+        "title": "WebBridge 证据命令",
+        "readOnly": "只读参考",
+        "webDoesNotRun": "Web 不会执行这些命令。",
+        "smoke": {
+          "label": "隔离冒烟",
+          "command": "npm run check:webbridge:smoke",
+          "purpose": "隔离 harness 的 staged→applied 冒烟，不代表已运行桌面证据。"
+        },
+        "activeApply": {
+          "label": "主动服务 apply",
+          "command": "npm run check:webbridge:active-apply",
+          "purpose": "需 opt-in 的主动 WebBridge 服务 apply 证据，不代表 live desktop 确认。"
+        },
+        "liveDesktop": {
+          "label": "已运行桌面人工确认",
+          "command": "npm run check:webbridge:live-desktop-confirmation",
+          "purpose": "已运行桌面 + 人工确认证据。需要 ALIFE_LIVE_DESKTOP_CONFIRMATION=true。"
+        }
       }
     },
     "syncStatus": {
@@ -1192,6 +1212,20 @@
       "rawState": "原始状态",
       "livePanelDescription": "来自 Alife .NET 9 的实时 WebBridge 状态。",
       "localActionNotice": "请在 Alife .NET 中确认这个已暂存的包。",
+      "confirmSteps": {
+        "title": "在 Alife 桌面完成确认",
+        "step1": "打开或切换到已运行的 Alife 桌面。",
+        "step2": "在 Alife 内确认已暂存的包。",
+        "step3": "回到 Web，点击「重新检查」。"
+      },
+      "healthGuidance": {
+        "reachable": "本地健康检查显示桌面进程可达；请在 Alife 内确认。",
+        "unreachable": "本地健康检查无法连接桌面；请先启动 Alife，再确认。",
+        "authRequired": "本地健康检查需要鉴权；确认仍只能在 Alife 内完成。",
+        "invalidResponse": "本地健康响应异常；请勿假设桌面已就绪。",
+        "error": "本地健康检查失败；请先排查桌面侧，再确认。",
+        "notConfigured": "未配置本地健康检查；确认仍只能在 Alife 桌面完成。"
+      },
       "summary": {
         "unknown": "状态未知",
         "desktopOffline": "Alife .NET 离线",

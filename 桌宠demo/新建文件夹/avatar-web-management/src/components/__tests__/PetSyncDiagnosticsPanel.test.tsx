@@ -60,6 +60,21 @@ const messages: Record<string, Record<string, string>> = {
       'WebStatus: applied/upToDate/none/requiresLocalConfirmation=false',
     'smoke.command':
       "$env:DOTNET_EXE='C:\\Users\\hu shu\\.dotnet\\dotnet.exe'; $env:ALIFE_ROOT='D:\\Alife'; npm run check:webbridge:smoke",
+    'evidenceCatalog.title': 'WebBridge evidence commands',
+    'evidenceCatalog.readOnly': 'Read-only reference',
+    'evidenceCatalog.webDoesNotRun': 'Web does not run these commands.',
+    'evidenceCatalog.smoke.label': 'Isolated smoke',
+    'evidenceCatalog.smoke.command': 'npm run check:webbridge:smoke',
+    'evidenceCatalog.smoke.purpose':
+      'Isolated harness staged→applied smoke. Not live already-running desktop evidence.',
+    'evidenceCatalog.activeApply.label': 'Active-service apply',
+    'evidenceCatalog.activeApply.command': 'npm run check:webbridge:active-apply',
+    'evidenceCatalog.activeApply.purpose':
+      'Opt-in active WebBridge service apply evidence. Not live desktop confirmation.',
+    'evidenceCatalog.liveDesktop.label': 'Live desktop manual confirmation',
+    'evidenceCatalog.liveDesktop.command': 'npm run check:webbridge:live-desktop-confirmation',
+    'evidenceCatalog.liveDesktop.purpose':
+      'Already-running desktop + manual confirm. Requires ALIFE_LIVE_DESKTOP_CONFIRMATION=true.',
   },
   'pet.syncStatus': {
     'connectionState.unknown': 'Unknown',
@@ -151,6 +166,15 @@ describe('PetSyncDiagnosticsPanel', () => {
       ),
     ).toBeDefined();
     expect(screen.queryByRole('button', { name: /smoke/i })).toBeNull();
+    expect(screen.getByTestId('webbridge-evidence-catalog')).toBeDefined();
+    expect(screen.getByText('WebBridge evidence commands')).toBeDefined();
+    expect(screen.getByText('Web does not run these commands.')).toBeDefined();
+    expect(screen.getByText('Isolated smoke')).toBeDefined();
+    expect(screen.getByText('npm run check:webbridge:smoke')).toBeDefined();
+    expect(screen.getByText('Active-service apply')).toBeDefined();
+    expect(screen.getByText('npm run check:webbridge:active-apply')).toBeDefined();
+    expect(screen.getByText('Live desktop manual confirmation')).toBeDefined();
+    expect(screen.getByText('npm run check:webbridge:live-desktop-confirmation')).toBeDefined();
   });
 
   it('shows loading and unavailable states without inventing diagnostic values', () => {

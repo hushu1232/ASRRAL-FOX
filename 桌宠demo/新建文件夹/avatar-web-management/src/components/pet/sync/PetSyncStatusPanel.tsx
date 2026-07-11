@@ -15,6 +15,8 @@ import {
   PACKAGE_STATE_TONES,
   SUMMARY_TONES,
 } from '@/components/pet/sync/syncStatusPresentation';
+import { getConfirmHealthGuidanceKey } from '@/components/pet/sync/confirmInDesktopGuidance';
+import type { AlifeLocalHealthView } from '@/lib/alife/local-health';
 import type {
   DesktopConnectionState,
   DesktopPrimaryAction,
@@ -27,12 +29,14 @@ interface PetSyncStatusPanelProps {
   status: DesktopSyncStatus | null;
   loading: boolean;
   onRefresh: () => void;
+  localHealth?: AlifeLocalHealthView | null;
 }
 
 export default function PetSyncStatusPanel({
   status,
   loading,
   onRefresh,
+  localHealth = null,
 }: PetSyncStatusPanelProps) {
   const t = useTranslations('pet.syncStatus');
 
@@ -60,6 +64,7 @@ export default function PetSyncStatusPanel({
 
   const lifecycleSteps = getLifecycleSteps(status);
   const currentLifecycleIndex = lifecycleSteps.findIndex((step) => step.state === 'process');
+  const healthGuidanceKey = getConfirmHealthGuidanceKey(localHealth);
 
   return (
     <OperationPanel
@@ -108,7 +113,24 @@ export default function PetSyncStatusPanel({
         />
 
         {status.primaryAction === 'confirmInDesktop' && (
-          <Alert type="warning" showIcon title={t('localActionNotice')} />
+          <Alert
+            type="warning"
+            showIcon
+            data-testid="confirm-in-desktop-callout"
+            title={t('confirmSteps.title')}
+            description={
+              <Space vertical size={4}>
+                <Text>1. {t('confirmSteps.step1')}</Text>
+                <Text>2. {t('confirmSteps.step2')}</Text>
+                <Text>3. {t('confirmSteps.step3')}</Text>
+                {healthGuidanceKey && (
+                  <Text type="secondary" data-testid="confirm-health-guidance">
+                    {t(healthGuidanceKey)}
+                  </Text>
+                )}
+              </Space>
+            }
+          />
         )}
 
         <Descriptions column={1} size="small">
@@ -183,11 +205,14 @@ function renderAction(
 
   if (primaryAction === 'confirmInDesktop') {
     return (
-      <Tooltip title={t('actionHint.confirmInDesktop')}>
-        <Button type="primary" icon={<DesktopOutlined />} disabled>
-          {t('action.confirmInDesktop')}
-        </Button>
-      </Tooltip>
+      <Space size="small" wrap>
+        <Tooltip title={t('actionHint.confirmInDesktop')}>
+          <Button type="primary" icon={<DesktopOutlined />} disabled>
+            {t('action.confirmInDesktop')}
+          </Button>
+        </Tooltip>
+        <RefreshButton loading={loading} onRefresh={onRefresh} t={t} />
+      </Space>
     );
   }
 

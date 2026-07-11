@@ -131,6 +131,19 @@ describe('PetRuntimeSummary', () => {
     expectVisibleGuidanceText(confirmGuidance);
   });
 
+  it('keeps confirmInDesktop primary disabled and exposes enabled recheck', () => {
+    const onRefresh = jest.fn();
+    render(<PetRuntimeSummary status={createStatus()} loading={false} onRefresh={onRefresh} />, {
+      wrapper: Wrapper,
+    });
+
+    expect(screen.getByRole('button', { name: 'Confirm in Alife .NET' })).toBeDisabled();
+    const recheck = screen.getByRole('button', { name: 'Check again' });
+    expect(recheck).toBeEnabled();
+    fireEvent.click(recheck);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
   it('shows an Alife .NET open guidance action for openDesktop state', () => {
     render(
       <PetRuntimeSummary

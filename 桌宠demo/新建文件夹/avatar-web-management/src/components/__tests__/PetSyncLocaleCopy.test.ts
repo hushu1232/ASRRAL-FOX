@@ -224,4 +224,22 @@ describe('pet sync locale copy', () => {
     expect(ja.pet.syncDiagnostics.title).toBe('ライブ WebBridge 診断');
     expect(ja.pet.syncDiagnostics.blocking.pendingPull).toContain('Alife .NET');
   });
+
+  it('defines confirm-in-desktop guidance and evidence catalog copy in all locales', () => {
+    for (const locale of [en, zh, ja]) {
+      expectNonEmptyLocaleLeaves(locale.pet.syncStatus.confirmSteps);
+      expectNonEmptyLocaleLeaves(locale.pet.syncStatus.healthGuidance);
+      expectNonEmptyLocaleLeaves(locale.pet.syncDiagnostics.evidenceCatalog);
+      expect(locale.pet.syncStatus.action.checkAgain.length).toBeGreaterThan(0);
+      expect(locale.pet.syncDiagnostics.evidenceCatalog.liveDesktop.command).toBe(
+        'npm run check:webbridge:live-desktop-confirmation',
+      );
+      expect(locale.pet.syncDiagnostics.evidenceCatalog.activeApply.command).toBe(
+        'npm run check:webbridge:active-apply',
+      );
+      expect(locale.pet.syncDiagnostics.evidenceCatalog.smoke.command).toBe(
+        'npm run check:webbridge:smoke',
+      );
+    }
+  });
 });
