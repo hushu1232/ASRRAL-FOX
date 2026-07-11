@@ -31,7 +31,8 @@ export type LocalServerMode =
   | 'e2e-api'
   | 'webbridge'
   | 'webbridge-smoke'
-  | 'webbridge-active-apply';
+  | 'webbridge-active-apply'
+  | 'webbridge-live-desktop-confirmation';
 
 const INTEGRATION_TEST_ARGS = [
   '--verbose',
@@ -52,6 +53,8 @@ const CONTRACTS_LIVE_TEST_ARGS = [
 const LOCAL_RUNNER_JWT_SECRET = 'local-integration-runner-secret-do-not-use-in-production';
 const ACTIVE_APPLY_EVIDENCE_OPT_IN_ERROR =
   'ALIFE_ACTIVE_APPLY_EVIDENCE must be set to true before active apply evidence can run.';
+const LIVE_DESKTOP_CONFIRMATION_OPT_IN_ERROR =
+  'ALIFE_LIVE_DESKTOP_CONFIRMATION must be set to true before live desktop confirmation evidence can run.';
 
 function resolvePackageFile(packageName: string, relativePath: string): string {
   return join(dirname(require.resolve(`${packageName}/package.json`)), relativePath);
@@ -208,6 +211,13 @@ function createTestCommand(
         cwd: rootDir,
         env: process.env,
       };
+    case 'webbridge-live-desktop-confirmation':
+      return {
+        command: resolvePackageFile('tsx', 'dist/cli.mjs'),
+        args: ['scripts/check-webbridge-live-desktop-confirmation.ts', ...extraArgs],
+        cwd: rootDir,
+        env: process.env,
+      };
   }
 }
 
@@ -248,6 +258,13 @@ export function getLocalServerModePreconditionError(
 ): string | null {
   if (mode === 'webbridge-active-apply' && env.ALIFE_ACTIVE_APPLY_EVIDENCE !== 'true') {
     return ACTIVE_APPLY_EVIDENCE_OPT_IN_ERROR;
+  }
+
+  if (
+    mode === 'webbridge-live-desktop-confirmation' &&
+    env.ALIFE_LIVE_DESKTOP_CONFIRMATION !== 'true'
+  ) {
+    return LIVE_DESKTOP_CONFIRMATION_OPT_IN_ERROR;
   }
 
   return null;
@@ -363,7 +380,8 @@ function parseMode(argv: string[]): LocalServerMode {
     raw === 'e2e-api' ||
     raw === 'webbridge' ||
     raw === 'webbridge-smoke' ||
-    raw === 'webbridge-active-apply'
+    raw === 'webbridge-active-apply' ||
+    raw === 'webbridge-live-desktop-confirmation'
   ) {
     return raw;
   }

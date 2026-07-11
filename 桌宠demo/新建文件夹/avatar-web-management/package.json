@@ -33,6 +33,7 @@
     "check:webbridge": "tsx scripts/test-integration-local.ts webbridge",
     "check:webbridge:smoke": "tsx scripts/test-integration-local.ts webbridge-smoke",
     "check:webbridge:active-apply": "tsx scripts/test-integration-local.ts webbridge-active-apply",
+    "check:webbridge:live-desktop-confirmation": "tsx scripts/test-integration-local.ts webbridge-live-desktop-confirmation",
     "test:ci:e2e": "tsx scripts/test-integration-local.ts e2e",
     "test:ci:e2e:api": "tsx scripts/test-integration-local.ts e2e-api",
     "test:ci:unit": "jest --coverage --verbose tests/unit src/components/__tests__",

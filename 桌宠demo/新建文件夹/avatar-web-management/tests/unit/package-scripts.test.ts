@@ -52,4 +52,12 @@ describe('package test scripts', () => {
       'tsx scripts/test-integration-local.ts webbridge-active-apply',
     );
   });
+
+  it('exposes an opt-in live desktop manual confirmation evidence check', () => {
+    const pkg = readPackageJson();
+
+    expect(pkg.scripts['check:webbridge:live-desktop-confirmation']).toBe(
+      'tsx scripts/test-integration-local.ts webbridge-live-desktop-confirmation',
+    );
+  });
 });

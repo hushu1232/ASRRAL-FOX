@@ -184,6 +184,45 @@ describe('test:integration:local runner', () => {
     }
   });
 
+  it('supports opt-in live desktop manual confirmation checks against the local standalone server', () => {
+    const config = createLocalServerRunConfig('webbridge-live-desktop-confirmation');
+
+    expect(config.test.command).toContain('tsx');
+    expect(config.test.args).toEqual(['scripts/check-webbridge-live-desktop-confirmation.ts']);
+  });
+
+  it('requires live desktop confirmation opt-in before starting the local server', () => {
+    expect(getLocalServerModePreconditionError('webbridge-live-desktop-confirmation', {})).toBe(
+      'ALIFE_LIVE_DESKTOP_CONFIRMATION must be set to true before live desktop confirmation evidence can run.',
+    );
+    expect(
+      getLocalServerModePreconditionError('webbridge-live-desktop-confirmation', {
+        ALIFE_LIVE_DESKTOP_CONFIRMATION: 'true',
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects direct live desktop confirmation local runs without spawning the server', async () => {
+    const previousOptIn = process.env.ALIFE_LIVE_DESKTOP_CONFIRMATION;
+
+    delete process.env.ALIFE_LIVE_DESKTOP_CONFIRMATION;
+
+    try {
+      const config = createLocalServerRunConfig('webbridge-live-desktop-confirmation');
+
+      await expect(runWithLocalServer(config)).rejects.toThrow(
+        'ALIFE_LIVE_DESKTOP_CONFIRMATION must be set to true before live desktop confirmation evidence can run.',
+      );
+      expect(spawnMock).not.toHaveBeenCalled();
+    } finally {
+      if (previousOptIn === undefined) {
+        delete process.env.ALIFE_LIVE_DESKTOP_CONFIRMATION;
+      } else {
+        process.env.ALIFE_LIVE_DESKTOP_CONFIRMATION = previousOptIn;
+      }
+    }
+  });
+
   it('preserves normal local server behavior for other modes', async () => {
     const server = new EventEmitter() as EventEmitter & {
       exitCode: number | null;
