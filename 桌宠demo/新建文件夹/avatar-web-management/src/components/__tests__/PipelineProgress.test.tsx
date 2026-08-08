@@ -9,11 +9,15 @@ import PipelineProgress from '@/components/rigging/PipelineProgress';
 class MockWebSocket {
   static OPEN = 1;
   static CONNECTING = 0;
+  static lastUrl = '';
   readyState = MockWebSocket.OPEN;
   onopen: (() => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
+  constructor(url: string) {
+    MockWebSocket.lastUrl = url;
+  }
   send = jest.fn();
   close = jest.fn();
 }
@@ -27,15 +31,22 @@ global.fetch = jest.fn().mockResolvedValue({
 jest.mock('next-intl', () => ({
   useTranslations: (ns: string) => {
     const keys: Record<string, Record<string, string>> = {
-      'rigging': { generationFailed: '生成失败' },
+      rigging: { generationFailed: '生成失败' },
       'rigging.stages': {
-        uploading: '上传中', separating: '图层分离', rigging: '骨骼绑定',
-        exporting: 'Cubism导出', pulling_assets: '拉取资产', deploying: '部署',
+        uploading: '上传中',
+        separating: '图层分离',
+        rigging: '骨骼绑定',
+        exporting: 'Cubism导出',
+        pulling_assets: '拉取资产',
+        deploying: '部署',
       },
       'rigging.progress': {
-        title: 'AI生成中', estimatedRemaining: '预计剩余 {seconds}s',
-        unknownError: '未知错误', complete: '生成完成',
-        totalTime: '总耗时 {seconds}s', wsDisconnected: '连接断开',
+        title: 'AI生成中',
+        estimatedRemaining: '预计剩余 {seconds}s',
+        unknownError: '未知错误',
+        complete: '生成完成',
+        totalTime: '总耗时 {seconds}s',
+        wsDisconnected: '连接断开',
       },
     };
     return (key: string) => keys[ns]?.[key] ?? key;
@@ -53,7 +64,18 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 }
 
 describe('PipelineProgress', () => {
-  beforeEach(() => jest.clearAllMocks());
+  const originalWsPort = process.env.NEXT_PUBLIC_WS_PORT;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.NEXT_PUBLIC_WS_PORT;
+    MockWebSocket.lastUrl = '';
+  });
+
+  afterAll(() => {
+    if (originalWsPort === undefined) delete process.env.NEXT_PUBLIC_WS_PORT;
+    else process.env.NEXT_PUBLIC_WS_PORT = originalWsPort;
+  });
 
   it('renders title', () => {
     render(<PipelineProgress imageId="img_001" />, { wrapper: Wrapper });
@@ -69,9 +91,19 @@ describe('PipelineProgress', () => {
   });
 
   it('renders preview image when previewUrl provided', () => {
-    render(<PipelineProgress imageId="img_001" previewUrl="/preview/test.png" />, { wrapper: Wrapper });
+    render(<PipelineProgress imageId="img_001" previewUrl="/preview/test.png" />, {
+      wrapper: Wrapper,
+    });
     const img = document.querySelector('img');
     expect(img).toBeDefined();
     expect(img?.getAttribute('src')).toBe('/preview/test.png');
+  });
+
+  it('uses the configured WebSocket port', () => {
+    process.env.NEXT_PUBLIC_WS_PORT = '4010';
+
+    render(<PipelineProgress imageId="img_001" />, { wrapper: Wrapper });
+
+    expect(MockWebSocket.lastUrl).toBe('ws://localhost:4010');
   });
 });

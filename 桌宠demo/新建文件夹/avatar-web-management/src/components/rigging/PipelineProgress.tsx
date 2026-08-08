@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Steps, Typography, Alert, Spin } from 'antd';
 import { LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import Image from 'next/image';
 
 const { Text, Title } = Typography;
 
@@ -28,7 +29,12 @@ interface PipelineProgressProps {
   onError?: (error: string) => void;
 }
 
-export default function PipelineProgress({ imageId, previewUrl, onComplete, onError }: PipelineProgressProps) {
+export default function PipelineProgress({
+  imageId,
+  previewUrl,
+  onComplete,
+  onError,
+}: PipelineProgressProps) {
   const tr = useTranslations('rigging');
   const ts = useTranslations('rigging.stages');
   const tp = useTranslations('rigging.progress');
@@ -59,16 +65,19 @@ export default function PipelineProgress({ imageId, previewUrl, onComplete, onEr
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.hostname}:3001`);
+    const wsPort = process.env.NEXT_PUBLIC_WS_PORT || '3001';
+    const ws = new WebSocket(`${protocol}//${window.location.hostname}:${wsPort}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setWsConnected(true);
-      ws.send(JSON.stringify({
-        type: 'subscribe_pipeline',
-        imageId,
-        payload: { imageId },
-      }));
+      ws.send(
+        JSON.stringify({
+          type: 'subscribe_pipeline',
+          imageId,
+          payload: { imageId },
+        }),
+      );
     };
 
     ws.onmessage = (event) => {
@@ -86,7 +95,9 @@ export default function PipelineProgress({ imageId, previewUrl, onComplete, onEr
           setProgress(msg.payload as ProgressData);
           onError?.(msg.payload.error || 'Unknown error');
         }
-      } catch { /* ignore parse errors */ }
+      } catch {
+        /* ignore parse errors */
+      }
     };
 
     ws.onclose = () => setWsConnected(false);
@@ -111,16 +122,20 @@ export default function PipelineProgress({ imageId, previewUrl, onComplete, onEr
             onError?.(data.error);
           }
         }
-      } catch { /* polling fail is ok */ }
+      } catch {
+        /* polling fail is ok */
+      }
     }, 2000);
 
     return () => {
       if (wsRef.current) {
-        wsRef.current.send(JSON.stringify({
-          type: 'unsubscribe_pipeline',
-          imageId,
-          payload: { imageId },
-        }));
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'unsubscribe_pipeline',
+            imageId,
+            payload: { imageId },
+          }),
+        );
         wsRef.current.close();
       }
       if (pollRef.current) clearInterval(pollRef.current);
@@ -136,8 +151,15 @@ export default function PipelineProgress({ imageId, previewUrl, onComplete, onEr
 
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         {previewUrl && (
-          <div className="w-40 h-[213px] overflow-hidden rounded-lg bg-gray-100">
-            <img src={previewUrl} alt="Original" className="w-full h-full object-cover" />
+          <div className="relative w-40 h-[213px] overflow-hidden rounded-lg bg-gray-100">
+            <Image
+              src={previewUrl}
+              alt="Original"
+              fill
+              sizes="160px"
+              unoptimized
+              className="w-full h-full object-cover"
+            />
           </div>
         )}
         <div style={{ flex: 1 }}>
@@ -147,9 +169,12 @@ export default function PipelineProgress({ imageId, previewUrl, onComplete, onEr
             status={hasError ? 'error' : isComplete ? 'finish' : 'process'}
             items={STAGES.map((s) => ({
               title: s.title,
-              icon: hasError && currentStageIndex(progress?.stage || '') === STAGES.indexOf(s)
-                ? <CloseCircleOutlined />
-                : isComplete ? <CheckCircleOutlined /> : undefined,
+              icon:
+                hasError && currentStageIndex(progress?.stage || '') === STAGES.indexOf(s) ? (
+                  <CloseCircleOutlined />
+                ) : isComplete ? (
+                  <CheckCircleOutlined />
+                ) : undefined,
             }))}
             size="small"
           />
@@ -183,7 +208,9 @@ export default function PipelineProgress({ imageId, previewUrl, onComplete, onEr
         <Alert
           type="success"
           title={tp('complete')}
-          description={tp('totalTime', { seconds: Math.round((progress!.result!.totalTimeMs) / 1000) })}
+          description={tp('totalTime', {
+            seconds: Math.round(progress!.result!.totalTimeMs / 1000),
+          })}
           showIcon
         />
       )}

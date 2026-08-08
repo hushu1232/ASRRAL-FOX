@@ -2,8 +2,14 @@
 'use client';
 
 import { Card, Button, Space, Typography, Descriptions, message, Divider } from 'antd';
-import { DownloadOutlined, PlaySquareOutlined, ShoppingCartOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  DownloadOutlined,
+  PlaySquareOutlined,
+  ShoppingCartOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import Image from 'next/image';
 
 const { Title, Text } = Typography;
 
@@ -21,7 +27,12 @@ interface ModelPreviewProps {
   onReset: () => void;
 }
 
-export default function ModelPreview({ result, template, meshDensity, onReset }: ModelPreviewProps) {
+export default function ModelPreview({
+  result,
+  template,
+  meshDensity,
+  onReset,
+}: ModelPreviewProps) {
   const tp = useTranslations('rigging.preview');
   const tt = useTranslations('rigging.templates');
   const tm = useTranslations('rigging.mesh');
@@ -59,20 +70,29 @@ export default function ModelPreview({ result, template, meshDensity, onReset }:
       <Card className="mt-4">
         <div className="flex flex-col sm:flex-row gap-4 mb-4">
           {result.previewUrl && (
-            <div className="w-40 h-[213px] overflow-hidden rounded-lg bg-gray-100 shrink-0">
-              <img
+            <div className="relative w-40 h-[213px] overflow-hidden rounded-lg bg-gray-100 shrink-0">
+              <Image
                 src={result.previewUrl}
                 alt="Generated model preview"
+                fill
+                sizes="160px"
+                unoptimized
                 className="w-full h-full object-cover"
               />
             </div>
           )}
           <Descriptions column={1} size="small">
             <Descriptions.Item label={tp('template')}>{tt(template) || template}</Descriptions.Item>
-            <Descriptions.Item label={tp('mesh')}>{tm(meshDensity) || meshDensity}</Descriptions.Item>
-            <Descriptions.Item label={tp('duration')}>{Math.round(result.totalTimeMs / 1000)}s</Descriptions.Item>
+            <Descriptions.Item label={tp('mesh')}>
+              {tm(meshDensity) || meshDensity}
+            </Descriptions.Item>
+            <Descriptions.Item label={tp('duration')}>
+              {Math.round(result.totalTimeMs / 1000)}s
+            </Descriptions.Item>
             <Descriptions.Item label={tp('modelId')}>
-              <Text copyable style={{ fontSize: 12 }}>{result.modelId}</Text>
+              <Text copyable style={{ fontSize: 12 }}>
+                {result.modelId}
+              </Text>
             </Descriptions.Item>
           </Descriptions>
         </div>
@@ -80,34 +100,16 @@ export default function ModelPreview({ result, template, meshDensity, onReset }:
         <Divider />
 
         <Space orientation="vertical" style={{ width: '100%' }}>
-          <Button
-            type="primary"
-            icon={<PlaySquareOutlined />}
-            block
-            onClick={handleSetAsPet}
-          >
+          <Button type="primary" icon={<PlaySquareOutlined />} block onClick={handleSetAsPet}>
             {tp('setAsPet')}
           </Button>
-          <Button
-            icon={<DownloadOutlined />}
-            block
-            onClick={handleDownload}
-          >
+          <Button icon={<DownloadOutlined />} block onClick={handleDownload}>
             {tp('downloadModel')}
           </Button>
-          <Button
-            icon={<ShoppingCartOutlined />}
-            block
-            onClick={handlePublish}
-          >
+          <Button icon={<ShoppingCartOutlined />} block onClick={handlePublish}>
             {tp('publishToMarket')}
           </Button>
-          <Button
-            type="text"
-            icon={<ReloadOutlined />}
-            block
-            onClick={onReset}
-          >
+          <Button type="text" icon={<ReloadOutlined />} block onClick={onReset}>
             {tp('regenerate')}
           </Button>
         </Space>
