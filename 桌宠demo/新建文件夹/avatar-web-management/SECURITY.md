@@ -108,7 +108,7 @@ See `security/shannon/config.yaml` for full scan configuration:
 - Container images scanned with Trivy (CRITICAL/HIGH blocked)
 - Secrets scanned with gitleaks in CI
 - SBOM generated per build (SPDX JSON)
-- Rate limiting with fail-open fallback
+- Rate limiting with bounded in-memory fallback when Upstash is unavailable
 
 ## Hall of Fame
 

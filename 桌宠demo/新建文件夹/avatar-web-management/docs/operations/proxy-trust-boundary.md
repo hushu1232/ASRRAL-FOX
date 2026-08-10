@@ -22,6 +22,10 @@ TRUST_PROXY_SECRET=<random-secret-shared-with-your-proxy>
 
 本地开发默认不信任转发头。没有代理时，应用使用按路由隔离的 `local-dev` 限流桶；不要把这个开发回退策略用于生产。
 
+## Upstash 降级
+
+生产环境配置了 Upstash 时，单次 Redis 调用最多等待 200ms。调用失败或超时后，当前请求和后续请求会切换到每个 Pod 独立的内存滑动窗口：请求仍可用，但不会出现一次无条件放行；多副本之间的计数在降级期间不一致。恢复 Redis 后应重启应用，以恢复跨实例限流。
+
 ## 轮换
 
 轮换 `TRUST_PROXY_SECRET` 时，应先同步代理和应用配置，再重启应用。旧密钥请求会被视为没有可信客户端地址并返回 `503`。
@@ -48,8 +52,9 @@ data:
 
 1. ConfigMap 与应用位于同一 namespace，且 Ingress controller 服务账号可以读取它；
 2. 应用 Secret 中的 `TRUST_PROXY_SECRET` 与 ConfigMap 的 token 完全一致；
-3. 应用 Service 不暴露公网端口，只允许 Ingress 到达；
-4. 用一条正常 JSON 请求和一条超过限制的请求验证：前者进入限流链路，后者在网关或应用代理返回 `413`，无 `Content-Length` 的带 body 请求返回 `411`。
+3. ExternalSecret 的 `/rate-limit` 记录提供 `url` 和 `token`，映射为 `UPSTASH_REDIS_REST_URL` 与 `UPSTASH_REDIS_REST_TOKEN`；
+4. 应用 Service 不暴露公网端口，只允许 Ingress 到达；
+5. 用一条正常 JSON 请求和一条超过限制的请求验证：前者进入限流链路，后者在网关或应用代理返回 `413`，无 `Content-Length` 的带 body 请求返回 `411`。
 
 本地或 CI 可以先运行零依赖的静态配置检查：
 

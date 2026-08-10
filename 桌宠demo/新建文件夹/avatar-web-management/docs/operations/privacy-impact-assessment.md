@@ -121,7 +121,7 @@ User Browser ──HTTPS──▶ nginx Ingress ──▶ Next.js Server
 | Container vuln scanning | ✅ Trivy (CRITICAL/HIGH blocked) | CI workflow |
 | SBOM | ✅ SPDX JSON per build | CI workflow (syft) |
 | Access control | ✅ RBAC + JWT (RS256) | auth/middleware |
-| Rate limiting | ✅ Upstash + fail-open fallback | rate-limit/ |
+| Rate limiting | ✅ Upstash + bounded in-memory fallback | rate-limit/ |
 | WAF | ✅ ModSecurity + OWASP CRS | waf-rules.conf |
 
 ---

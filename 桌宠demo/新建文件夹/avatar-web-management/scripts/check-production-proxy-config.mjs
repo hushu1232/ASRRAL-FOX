@@ -27,7 +27,7 @@ const checks = [
   },
   {
     file: 'helm/avatar-web/templates/externalsecret.yaml',
-    includes: ['TRUST_PROXY_SECRET'],
+    includes: ['TRUST_PROXY_SECRET', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'],
   },
   {
     file: 'docs/operations/proxy-trust-boundary.md',

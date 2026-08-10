@@ -1,4 +1,4 @@
-// 速率限制 — 统一接口（支持 Upstash Redis + 内存回退，fail-open on timeout）
+// 速率限制 — 统一接口（支持 Upstash Redis + 内存回退）
 import { Redis } from '@upstash/redis';
 import { Ratelimit } from '@upstash/ratelimit';
 import { memoryRateLimit } from './memory';
@@ -7,7 +7,7 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('rate-limit');
 
-// Fail-open: max ms to wait for Upstash before allowing the request
+// Max ms to wait for Upstash before using the in-memory limiter
 const UPSTASH_TIMEOUT_MS = 200;
 
 // 尝试初始化 Upstash Redis（如果配置了环境变量）
@@ -58,15 +58,11 @@ export const RATE_LIMITS = {
   forgotPassword: { limit: 3, windowMs: 60_000 },
 } as const;
 
-/** Result indicating the rate limiter itself failed — caller should allow the request */
-function failOpenResult(limit: number): RateLimitResult {
-  return { allowed: true, remaining: limit, reset: Math.ceil(Date.now() / 1000) + 60, limit };
-}
-
 /**
  * 执行速率检查
  * 优先 Upstash Redis（跨实例一致），不可用时回退内存存储。
- * 如果外部服务超时（>200ms），fail-open 允许请求通过。
+ * 如果外部服务超时（>200ms），当前请求也使用内存窗口，避免故障时
+ * 出现一次无条件放行，同时保持单实例可用性。
  */
 export async function checkRateLimit(
   key: string,
@@ -83,7 +79,7 @@ export async function checkRateLimit(
     const result = await Promise.race([
       limiter.limit(key),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Upstash timeout')), UPSTASH_TIMEOUT_MS)
+        setTimeout(() => reject(new Error('Upstash timeout')), UPSTASH_TIMEOUT_MS),
       ),
     ]);
 
@@ -94,11 +90,12 @@ export async function checkRateLimit(
       limit,
     };
   } catch (err) {
-    // Upstash failed or timed out → fail open to avoid self-inflicted outage
-    log.warn({ err }, 'Upstash rate limit failed — failing open (allowing request)');
-    // Fall back to memory for subsequent requests
+    // Upstash failed or timed out → use the same bounded memory window for
+    // this request and subsequent requests until the state is explicitly reset
+    // or the process is restarted.
+    log.warn({ err }, 'Upstash rate limit failed — using bounded in-memory fallback');
     upstashFailed = true;
-    return failOpenResult(limit);
+    return memoryRateLimit(key, limit, windowMs);
   }
 }
 

@@ -159,7 +159,7 @@ kubectl exec deploy/postgresql -- psql -U avatar -d avatar_management \
 ## Scenario 4: Redis / Session Store Failure
 
 ### Detection
-- Rate limiter `upstashFailed` flag set (fail-open mode)
+- Rate limiter `upstashFailed` flag set (bounded in-memory degraded mode)
 - Session creation failing
 - Grafana panel shows Redis connection errors
 
@@ -169,8 +169,8 @@ kubectl exec deploy/postgresql -- psql -U avatar -d avatar_management \
 # 1. Check Redis status
 kubectl exec deploy/avatar-web -- nc -zv redis.prod.svc.cluster.local 6379
 
-# 2. Rate limiter is already fail-open — no immediate user impact
-# 3. If Redis is permanently down, redeploy Redis or switch to in-memory fallback
+# 2. Requests remain available, but each pod now enforces its own bounded in-memory window
+# 3. If Redis is permanently down, redeploy Redis and keep the in-memory fallback only as a temporary degraded mode
 helm upgrade --install avatar-web ./helm/avatar-web \
   -f ./helm/avatar-web/values-production.yaml \
   --set config.redisHost=""  # empty disables Redis, rate limiter uses in-memory
