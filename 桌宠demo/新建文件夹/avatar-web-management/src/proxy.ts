@@ -1,12 +1,10 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { routing } from '@/i18n/routing';
-import { checkRateLimit, extractUserIdFromAuthHeader, isLocalRateLimitAddress, RATE_LIMITS } from '@/lib/rate-limit';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
 import { validateCsrfToken, requiresCsrfCheck, validateOrigin } from '@/lib/csrf';
 import { handleCors, setCorsHeaders } from '@/lib/cors';
 import { httpRequestsInFlight, observeHttpRequest, rateLimitHits } from '@/lib/metrics';
-
-const AUTH_ROUTES = ['/dashboard', '/avatars', '/assets', '/marketplace', '/settings', '/admin', '/api-docs', '/help'];
 
 // API routes that don't need CSRF (login/register before token acquisition)
 const CSRF_EXEMPT = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh', '/api/health'];
@@ -17,11 +15,33 @@ const RATE_LIMIT_EXEMPT = ['/api/metrics', '/api/health'];
 const MAX_BODY_SIZE_GENERAL = 1 * 1024 * 1024;   // 1MB for general API
 const MAX_BODY_SIZE_UPLOAD = 50 * 1024 * 1024;    // 50MB for upload endpoints
 const MAX_BODY_SIZE_EXPORT = 10 * 1024 * 1024;    // 10MB for export endpoints
+const TRUST_PROXY_AUTH_HEADER = 'x-foxd-proxy-token';
 
-function getClientIp(request: NextRequest): string {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || request.headers.get('x-real-ip')
-    || '127.0.0.1';
+function getClientIp(request: NextRequest): string | null {
+  if (process.env.TRUST_PROXY_HEADERS !== 'true') return null;
+  const proxySecret = process.env.TRUST_PROXY_SECRET;
+  if (!proxySecret || request.headers.get(TRUST_PROXY_AUTH_HEADER) !== proxySecret) return null;
+
+  const singleHeaderValue = (value: string | null): string | null => {
+    const values = value?.split(',').map((part) => part.trim()).filter(Boolean) || [];
+    return values.length === 1 ? values[0] : null;
+  };
+
+  // A trusted proxy must overwrite these headers. Reject appended chains so a
+  // client-supplied first X-Forwarded-For value cannot become the limit key.
+  return singleHeaderValue(request.headers.get('x-forwarded-for'))
+    || singleHeaderValue(request.headers.get('x-real-ip'))
+    || null;
+}
+
+function getRateLimitIdentity(request: NextRequest): string | null {
+  const clientIp = getClientIp(request);
+  if (clientIp) return clientIp;
+
+  // Local development has no trusted proxy by default. Keep it usable with a
+  // deliberately shared, route-scoped bucket; production fails closed below.
+  if (process.env.NODE_ENV !== 'production') return 'local-dev';
+  return null;
 }
 
 function getRateLimitConfig(pathname: string) {
@@ -79,27 +99,21 @@ function handleI18n(request: NextRequest): NextResponse | null {
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const apiPathname = pathname.startsWith('/api/v1/')
+    ? pathname.replace('/api/v1/', '/api/')
+    : pathname;
+  const apiRewriteUrl = apiPathname === pathname ? null : new URL(apiPathname, request.url);
+  if (apiRewriteUrl) apiRewriteUrl.search = request.nextUrl.search;
 
   const requestId = crypto.randomUUID();
   request.headers.set('x-request-id', requestId);
 
-  // --- API versioning: /api/v1/* → /api/* ---
-  if (pathname.startsWith('/api/v1/')) {
-    const internalPath = pathname.replace('/api/v1/', '/api/');
-    const rewriteUrl = new URL(internalPath, request.url);
-    rewriteUrl.search = request.nextUrl.search;
-    const rewrite = NextResponse.rewrite(rewriteUrl);
-    rewrite.headers.set('X-API-Version', '1');
-    rewrite.headers.set('X-Request-Id', requestId);
-    return rewrite;
-  }
-
   // --- CORS & Rate limiting (API routes) ---
-  if (pathname.startsWith('/api/')) {
+  if (apiPathname.startsWith('/api/')) {
     const startMs = Date.now();
     httpRequestsInFlight.inc();
 
-    const routePattern = pathname.replace(/\/[a-f0-9-]{36}/g, '/:id').replace(/\/\d+/g, '/:num');
+    const routePattern = apiPathname.replace(/\/[a-f0-9-]{36}/g, '/:id').replace(/\/\d+/g, '/:num');
 
     try {
       // CORS check (first, including OPTIONS preflight)
@@ -115,7 +129,7 @@ export async function proxy(request: NextRequest) {
         const contentLength = request.headers.get('content-length');
         if (contentLength) {
           const bodySize = parseInt(contentLength, 10);
-          const maxSize = getMaxBodySize(pathname);
+          const maxSize = getMaxBodySize(apiPathname);
           if (bodySize > maxSize) {
             const sizeResponse = NextResponse.json(
               { success: false, error: `Request body too large. Maximum: ${maxSize / 1024 / 1024}MB` },
@@ -129,25 +143,32 @@ export async function proxy(request: NextRequest) {
         }
       }
 
-      const rateConfig = getRateLimitConfig(pathname);
-      const ip = getClientIp(request);
+      const rateConfig = getRateLimitConfig(apiPathname);
+      const identity = getRateLimitIdentity(request);
+      const matchesRoute = (route: string) => apiPathname === route || apiPathname.startsWith(`${route}/`);
+      const routeKey = apiPathname.replace(/\//g, '_').slice(0, 60);
 
-      const isUserScoped = rateConfig === RATE_LIMITS.upload
-        || rateConfig === RATE_LIMITS.export;
+      const isRateLimitExempt = RATE_LIMIT_EXEMPT.some(matchesRoute);
+      if (!isRateLimitExempt && !identity) {
+        const unavailableResponse = NextResponse.json(
+          { success: false, error: 'Rate limiting is not configured for this deployment' },
+          {
+            status: 503,
+            headers: {
+              'X-Request-Id': requestId,
+              'Retry-After': '60',
+            },
+          },
+        );
+        const unavailableOrigin = request.headers.get('origin');
+        if (unavailableOrigin) setCorsHeaders(unavailableResponse, unavailableOrigin);
+        observeHttpRequest(request.method, routePattern, 503, (Date.now() - startMs) / 1000);
+        return unavailableResponse;
+      }
 
-      const userId = isUserScoped
-        ? extractUserIdFromAuthHeader(request.headers.get('authorization'))
-        : null;
-
-      const identifier = userId || ip;
-      const routeKey = pathname.replace(/\//g, '_').slice(0, 60);
-      const rateLimitKey = `rl:${routeKey}:${identifier}`;
-
-      const isRateLimitExempt = RATE_LIMIT_EXEMPT.some((r) => pathname.startsWith(r))
-        || isLocalRateLimitAddress(ip);
       const result = isRateLimitExempt
-        ? { allowed: true, remaining: 999, reset: 0, limit: 999 }
-        : await checkRateLimit(rateLimitKey, rateConfig.limit, rateConfig.windowMs);
+        ? { allowed: true, remaining: rateConfig.limit, reset: 0, limit: rateConfig.limit }
+        : await checkRateLimit(`rl:${routeKey}:${identity}`, rateConfig.limit, rateConfig.windowMs);
 
       if (!result.allowed) {
         rateLimitHits.inc({ route: routePattern });
@@ -171,8 +192,7 @@ export async function proxy(request: NextRequest) {
       }
 
       // --- CSRF validation (non-GET write operations) ---
-      if (requiresCsrfCheck(request.method) && !CSRF_EXEMPT.some((r) => pathname.startsWith(r))
-          && !isLocalRateLimitAddress(ip)) {
+      if (requiresCsrfCheck(request.method) && !CSRF_EXEMPT.some(matchesRoute)) {
         if (!validateCsrfToken(request)) {
           const originOk = validateOrigin(request);
           if (!originOk) {
@@ -188,7 +208,7 @@ export async function proxy(request: NextRequest) {
         }
       }
 
-      const response = NextResponse.next();
+      const response = apiRewriteUrl ? NextResponse.rewrite(apiRewriteUrl) : NextResponse.next();
       response.headers.set('X-Request-Id', requestId);
       response.headers.set('X-API-Version', '1');
       response.headers.set('X-RateLimit-Limit', String(result.limit));

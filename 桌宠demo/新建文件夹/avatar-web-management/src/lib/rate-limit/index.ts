@@ -44,29 +44,19 @@ export type { RateLimitResult };
 
 // 预定义的限流配置
 export const RATE_LIMITS = {
-  // 通用 API：每 IP 60s 内 100 次
+  // 通用 API：每个可信客户端 60s 内 100 次
   api: { limit: 100, windowMs: 60_000 },
-  // 登录接口：每 IP 60s 内 5 次
+  // 登录接口：每个可信客户端 60s 内 5 次
   login: { limit: 5, windowMs: 60_000 },
-  // 注册接口：每 IP 60s 内 3 次
+  // 注册接口：每个可信客户端 60s 内 3 次
   register: { limit: 3, windowMs: 60_000 },
-  // 资产上传：每用户 10min 内 20 次
+  // 资产上传：每个可信客户端 10min 内 20 次
   upload: { limit: 20, windowMs: 600_000 },
-  // 形象导出：每用户 5min 内 3 次
+  // 形象导出：每个可信客户端 5min 内 3 次
   export: { limit: 3, windowMs: 300_000 },
-  // 忘记密码：每 IP 60s 内 3 次
+  // 忘记密码：每个可信客户端 60s 内 3 次
   forgotPassword: { limit: 3, windowMs: 60_000 },
 } as const;
-
-export function isLocalRateLimitAddress(ip: string | null | undefined): boolean {
-  const normalized = (ip || '').trim().toLowerCase();
-  return normalized === 'localhost'
-    || normalized === '::1'
-    || normalized === '127.0.0.1'
-    || normalized.startsWith('127.')
-    || normalized === '::ffff:127.0.0.1'
-    || normalized.startsWith('::ffff:127.');
-}
 
 /** Result indicating the rate limiter itself failed — caller should allow the request */
 function failOpenResult(limit: number): RateLimitResult {
@@ -117,20 +107,4 @@ export function resetUpstashState(): void {
   upstashFailed = false;
   upstashLimiter = null;
   upstashRedis = null;
-}
-
-/**
- * 从 JWT payload 中提取用户标识（不验证签名，仅用于限流）
- */
-export function extractUserIdFromAuthHeader(authHeader: string | null): string | null {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  try {
-    const token = authHeader.slice(7);
-    const payloadBase64 = token.split('.')[1];
-    if (!payloadBase64) return null;
-    const payload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString('utf-8'));
-    return payload.sub || payload.userId || null;
-  } catch {
-    return null;
-  }
 }

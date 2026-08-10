@@ -1,5 +1,5 @@
 import { memoryRateLimit, resetMemoryRateLimit } from '@/lib/rate-limit/memory';
-import { extractUserIdFromAuthHeader, checkRateLimit, isLocalRateLimitAddress, RATE_LIMITS } from '@/lib/rate-limit';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
 
 describe('RATE_LIMITS', () => {
   it('defines limits for all protected endpoints', () => {
@@ -21,23 +21,6 @@ describe('RATE_LIMITS', () => {
 
   it('export has 5min window', () => {
     expect(RATE_LIMITS.export.windowMs).toBe(300_000);
-  });
-});
-
-describe('isLocalRateLimitAddress', () => {
-  it('treats IPv4-mapped localhost addresses as local', () => {
-    expect(isLocalRateLimitAddress('::ffff:127.0.0.1')).toBe(true);
-  });
-
-  it('treats standard localhost addresses as local', () => {
-    expect(isLocalRateLimitAddress('127.0.0.1')).toBe(true);
-    expect(isLocalRateLimitAddress('::1')).toBe(true);
-    expect(isLocalRateLimitAddress('localhost')).toBe(true);
-  });
-
-  it('does not treat remote addresses as local', () => {
-    expect(isLocalRateLimitAddress('192.168.1.20')).toBe(false);
-    expect(isLocalRateLimitAddress('8.8.8.8')).toBe(false);
   });
 });
 
@@ -133,38 +116,5 @@ describe('memoryRateLimit', () => {
 
     resetMemoryRateLimit(keyA);
     resetMemoryRateLimit(keyB);
-  });
-});
-
-describe('extractUserIdFromAuthHeader', () => {
-  it('returns null for missing header', () => {
-    expect(extractUserIdFromAuthHeader(null)).toBeNull();
-  });
-
-  it('returns null for non-Bearer token', () => {
-    expect(extractUserIdFromAuthHeader('Basic abc123')).toBeNull();
-  });
-
-  it('extracts sub claim from JWT payload', () => {
-    // Manually crafted JWT with { sub: 'user-123' } payload
-    const header = Buffer.from(JSON.stringify({ alg: 'HS256' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({ sub: 'user-123', role: 'user' })).toString('base64url');
-    const token = `Bearer ${header}.${payload}.fake-sig`;
-
-    const userId = extractUserIdFromAuthHeader(token);
-    expect(userId).toBe('user-123');
-  });
-
-  it('returns null for malformed token', () => {
-    expect(extractUserIdFromAuthHeader('Bearer invalid')).toBeNull();
-  });
-
-  it('returns null for empty string', () => {
-    expect(extractUserIdFromAuthHeader('')).toBeNull();
-  });
-
-  it('returns null for token with malformed base64 payload', () => {
-    // The payload portion is not valid base64url
-    expect(extractUserIdFromAuthHeader('Bearer header.!!!invalid$$$.sig')).toBeNull();
   });
 });

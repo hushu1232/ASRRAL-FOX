@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { getPrisma } from '@/lib/db';
@@ -6,6 +7,10 @@ import { createLogger } from '@/lib/logger';
 import { getPrivateKey, getPublicKey, getJwtAlgorithm, getKeyId } from './keys';
 
 const log = createLogger('auth:jwt');
+
+function hashRefreshToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
 
 function getHs256Secret(): string {
   const secret = process.env.JWT_SECRET;
@@ -31,19 +36,15 @@ export interface TokenPayload {
 }
 
 function getSignKey(): { key: string; algorithm: jwt.Algorithm } {
-  const privateKey = getPrivateKey();
-  if (privateKey) {
-    return { key: privateKey, algorithm: 'RS256' };
+  const algorithm = getJwtAlgorithm();
+  if (algorithm === 'RS256') {
+    const privateKey = getPrivateKey();
+    if (!privateKey) {
+      throw new Error('RSA signing is configured but no private key is available');
+    }
+    return { key: privateKey, algorithm };
   }
-  return { key: HS256_SECRET, algorithm: 'HS256' };
-}
-
-function getVerifyKey(): string {
-  const publicKey = getPublicKey();
-  if (publicKey) {
-    return publicKey;
-  }
-  return HS256_SECRET;
+  return { key: HS256_SECRET, algorithm };
 }
 
 export function signAccessToken(payload: TokenPayload): string {
@@ -72,7 +73,7 @@ export async function signRefreshToken(userId: string): Promise<{ token: string;
     data: {
       id,
       userId,
-      tokenHash: token,
+      tokenHash: hashRefreshToken(token),
       expiresAt: new Date(expiresAt),
     },
   });
@@ -81,37 +82,42 @@ export async function signRefreshToken(userId: string): Promise<{ token: string;
 }
 
 export function verifyAccessToken(token: string): TokenPayload | null {
-  return verifyWithAlgorithms(token, ['RS256', 'HS256']) as TokenPayload | null;
+  return verifyWithConfiguredAlgorithm(token) as TokenPayload | null;
 }
 
 export async function verifyRefreshToken(token: string): Promise<{ sub: string; jti: string } | null> {
-  const payload = verifyWithAlgorithms(token, ['RS256', 'HS256']) as { sub: string; jti: string } | null;
+  const payload = verifyWithConfiguredAlgorithm(token) as { sub: string; jti: string } | null;
   if (!payload) return null;
 
   const row = await getPrisma().refreshToken.findFirst({
-    where: { tokenHash: token, revoked: false },
+    where: {
+      OR: [
+        { tokenHash: hashRefreshToken(token) },
+        { tokenHash: token },
+      ],
+      revoked: false,
+    },
     select: { id: true, expiresAt: true },
   });
   if (!row || new Date(row.expiresAt) < new Date()) return null;
   return payload;
 }
 
-function verifyWithAlgorithms(token: string, algorithms: jwt.Algorithm[]): Record<string, unknown> | null {
-  for (const alg of algorithms) {
-    try {
-      const key = alg === 'RS256' ? getPublicKey() : HS256_SECRET;
-      if (alg === 'RS256' && !key) continue;
-      return jwt.verify(token, key || HS256_SECRET, { algorithms: [alg] }) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
+function verifyWithConfiguredAlgorithm(token: string): Record<string, unknown> | null {
+  const algorithm = getJwtAlgorithm();
+  const key = algorithm === 'RS256' ? getPublicKey() : HS256_SECRET;
+  if (!key) return null;
+
+  try {
+    return jwt.verify(token, key, { algorithms: [algorithm] }) as Record<string, unknown>;
+  } catch {
+    return null;
   }
-  return null;
 }
 
-export async function revokeRefreshToken(tokenHash: string): Promise<void> {
+export async function revokeRefreshToken(token: string): Promise<void> {
   await getPrisma().refreshToken.updateMany({
-    where: { tokenHash },
+    where: { tokenHash: { in: [hashRefreshToken(token), token] } },
     data: { revoked: true },
   });
 }

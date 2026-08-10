@@ -110,6 +110,12 @@ describe('JWT Access Token — RS256', () => {
     expect(mod.verifyAccessToken(fakeToken)).toBeNull();
   });
 
+  it('does not accept HS256 tokens when RSA keys are configured', () => {
+    const mod = loadJwtWithEnv({ ...rs256Env(), JWT_SECRET: 'known-but-unused-secret' });
+    const forgedToken = require('jsonwebtoken').sign(payload, 'known-but-unused-secret', { algorithm: 'HS256' });
+    expect(mod.verifyAccessToken(forgedToken)).toBeNull();
+  });
+
   it('produces consistently valid tokens', () => {
     const mod = loadJwtWithEnv(rs256Env());
     const tokens = Array.from({ length: 10 }, () => mod.signAccessToken(payload));
@@ -187,6 +193,11 @@ describe('Refresh Token — HS256', () => {
     expect(result.id).toBeDefined();
     expect(result.expiresAt).toBeDefined();
     expect(new Date(result.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    const tokenHash = crypto.createHash('sha256').update(result.token).digest('hex');
+    expect(mockRefreshToken.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ tokenHash }),
+    }));
+    expect(tokenHash).not.toBe(result.token);
   });
 
   it('verifyRefreshToken returns payload for valid token', async () => {
@@ -200,6 +211,37 @@ describe('Refresh Token — HS256', () => {
     const payload = await mod.verifyRefreshToken(token);
     expect(payload).not.toBeNull();
     expect(payload!.sub).toBe('user-456');
+    expect(mockRefreshToken.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: {
+        OR: [
+          { tokenHash: crypto.createHash('sha256').update(token).digest('hex') },
+          { tokenHash: token },
+        ],
+        revoked: false,
+      },
+    }));
+  });
+
+  it('accepts legacy refresh token records during hash migration', async () => {
+    const mod = loadJwtWithEnv(hs256Env());
+    const token = require('jsonwebtoken').sign(
+      { sub: 'legacy-user', jti: 'legacy-token-id' },
+      'refresh-test-secret',
+      { algorithm: 'HS256', expiresIn: '1d' },
+    );
+    mockRefreshToken.findFirst.mockResolvedValue({
+      id: 'legacy-token-id',
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+
+    const payload = await mod.verifyRefreshToken(token);
+
+    expect(payload?.sub).toBe('legacy-user');
+    expect(mockRefreshToken.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        OR: expect.arrayContaining([{ tokenHash: token }]),
+      }),
+    }));
   });
 
   it('verifyRefreshToken returns null for invalid token', async () => {
@@ -230,7 +272,14 @@ describe('Refresh Token — HS256', () => {
     mockRefreshToken.updateMany.mockResolvedValue({ count: 1 });
     await mod.revokeRefreshToken('some-token-hash');
     expect(mockRefreshToken.updateMany).toHaveBeenCalledWith({
-      where: { tokenHash: 'some-token-hash' },
+      where: {
+        tokenHash: {
+          in: [
+            crypto.createHash('sha256').update('some-token-hash').digest('hex'),
+            'some-token-hash',
+          ],
+        },
+      },
       data: { revoked: true },
     });
   });
