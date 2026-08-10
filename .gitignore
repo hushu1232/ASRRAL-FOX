@@ -38,8 +38,14 @@ node_modules/
 .codegraph/
 .superpowers/
 
+# Generated reports
+lint-output.*
+
 # Local agent settings
 **/.claude/settings.local.json
+
+# Local agent worktrees
+.claude/worktrees/
 
 # Local conversion backups
 .alife-service-residual-*/
