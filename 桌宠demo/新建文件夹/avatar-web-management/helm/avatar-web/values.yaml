@@ -47,11 +47,15 @@ ingress:
   host: avatar.local
   tls: false
   annotations: {}
+  proxySetHeadersConfigMap: ""
   rateLimit:
     enabled: false
     rps: "30"
     burstMultiplier: "5"
     rateAfter: "10"
+
+proxy:
+  trustHeaders: false
 
 resources:
   requests:
@@ -102,6 +106,7 @@ jwt:
 config:
   publicUrl: "http://localhost:3000"
   wsPort: "3001"
+  jwtLegacyRefreshTokenCutoff: ""
   pgPoolMax: "20"
   pgPoolIdleTimeout: "30000"
   pgConnectionTimeout: "5000"

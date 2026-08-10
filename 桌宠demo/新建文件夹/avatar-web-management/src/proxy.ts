@@ -59,6 +59,26 @@ function getMaxBodySize(pathname: string): number {
   return MAX_BODY_SIZE_GENERAL;
 }
 
+function hasRequestBody(request: NextRequest): boolean {
+  const contentLength = request.headers.get('content-length')?.trim();
+  if (contentLength === '0') return false;
+  return Boolean(
+    request.headers.get('transfer-encoding')
+    || request.headers.get('content-type')
+    || contentLength,
+  );
+}
+
+function bodySizeError(request: NextRequest, requestId: string, status: 400 | 411 | 413, message: string): NextResponse {
+  const response = NextResponse.json(
+    { success: false, error: message },
+    { status, headers: { 'X-Request-Id': requestId } },
+  );
+  const origin = request.headers.get('origin');
+  if (origin) setCorsHeaders(response, origin);
+  return response;
+}
+
 /**
  * Handle i18n locale prefix:
  * - /zh-CN/xxx → strip prefix, set NEXT_LOCALE=zh-CN, rewrite to /xxx
@@ -124,19 +144,49 @@ export async function proxy(request: NextRequest) {
         return corsResult;
       }
 
-      // Body size check (skip for GET/HEAD/OPTIONS)
+      // Body size check (skip for GET/HEAD/OPTIONS). In production, a body
+      // without a trustworthy length is rejected before any route handler can
+      // buffer it. The ingress proxy buffers chunked requests and forwards a
+      // Content-Length header, so normal uploads remain compatible.
       if (requiresCsrfCheck(request.method)) {
         const contentLength = request.headers.get('content-length');
+        const transferEncoding = request.headers.get('transfer-encoding');
+        if (process.env.NODE_ENV === 'production' && hasRequestBody(request) && !contentLength) {
+          const sizeResponse = bodySizeError(
+            request,
+            requestId,
+            411,
+            'Content-Length is required for bounded request bodies',
+          );
+          observeHttpRequest(request.method, routePattern, 411, (Date.now() - startMs) / 1000);
+          return sizeResponse;
+        }
+        if (contentLength && transferEncoding) {
+          const sizeResponse = bodySizeError(
+            request,
+            requestId,
+            400,
+            'Content-Length and Transfer-Encoding cannot be sent together',
+          );
+          observeHttpRequest(request.method, routePattern, 400, (Date.now() - startMs) / 1000);
+          return sizeResponse;
+        }
         if (contentLength) {
-          const bodySize = parseInt(contentLength, 10);
+          const normalizedLength = contentLength.trim();
+          const bodySize = /^\d+$/.test(normalizedLength) ? Number(normalizedLength) : Number.NaN;
           const maxSize = getMaxBodySize(apiPathname);
+          if (!Number.isSafeInteger(bodySize) || bodySize < 0) {
+            const sizeResponse = bodySizeError(request, requestId, 400, 'Invalid Content-Length');
+            observeHttpRequest(request.method, routePattern, 400, (Date.now() - startMs) / 1000);
+            return sizeResponse;
+          }
           if (bodySize > maxSize) {
-            const sizeResponse = NextResponse.json(
-              { success: false, error: `Request body too large. Maximum: ${maxSize / 1024 / 1024}MB` },
-              { status: 413, headers: { 'X-Request-Id': requestId } },
+            const sizeResponse = bodySizeError(
+              request,
+              requestId,
+              413,
+              `Request body too large. Maximum: ${maxSize / 1024 / 1024}MB`,
             );
-            const sizeOrigin = request.headers.get('origin');
-            if (sizeOrigin) setCorsHeaders(sizeResponse, sizeOrigin);
             observeHttpRequest(request.method, routePattern, 413, (Date.now() - startMs) / 1000);
             return sizeResponse;
           }

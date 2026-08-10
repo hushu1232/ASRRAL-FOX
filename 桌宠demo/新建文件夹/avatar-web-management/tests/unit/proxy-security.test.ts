@@ -114,6 +114,47 @@ describe('proxy trust boundary', () => {
     expect(res.status).toBe(503);
   });
 
+  it('rejects production bodies without Content-Length before buffering', async () => {
+    process.env.TRUST_PROXY_HEADERS = 'true';
+    process.env.TRUST_PROXY_SECRET = 'proxy-test-secret';
+    (process.env as unknown as Record<string, string>).NODE_ENV = 'production';
+    const req = new NextRequest('http://localhost/api/assets/upload', {
+      method: 'POST',
+      headers: {
+        'content-type': 'multipart/form-data; boundary=test',
+        'x-forwarded-for': '203.0.113.21',
+        'x-foxd-proxy-token': 'proxy-test-secret',
+      },
+    });
+
+    const res = await proxy(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(411);
+    expect(body.error).toContain('Content-Length');
+    expect(checkRateLimit).not.toHaveBeenCalled();
+  });
+
+  it('rejects ambiguous Content-Length and Transfer-Encoding combinations', async () => {
+    process.env.TRUST_PROXY_HEADERS = 'true';
+    process.env.TRUST_PROXY_SECRET = 'proxy-test-secret';
+    (process.env as unknown as Record<string, string>).NODE_ENV = 'production';
+    const req = new NextRequest('http://localhost/api/test', {
+      method: 'POST',
+      headers: {
+        'content-length': '12',
+        'transfer-encoding': 'chunked',
+        'x-forwarded-for': '203.0.113.22',
+        'x-foxd-proxy-token': 'proxy-test-secret',
+      },
+    });
+
+    const res = await proxy(req);
+
+    expect(res.status).toBe(400);
+    expect(checkRateLimit).not.toHaveBeenCalled();
+  });
+
   it('does not use an unverified JWT subject as the upload limit identity', async () => {
     process.env.TRUST_PROXY_HEADERS = 'true';
     process.env.TRUST_PROXY_SECRET = 'proxy-test-secret';

@@ -44,15 +44,22 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "on"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+  proxySetHeadersConfigMap: "avatar-web-proxy-headers"
   rateLimit:
     enabled: true
     rps: "30"
     burstMultiplier: "5"
     rateAfter: "10"
 
+proxy:
+  trustHeaders: true
+
 config:
   pgPoolMax: "30"
+  # Set with --set config.jwtLegacyRefreshTokenCutoff=<RFC3339> after migration.
+  jwtLegacyRefreshTokenCutoff: ""
   # 生产环境中通过 ExternalSecret 或 sealed-secrets 注入敏感信息
   # redisHost: redis.prod.svc.cluster.local
   # otelEndpoint: http://otel-collector.observability:4318

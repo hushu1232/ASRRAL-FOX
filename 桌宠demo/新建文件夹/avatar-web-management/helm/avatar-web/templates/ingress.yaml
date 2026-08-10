@@ -9,6 +9,9 @@ metadata:
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+    {{- if .Values.ingress.proxySetHeadersConfigMap }}
+    nginx.ingress.kubernetes.io/proxy-set-headers: {{ .Values.ingress.proxySetHeadersConfigMap | quote }}
+    {{- end }}
     {{- if .Values.ingress.tls }}
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     {{- end }}

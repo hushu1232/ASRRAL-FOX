@@ -27,6 +27,15 @@ function getHs256Secret(): string {
 const HS256_SECRET = getHs256Secret();
 const JWT_ACCESS_EXPIRY_FINAL = process.env.JWT_ACCESS_EXPIRY || JWT_ACCESS_EXPIRY;
 const JWT_REFRESH_EXPIRY_DAYS_FINAL = parseInt(process.env.JWT_REFRESH_EXPIRY_DAYS || String(JWT_REFRESH_EXPIRY_DAYS), 10);
+// Temporary compatibility window for rows written before token hashing.
+// Leave unset during migration; set an RFC 3339 cutoff before revoking legacy rows.
+const LEGACY_REFRESH_TOKEN_CUTOFF = process.env.JWT_LEGACY_REFRESH_TOKEN_CUTOFF?.trim() || null;
+const LEGACY_REFRESH_TOKEN_CUTOFF_MS = LEGACY_REFRESH_TOKEN_CUTOFF
+  ? Date.parse(LEGACY_REFRESH_TOKEN_CUTOFF)
+  : null;
+if (LEGACY_REFRESH_TOKEN_CUTOFF && !Number.isFinite(LEGACY_REFRESH_TOKEN_CUTOFF_MS)) {
+  log.error({ cutoff: LEGACY_REFRESH_TOKEN_CUTOFF }, 'Invalid JWT_LEGACY_REFRESH_TOKEN_CUTOFF; legacy refresh tokens are disabled');
+}
 
 export interface TokenPayload {
   sub: string;
@@ -91,10 +100,7 @@ export async function verifyRefreshToken(token: string): Promise<{ sub: string; 
 
   const row = await getPrisma().refreshToken.findFirst({
     where: {
-      OR: [
-        { tokenHash: hashRefreshToken(token) },
-        { tokenHash: token },
-      ],
+      OR: getRefreshTokenLookupHashes(token).map((tokenHash) => ({ tokenHash })),
       revoked: false,
     },
     select: { id: true, expiresAt: true },
@@ -117,9 +123,22 @@ function verifyWithConfiguredAlgorithm(token: string): Record<string, unknown> |
 
 export async function revokeRefreshToken(token: string): Promise<void> {
   await getPrisma().refreshToken.updateMany({
-    where: { tokenHash: { in: [hashRefreshToken(token), token] } },
+    where: { tokenHash: { in: getRefreshTokenLookupHashes(token) } },
     data: { revoked: true },
   });
+}
+
+function getRefreshTokenLookupHashes(token: string): string[] {
+  const hashes = [hashRefreshToken(token)];
+  if (legacyRefreshTokenCompatibilityEnabled()) hashes.push(token);
+  return hashes;
+}
+
+function legacyRefreshTokenCompatibilityEnabled(): boolean {
+  if (!LEGACY_REFRESH_TOKEN_CUTOFF) return true;
+  const cutoff = LEGACY_REFRESH_TOKEN_CUTOFF_MS;
+  if (cutoff === null || !Number.isFinite(cutoff)) return false;
+  return Date.now() < cutoff;
 }
 
 export function getCurrentAlgorithm(): string {

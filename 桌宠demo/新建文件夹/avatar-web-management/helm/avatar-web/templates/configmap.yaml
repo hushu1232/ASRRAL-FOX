@@ -7,9 +7,15 @@ metadata:
 data:
   NODE_ENV: {{ .Values.environment | quote }}
   PORT: {{ .Values.service.targetPort | quote }}
+  {{- if .Values.proxy.trustHeaders }}
+  TRUST_PROXY_HEADERS: "true"
+  {{- end }}
   {{- with .Values.config }}
   NEXT_PUBLIC_APP_URL: {{ .publicUrl | quote }}
   NEXT_PUBLIC_WS_PORT: {{ .wsPort | default "3001" | quote }}
+  {{- if .jwtLegacyRefreshTokenCutoff }}
+  JWT_LEGACY_REFRESH_TOKEN_CUTOFF: {{ .jwtLegacyRefreshTokenCutoff | quote }}
+  {{- end }}
   PG_POOL_MAX: {{ .pgPoolMax | default "20" | quote }}
   PG_POOL_IDLE_TIMEOUT: {{ .pgPoolIdleTimeout | default "30000" | quote }}
   PG_CONNECTION_TIMEOUT: {{ .pgConnectionTimeout | default "5000" | quote }}

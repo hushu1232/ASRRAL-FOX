@@ -47,6 +47,7 @@ function generateTestKeyPair() {
 function loadJwtWithEnv(env: Record<string, string | undefined>) {
   jest.resetModules();
   // Apply env before requiring
+  delete process.env.JWT_LEGACY_REFRESH_TOKEN_CUTOFF;
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) {
       delete process.env[key];
@@ -278,6 +279,43 @@ describe('Refresh Token — HS256', () => {
             crypto.createHash('sha256').update('some-token-hash').digest('hex'),
             'some-token-hash',
           ],
+        },
+      },
+      data: { revoked: true },
+    });
+  });
+
+  it('stops accepting legacy records after the configured cutoff', async () => {
+    const mod = loadJwtWithEnv({
+      ...hs256Env(),
+      JWT_LEGACY_REFRESH_TOKEN_CUTOFF: new Date(Date.now() - 1000).toISOString(),
+    });
+    const token = require('jsonwebtoken').sign(
+      { sub: 'legacy-user', jti: 'legacy-token-id' },
+      'refresh-test-secret',
+      { algorithm: 'HS256', expiresIn: '1d' },
+    );
+    mockRefreshToken.findFirst.mockResolvedValue(undefined);
+
+    expect(await mod.verifyRefreshToken(token)).toBeNull();
+    expect(mockRefreshToken.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        OR: [{ tokenHash: crypto.createHash('sha256').update(token).digest('hex') }],
+      }),
+    }));
+  });
+
+  it('revokes only hashed records after the configured cutoff', async () => {
+    const mod = loadJwtWithEnv({
+      ...hs256Env(),
+      JWT_LEGACY_REFRESH_TOKEN_CUTOFF: new Date(Date.now() - 1000).toISOString(),
+    });
+    await mod.revokeRefreshToken('some-token');
+
+    expect(mockRefreshToken.updateMany).toHaveBeenLastCalledWith({
+      where: {
+        tokenHash: {
+          in: [crypto.createHash('sha256').update('some-token').digest('hex')],
         },
       },
       data: { revoked: true },
