@@ -51,6 +51,12 @@ data:
 3. 应用 Service 不暴露公网端口，只允许 Ingress 到达；
 4. 用一条正常 JSON 请求和一条超过限制的请求验证：前者进入限流链路，后者在网关或应用代理返回 `413`，无 `Content-Length` 的带 body 请求返回 `411`。
 
+本地或 CI 可以先运行零依赖的静态配置检查：
+
+```bash
+node scripts/check-production-proxy-config.mjs
+```
+
 ## Refresh Token 兼容退出
 
 新签发的 refresh token 只保存 SHA-256。迁移期间默认双读旧明文记录；设置 `JWT_LEGACY_REFRESH_TOKEN_CUTOFF` 为 RFC 3339 时间后，截止时间到达即只读哈希记录，旧会话需要重新登录。截止时间应覆盖最长 refresh token 有效期，并在切换前完成一次 dry-run：
