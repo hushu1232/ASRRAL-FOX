@@ -6,26 +6,26 @@
  */
 'use client';
 
-import { useState, useEffect } from 'react';
-import Image from 'next/image';
+import { useState, useSyncExternalStore } from 'react';
 import { Button } from 'antd';
 import { ReloadOutlined, WifiOutlined } from '@ant-design/icons';
 
+function subscribeOnlineStatus(onChange: () => void) {
+  window.addEventListener('online', onChange);
+  window.addEventListener('offline', onChange);
+  return () => {
+    window.removeEventListener('online', onChange);
+    window.removeEventListener('offline', onChange);
+  };
+}
+
 export default function OfflinePage() {
   const [checking, setChecking] = useState(false);
-  const [isOnline, setIsOnline] = useState(true);
-
-  useEffect(() => {
-    setIsOnline(navigator.onLine);
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
+  const isOnline = useSyncExternalStore(
+    subscribeOnlineStatus,
+    () => navigator.onLine,
+    () => true,
+  );
 
   const handleRetry = async () => {
     setChecking(true);
