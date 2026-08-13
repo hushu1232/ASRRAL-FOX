@@ -43,7 +43,6 @@ describe('totp', () => {
 
     it('computes and verifies a valid TOTP token', () => {
       // Generate the expected TOTP code manually
-      const key = require('crypto').createHmac;
       const token = generateTotpSecret();
 
       // We can't test the exact token (time-dependent), but we can test

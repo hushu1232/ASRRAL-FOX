@@ -37,7 +37,7 @@ export class MockPaymentProvider implements IPaymentProvider {
     };
   }
 
-  async refundPayment(providerTxId: string, _amount?: number): Promise<PaymentResult> {
+  async refundPayment(providerTxId: string): Promise<PaymentResult> {
     this.transactions.set(providerTxId, { status: 'refunded' });
     return {
       success: true,
@@ -52,7 +52,7 @@ export class MockPaymentProvider implements IPaymentProvider {
     return { success: true, payoutRef: ref };
   }
 
-  async verifyWebhook(_payload: string, _signature: string): Promise<WebhookEvent | null> {
+  async verifyWebhook(): Promise<WebhookEvent | null> {
     return null; // Mock provider has no webhooks
   }
 }

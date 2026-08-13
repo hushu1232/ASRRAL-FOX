@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { getUserTitleStatuses, equipTitle } from '@/lib/titles/service';
 import prisma from '@/lib/prisma';

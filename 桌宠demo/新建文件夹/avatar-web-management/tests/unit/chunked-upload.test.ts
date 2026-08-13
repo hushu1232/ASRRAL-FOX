@@ -1,5 +1,4 @@
 import { createSession, getSession, recordChunk, deleteSession, getSessionStatus, cleanupExpired } from '@/lib/storage/chunked-upload';
-import type { ChunkedUploadSession } from '@/lib/storage/types';
 
 describe('ChunkedUpload Session Manager', () => {
   afterEach(() => {

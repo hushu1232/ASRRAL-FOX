@@ -92,8 +92,8 @@ export async function ensureCoreLoaded(): Promise<void> {
  */
 export async function createAppDelegate(): Promise<Live2DAppDelegate> {
   // Dynamic import of compiled JS bundle (no type declarations available)
-  const module = await import('@/lib/live2d/cubism5.js');
-  const AppDelegateClass = module.AppDelegate as new () => Live2DAppDelegate;
+  const sdkModule = await import('@/lib/live2d/cubism5.js');
+  const AppDelegateClass = sdkModule.AppDelegate as new () => Live2DAppDelegate;
   return new AppDelegateClass();
 }
 

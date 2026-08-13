@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { createSession } from '@/lib/storage/chunked-upload';
 import { createLogger } from '@/lib/logger';

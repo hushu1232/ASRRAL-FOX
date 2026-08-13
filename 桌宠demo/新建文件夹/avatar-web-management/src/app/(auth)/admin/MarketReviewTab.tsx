@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Card, Table, Tag, Button, Space, message, Select } from 'antd';
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { apiGet } from '@/lib/api-client';
+import { apiPatch } from '@/lib/api-client';
+import { useApiGet } from '@/lib/use-api';
 
 interface MarketReviewItem {
   id: string;
@@ -38,37 +39,22 @@ export default function MarketReviewTab() {
     return c === 'CNY' ? `¥${p}` : `$${p}`;
   }
 
-  const [items, setItems] = useState<MarketReviewItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('pending');
-
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams({
-      page: String(page), pageSize: '20',
-      ...(statusFilter && { status: statusFilter }),
-    });
-    const res = await apiGet<{ items: MarketReviewItem[]; total: number }>(`/api/admin/market/items?${params}`);
-    if (res.success) { setItems(res.data.items); setTotal(res.data.total); }
-    setLoading(false);
-  }, [page, statusFilter]);
-
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  const { data, isLoading, mutate } = useApiGet<{ items: MarketReviewItem[]; total: number }>(
+    '/api/admin/market/items',
+    { page: String(page), pageSize: '20', status: statusFilter },
+  );
+  const items = data?.success ? (data.data?.items ?? []) : [];
+  const total = data?.success ? (data.data?.total ?? 0) : 0;
 
   const handleReview = async (id: string, status: 'approved' | 'rejected') => {
-    const res = await fetch(`/api/admin/market/items/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    });
-    if (res.ok) {
-      setItems(prev => prev.filter(r => r.id !== id));
+    const res = await apiPatch(`/api/admin/market/items/${id}`, { status });
+    if (res.success) {
+      void mutate();
       message.success(status === 'approved' ? t('approveSuccess') : t('rejectSuccess'));
     } else {
-      const data = await res.json().catch(() => ({}));
-      message.error(data.error || t('operationFailed'));
+      message.error(res.error || t('operationFailed'));
     }
   };
 
@@ -88,7 +74,7 @@ export default function MarketReviewTab() {
       </div>
       <Card className="!border-purple-500/10">
         <Table
-          dataSource={items} rowKey="id" loading={loading}
+          dataSource={items} rowKey="id" loading={isLoading}
           columns={[
             { title: t('item'), dataIndex: 'title', key: 'title', render: (val: string) => <span className="text-white">{val}</span> },
             { title: t('category'), dataIndex: 'category', key: 'cat', render: (c: string) => CATEGORY_LABELS[c] || c },

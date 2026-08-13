@@ -85,7 +85,7 @@ export const assetService = {
     if (!asset) throw new NotFoundError('Asset', id);
 
     const storage = getStorageAdapter();
-    let fileUrl = await storage.getFileUrl(asset.storagePath);
+    const fileUrl = await storage.getFileUrl(asset.storagePath);
     return { fileUrl, mimeType: asset.mimeType, filename: asset.filename };
   },
 

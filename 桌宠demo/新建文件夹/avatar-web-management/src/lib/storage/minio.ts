@@ -73,7 +73,7 @@ export class MinioStorageAdapter implements StorageAdapter {
   }
 
   async getFileUrl(key: string): Promise<string> {
-    const { client, bucket, publicUrl } = getClient();
+    const { client, bucket } = getClient();
     return client.presignedGetObject(bucket, key, 7 * 24 * 60 * 60);
   }
 
@@ -140,7 +140,6 @@ export class MinioStorageAdapter implements StorageAdapter {
 
     // Limit batch size — MinIO/S3 composeObject supports at most 32 sources per call
     const MAX_SOURCES = 32;
-    let mergedKey = finalKey;
 
     if (chunks <= MAX_SOURCES) {
       await client.composeObject(

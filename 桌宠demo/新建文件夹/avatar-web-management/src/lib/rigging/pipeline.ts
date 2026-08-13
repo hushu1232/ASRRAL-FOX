@@ -2,7 +2,7 @@
 import { separateLayers, rigModel, exportModel, deployModel, downloadModelZip } from './client';
 import { pushPipelineProgress } from '@/lib/ws/server';
 import { createLogger } from '@/lib/logger';
-import type { PipelineStage, PipelineOptions, PipelineStatus, LayerResult } from './types';
+import type { PipelineOptions, PipelineStatus, LayerResult } from './types';
 
 const log = createLogger('rigging-pipeline');
 
@@ -86,13 +86,11 @@ export async function orchestratePipeline(
     // Stage 4: Pull model files (85-95%)
     updateStatus(imageId, { stage: 'pulling_assets', percent: 85, message: '下载模型文件中...' });
 
-    let modelZip: ArrayBuffer;
     try {
-      modelZip = await downloadModelZip(imageId);
+      await downloadModelZip(imageId);
       updateStatus(imageId, { stage: 'pulling_assets', percent: 95, message: '模型文件下载完成' });
     } catch (err) {
       log.warn({ err, imageId }, 'Failed to download model ZIP — continuing without local copy');
-      modelZip = new ArrayBuffer(0);
       updateStatus(imageId, { stage: 'pulling_assets', percent: 95, message: '模型文件下载跳过' });
     }
 

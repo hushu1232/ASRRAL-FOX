@@ -295,6 +295,7 @@ export const config = {
     '/api/:path*',
     // Page routes
     '/dashboard/:path*',
+    '/companion/:path*',
     '/avatars/:path*',
     '/assets/:path*',
     '/marketplace/:path*',

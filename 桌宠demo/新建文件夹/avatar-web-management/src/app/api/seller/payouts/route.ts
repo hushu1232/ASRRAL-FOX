@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPaymentProvider } from '@/lib/payment';
 import { getPrisma } from '@/lib/db';
 import { withAuth } from '@/lib/auth/middleware';
-import { success, error as apiError } from '@/lib/api-response';
+import { success } from '@/lib/api-response';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api:seller:payouts');

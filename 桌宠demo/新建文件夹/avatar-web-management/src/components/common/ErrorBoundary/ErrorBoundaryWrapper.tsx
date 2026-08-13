@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, lazy, ComponentType, LazyExoticComponent } from 'react';
+import { Suspense } from 'react';
 import { Spin } from 'antd';
 
 // ─── Loading fallbacks ─────────────────────────────────────────

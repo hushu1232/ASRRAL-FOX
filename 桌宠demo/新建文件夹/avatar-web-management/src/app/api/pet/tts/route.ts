@@ -12,7 +12,7 @@ const log = createLogger('api:pet:tts');
 const GPT_SOVITS_URL = process.env.GPT_SOVITS_URL || 'http://localhost:8002';
 const TTS_TIMEOUT_MS = 15000;
 
-export const POST = withAuth(async (req: NextRequest, _user) => {
+export const POST = withAuth(async (req: NextRequest) => {
   try {
     const body = await req.json();
     const text = (body.text as string)?.trim();

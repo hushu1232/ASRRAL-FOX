@@ -12,8 +12,6 @@ import {
   requiresCsrfCheck,
   csrfCookieString,
   validateOrigin,
-  CSRF_COOKIE,
-  CSRF_HEADER,
 } from '@/lib/csrf';
 
 function createMockRequest(overrides: {

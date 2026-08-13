@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { App } from 'antd';
 import VoiceCloningWizard from '@/components/pet/VoiceCloningWizard';
 
@@ -12,12 +12,18 @@ const mockApiPost = jest.fn();
 const mockApiGet = jest.fn();
 const mockApiDelete = jest.fn();
 const mockApiPostFormData = jest.fn();
+const mockUseApiGet = jest.fn();
+const mockMutateVoices = jest.fn();
 
 jest.mock('@/lib/api-client', () => ({
   apiPost: (...args: any[]) => mockApiPost(...args),
   apiGet: (...args: any[]) => mockApiGet(...args),
   apiDelete: (...args: any[]) => mockApiDelete(...args),
   apiPostFormData: (...args: any[]) => mockApiPostFormData(...args),
+}));
+
+jest.mock('@/lib/use-api', () => ({
+  useApiGet: (...args: unknown[]) => mockUseApiGet(...args),
 }));
 
 jest.mock('@/stores/authStore', () => ({
@@ -107,7 +113,11 @@ const mockVoices = [
 describe('VoiceCloningWizard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockApiGet.mockResolvedValue({ data: { voices: mockVoices, total: 2 } });
+    mockUseApiGet.mockReturnValue({
+      data: { success: true, data: { voices: mockVoices, total: 2 } },
+      isLoading: false,
+      mutate: mockMutateVoices,
+    });
   });
 
   describe('step 1: upload', () => {
@@ -161,9 +171,7 @@ describe('VoiceCloningWizard', () => {
   describe('step 3: voice list', () => {
     it('shows loaded voices', async () => {
       await renderWizard();
-      await waitFor(() => {
-        expect(mockApiGet).toHaveBeenCalledWith('/api/tts/voices');
-      });
+      expect(mockUseApiGet).toHaveBeenCalledWith('/api/tts/voices');
     });
   });
 

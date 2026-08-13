@@ -1,13 +1,11 @@
 // TODO: BEM-migrate
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Modal, Card, Checkbox, Spin, Tag, App } from 'antd';
+import { useState } from 'react';
+import { Modal, Card, Checkbox, Spin, Tag } from 'antd';
 import { FileOutlined } from '@ant-design/icons';
-import Image from 'next/image';
 import { useTranslations } from 'next-intl';
-import { apiGet } from '@/lib/api-client';
-import type { PaginatedResponse } from '@/lib/use-api';
+import { useApiPaginated } from '@/lib/use-api';
 
 interface AssetItem {
   id: string;
@@ -31,7 +29,6 @@ interface Props {
 }
 
 export default function AssetPickerModal({ open, onClose, onSelect, filterType }: Props) {
-  const { message } = App.useApp();
   const t = useTranslations('assets');
   const tc = useTranslations('common');
 
@@ -43,25 +40,18 @@ export default function AssetPickerModal({ open, onClose, onSelect, filterType }
     hdri: t('types.hdri'),
   };
 
-  const [assets, setAssets] = useState<AssetItem[]>([]);
-  const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const { data, isLoading: loading, error } = useApiPaginated<AssetItem>(
+    open ? '/api/assets' : null,
+    { pageSize: '100' },
+  );
+  const allAssets = data?.success ? (data.data?.items ?? []) : [];
+  const assets = filterType ? allAssets.filter(asset => asset.asset_type === filterType) : allAssets;
 
-  useEffect(() => {
-    if (open) {
-      setLoading(true);
-      setSelected(new Set());
-      apiGet<PaginatedResponse<AssetItem>>('/api/assets', { pageSize: '100' })
-        .then(res => {
-          if (res.success && res.data) {
-            const items = res.data.items || [];
-            setAssets(filterType ? items.filter(a => a.asset_type === filterType) : items);
-          }
-        })
-        .catch(() => message.error(t('loadFailed')))
-        .finally(() => setLoading(false));
-    }
-  }, [open, filterType, message, t]);
+  const handleClose = () => {
+    setSelected(new Set());
+    onClose();
+  };
 
   const toggleSelect = (id: string) => {
     setSelected(prev => {
@@ -75,21 +65,24 @@ export default function AssetPickerModal({ open, onClose, onSelect, filterType }
   const handleConfirm = () => {
     const selectedAssets = assets.filter(a => selected.has(a.id));
     onSelect(selectedAssets.map(a => a.storage_path));
-    onClose();
+    handleClose();
   };
 
   return (
     <Modal
       title={t('picker.title')}
       open={open}
-      onCancel={onClose}
+      onCancel={handleClose}
       onOk={handleConfirm}
+      afterOpenChange={(isOpen) => { if (!isOpen) setSelected(new Set()); }}
       okText={t('picker.confirm', { count: selected.size })}
       cancelText={tc('cancel')}
       width={720}
       destroyOnHidden
     >
-      {loading ? (
+      {error ? (
+        <div className="text-center py-16 text-gray-500">{t('loadFailed')}</div>
+      ) : loading ? (
         <div className="flex justify-center py-16"><Spin size="large" /></div>
       ) : assets.length === 0 ? (
         <div className="text-center py-16 text-gray-500">

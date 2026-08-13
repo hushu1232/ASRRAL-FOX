@@ -4,9 +4,8 @@ import { useState, useEffect } from 'react';
 import { Card, Form, Input, Button, message, Progress, Descriptions, Tag } from 'antd';
 import { CrownOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { useAuthStore } from '@/stores/authStore';
 import { apiGet, apiPut } from '@/lib/api-client';
-import { LEVEL_EXP_TABLE, LEVEL_PREFIX, LEVEL_BENEFITS, MAX_LEVEL } from '@/lib/constants';
+import { LEVEL_EXP_TABLE, LEVEL_BENEFITS, MAX_LEVEL } from '@/lib/constants';
 
 interface ProfileData {
   id: string; email: string; username: string; role: string; status: string;
@@ -17,7 +16,6 @@ interface ProfileData {
 
 export default function ProfileTab() {
   const t = useTranslations('settings.profile');
-  const user = useAuthStore(s => s.user);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<ProfileData | null>(null);

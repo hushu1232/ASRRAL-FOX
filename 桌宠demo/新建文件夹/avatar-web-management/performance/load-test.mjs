@@ -1,5 +1,4 @@
 import http from 'http';
-import https from 'https';
 
 const BASE = 'http://localhost:3000';
 const CONCURRENT = 50;
@@ -140,7 +139,6 @@ async function main() {
   console.log('\n=== Load Test: Login Concurrency ===');
   console.log(`  Endpoint: POST /api/auth/login`);
   console.log(`  Concurrent logins: 10`);
-  const loginStart = Date.now();
   const loginPromises = [];
   for (let i = 0; i < 10; i++) {
     loginPromises.push(

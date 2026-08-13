@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { createLogger } from '@/lib/logger';
 import { exportService } from '@/lib/services/export.service';

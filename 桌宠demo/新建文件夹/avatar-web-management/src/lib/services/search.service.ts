@@ -51,7 +51,6 @@ export const searchService = {
 
     // SQLite fallback: LIKE
     const prisma = getPrisma();
-    const likePattern = `%${query}%`;
 
     const [avatars, assets, templates] = await Promise.all([
       prisma.avatar.findMany({

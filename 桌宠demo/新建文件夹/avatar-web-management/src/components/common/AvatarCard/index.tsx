@@ -2,7 +2,6 @@
 
 import { Card, Tag, Typography } from 'antd';
 import { UserOutlined } from '@ant-design/icons';
-import { useTranslations } from 'next-intl';
 import type { Avatar } from '@/types/avatar';
 import { AVATAR_STATUS_MAP, AVATAR_STYLES } from '@/lib/constants';
 import PlaceholderImage from '@/components/common/PlaceholderImage';
@@ -17,7 +16,6 @@ const styleLabel = (style: string) =>
   AVATAR_STYLES.find((s) => s.value === style)?.label || style;
 
 export default function AvatarCard({ avatar, onClick }: AvatarCardProps) {
-  const tc = useTranslations('common');
   const statusInfo = AVATAR_STATUS_MAP[avatar.status] || { color: 'default' as const, label: avatar.status };
 
   return (

@@ -1,7 +1,7 @@
 // TODO: BEM-migrate
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Button } from 'antd';
 import { createLogger } from '@/lib/logger';
@@ -10,27 +10,45 @@ const log = createLogger('cookie-consent');
 const STORAGE_KEY = 'astralfox_cookie_consent';
 
 type ConsentChoice = 'accepted' | 'rejected' | null;
+type ConsentSnapshot = ConsentChoice | undefined;
+
+const listeners = new Set<() => void>();
+
+function getConsentSnapshot(): ConsentSnapshot {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored === 'accepted' || stored === 'rejected' ? stored : null;
+  } catch (err) {
+    log.warn({ err }, 'Failed to read cookie consent');
+    return null;
+  }
+}
+
+function emitConsentChange() {
+  listeners.forEach(listener => listener());
+}
+
+function subscribeToConsent(listener: () => void) {
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY) listener();
+  };
+
+  listeners.add(listener);
+  window.addEventListener('storage', handleStorage);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener('storage', handleStorage);
+  };
+}
 
 export function useCookieConsent() {
-  const [choice, setChoice] = useState<ConsentChoice>(null);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored === 'accepted' || stored === 'rejected') {
-        setChoice(stored);
-      }
-    } catch (err) {
-      log.warn({ err }, 'Failed to read cookie consent');
-    }
-    setLoaded(true);
-  }, []);
+  const choice = useSyncExternalStore(subscribeToConsent, getConsentSnapshot, () => undefined);
+  const loaded = choice !== undefined;
 
   const accept = () => {
     try {
       localStorage.setItem(STORAGE_KEY, 'accepted');
-      setChoice('accepted');
+      emitConsentChange();
     } catch (err) {
       log.error({ err }, 'Failed to save consent');
     }
@@ -39,7 +57,7 @@ export function useCookieConsent() {
   const reject = () => {
     try {
       localStorage.setItem(STORAGE_KEY, 'rejected');
-      setChoice('rejected');
+      emitConsentChange();
     } catch (err) {
       log.error({ err }, 'Failed to save consent');
     }

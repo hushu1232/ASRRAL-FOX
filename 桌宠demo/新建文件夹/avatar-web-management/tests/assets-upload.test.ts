@@ -1,5 +1,4 @@
 // 资产上传集成测试 — 列表、过滤、分块上传、认证
-import http from 'http';
 import { get, post, loginAs } from './helpers';
 
 describe('Asset listing', () => {

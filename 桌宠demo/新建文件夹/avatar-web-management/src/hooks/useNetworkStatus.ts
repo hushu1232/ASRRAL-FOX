@@ -60,7 +60,6 @@ export function useNetworkStatus(pingIntervalMs = 30_000): NetworkStatus {
   // Update offline duration timer
   useEffect(() => {
     if (online) {
-      setOfflineDuration(0);
       return;
     }
     const timer = setInterval(() => {
@@ -85,6 +84,7 @@ export function useNetworkStatus(pingIntervalMs = 30_000): NetworkStatus {
       if (ok) {
         setOnline(true);
         lastOnlineTimeRef.current = Date.now();
+        setOfflineDuration(0);
       }
       return ok;
     } catch {
@@ -99,10 +99,13 @@ export function useNetworkStatus(pingIntervalMs = 30_000): NetworkStatus {
   // Periodic ping
   useEffect(() => {
     if (pingIntervalMs <= 0) return;
-    // Ping on mount
-    checkConnection();
+    // Start the bootstrap ping after the effect commits.
+    const bootstrap = setTimeout(() => { void checkConnection(); }, 0);
     const timer = setInterval(checkConnection, pingIntervalMs);
-    return () => clearInterval(timer);
+    return () => {
+      clearTimeout(bootstrap);
+      clearInterval(timer);
+    };
   }, [pingIntervalMs, checkConnection]);
 
   return {

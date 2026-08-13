@@ -1,7 +1,5 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
 import { success, error, paginated } from '@/lib/api-response';
 import { withAuth } from '@/lib/auth/middleware';
 import { assetCreateSchema } from '@/lib/validators';

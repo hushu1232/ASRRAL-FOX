@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Button, Input, Tooltip } from 'antd';
+import { Button, Input, Tooltip, type GetRef } from 'antd';
 import {
   SendOutlined, AudioOutlined, AudioMutedOutlined,
   RobotOutlined, UserOutlined,
@@ -49,7 +49,7 @@ export default function ChatPanel({
 
   const [inputText, setInputText] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<GetRef<typeof TextArea>>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -127,7 +127,7 @@ export default function ChatPanel({
       <div className="border-t border-[var(--ds-colors-border)] p-3">
         <div className="flex items-end gap-2">
           <TextArea
-            ref={inputRef as React.Ref<any>}
+            ref={inputRef}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}

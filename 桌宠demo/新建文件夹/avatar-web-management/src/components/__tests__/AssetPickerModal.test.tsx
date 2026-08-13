@@ -2,12 +2,14 @@
  * @jest-environment jsdom
  */
 
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { App } from 'antd';
 import AssetPickerModal from '@/components/market/AssetPickerModal';
 
-jest.mock('@/lib/api-client', () => ({
-  apiGet: jest.fn(),
+const mockUseApiPaginated = jest.fn();
+
+jest.mock('@/lib/use-api', () => ({
+  useApiPaginated: (...args: unknown[]) => mockUseApiPaginated(...args),
 }));
 
 jest.mock('next/image', () => ({
@@ -20,8 +22,6 @@ jest.mock('next/image', () => ({
   },
 }));
 
-const { apiGet } = require('@/lib/api-client');
-
 function Wrapper({ children }: { children: React.ReactNode }) {
   return <App>{children}</App>;
 }
@@ -32,48 +32,32 @@ const mockItems = [
   { id: 'as3', filename: 'anim_c.fbx', asset_type: 'animation', format: 'fbx', file_size: 4096, storage_path: '/anims/c.fbx', created_at: '2026-05-03' },
 ];
 
-function setupDeferredApi() {
-  let resolve: (value: any) => void;
-  const deferred = new Promise<any>(r => { resolve = r; });
-  apiGet.mockReturnValue(deferred);
-  return resolve!;
-}
-
 describe('AssetPickerModal', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseApiPaginated.mockReturnValue({
+      data: { success: true, data: { items: mockItems, total: 3 } },
+      isLoading: false,
+      error: undefined,
+    });
   });
 
   it('renders modal title when open', () => {
-    apiGet.mockReturnValue(new Promise(() => {}));
     render(<AssetPickerModal open={true} onClose={jest.fn()} onSelect={jest.fn()} />, { wrapper: Wrapper });
     expect(screen.getByText('picker.title')).toBeDefined();
+    expect(mockUseApiPaginated).toHaveBeenCalledWith('/api/assets', { pageSize: '100' });
   });
 
-  it('renders asset items in a grid', async () => {
-    const resolve = setupDeferredApi();
+  it('renders asset items in a grid', () => {
     render(<AssetPickerModal open={true} onClose={jest.fn()} onSelect={jest.fn()} />, { wrapper: Wrapper });
-
-    await waitFor(() => { expect(apiGet).toHaveBeenCalled(); });
-
-    await act(async () => {
-      resolve({ success: true, data: { items: mockItems, total: 3, page: 1, pageSize: 100, totalPages: 1 } });
-    });
 
     expect(screen.getByText('model_a.fbx')).toBeDefined();
     expect(screen.getByText('texture_b.png')).toBeDefined();
     expect(screen.getByText('anim_c.fbx')).toBeDefined();
   });
 
-  it('selects and deselects assets on click', async () => {
-    const resolve = setupDeferredApi();
+  it('selects and deselects assets on click', () => {
     render(<AssetPickerModal open={true} onClose={jest.fn()} onSelect={jest.fn()} />, { wrapper: Wrapper });
-
-    await waitFor(() => { expect(apiGet).toHaveBeenCalled(); });
-
-    await act(async () => {
-      resolve({ success: true, data: { items: mockItems, total: 3, page: 1, pageSize: 100, totalPages: 1 } });
-    });
 
     const card = screen.getByText('model_a.fbx').closest('.ant-card')!;
     fireEvent.click(card);
@@ -83,16 +67,9 @@ describe('AssetPickerModal', () => {
     expect(card.className).not.toContain('bg-purple-500/5');
   });
 
-  it('calls onSelect with selected storage paths on confirm', async () => {
-    const resolve = setupDeferredApi();
+  it('calls onSelect with selected storage paths on confirm', () => {
     const onSelect = jest.fn();
     render(<AssetPickerModal open={true} onClose={jest.fn()} onSelect={onSelect} />, { wrapper: Wrapper });
-
-    await waitFor(() => { expect(apiGet).toHaveBeenCalled(); });
-
-    await act(async () => {
-      resolve({ success: true, data: { items: mockItems, total: 3, page: 1, pageSize: 100, totalPages: 1 } });
-    });
 
     fireEvent.click(screen.getByText('model_a.fbx').closest('.ant-card')!);
     fireEvent.click(screen.getByText('picker.confirm'));
@@ -100,28 +77,19 @@ describe('AssetPickerModal', () => {
     expect(onSelect).toHaveBeenCalledWith(['/models/a.fbx']);
   });
 
-  it('shows empty state when no assets', async () => {
-    const resolve = setupDeferredApi();
-    render(<AssetPickerModal open={true} onClose={jest.fn()} onSelect={jest.fn()} />, { wrapper: Wrapper });
-
-    await waitFor(() => { expect(apiGet).toHaveBeenCalled(); });
-
-    await act(async () => {
-      resolve({ success: true, data: { items: [], total: 0, page: 1, pageSize: 100, totalPages: 0 } });
+  it('shows empty state when no assets', () => {
+    mockUseApiPaginated.mockReturnValue({
+      data: { success: true, data: { items: [], total: 0 } },
+      isLoading: false,
+      error: undefined,
     });
+    render(<AssetPickerModal open={true} onClose={jest.fn()} onSelect={jest.fn()} />, { wrapper: Wrapper });
 
     expect(screen.getByText('noAssets')).toBeDefined();
   });
 
-  it('filters assets by type', async () => {
-    const resolve = setupDeferredApi();
+  it('filters assets by type', () => {
     render(<AssetPickerModal open={true} onClose={jest.fn()} onSelect={jest.fn()} filterType="model" />, { wrapper: Wrapper });
-
-    await waitFor(() => { expect(apiGet).toHaveBeenCalled(); });
-
-    await act(async () => {
-      resolve({ success: true, data: { items: mockItems, total: 3, page: 1, pageSize: 100, totalPages: 1 } });
-    });
 
     expect(screen.getByText('model_a.fbx')).toBeDefined();
     expect(screen.queryByText('texture_b.png')).toBeNull();

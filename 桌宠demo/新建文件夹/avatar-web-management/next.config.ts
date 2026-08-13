@@ -19,14 +19,27 @@ const shouldUpgradeInsecureRequests =
   isProduction &&
   process.env.CSP_UPGRADE_INSECURE_REQUESTS !== '0' &&
   (process.env.CSP_UPGRADE_INSECURE_REQUESTS === '1' || appOrigin.startsWith('https://'));
+const airiStageOrigin = (() => {
+  try {
+    const url = new URL(process.env.AIRI_STAGE_URL || '');
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
+      ? url.origin
+      : '';
+  } catch {
+    return '';
+  }
+})();
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  experimental: {
+    cpus: 4,
+  },
   // Production performance optimizations
   compress: true,              // gzip/brotli compression (default true)
   poweredByHeader: false,      // Remove X-Powered-By header (security + fewer bytes)
   generateEtags: true,         // ETag-based cache validation
-  serverExternalPackages: ['better-sqlite3', 'pg', 'argon2', 'playwright', 'playwright-core', '@prisma/client', '@prisma/adapter-better-sqlite3', '@prisma/adapter-pg', 'prisma', '@opentelemetry/sdk-node', '@opentelemetry/auto-instrumentations-node', '@opentelemetry/exporter-trace-otlp-http', '@opentelemetry/sdk-trace-base', '@opentelemetry/resources', '@opentelemetry/instrumentation-http', '@opentelemetry/instrumentation-pg', 'prom-client', '@gltf-transform/core', '@gltf-transform/functions', '@gltf-transform/extensions'],
+  serverExternalPackages: ['better-sqlite3', 'pg', 'argon2', 'playwright', 'playwright-core', '@prisma/client', '@prisma/adapter-pg', 'prisma', '@opentelemetry/sdk-node', '@opentelemetry/auto-instrumentations-node', '@opentelemetry/exporter-trace-otlp-http', '@opentelemetry/sdk-trace-base', '@opentelemetry/resources', '@opentelemetry/instrumentation-http', '@opentelemetry/instrumentation-pg', 'prom-client', '@gltf-transform/core', '@gltf-transform/functions', '@gltf-transform/extensions'],
   images: {
     formats: ['image/avif', 'image/webp'],
     deviceSizes: [360, 414, 768, 1024, 1280, 1536, 1920],
@@ -69,7 +82,10 @@ const nextConfig: NextConfig = {
       { key: 'X-Frame-Options', value: 'DENY' },
       { key: 'X-XSS-Protection', value: '1; mode=block' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-      { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+      {
+        key: 'Permissions-Policy',
+        value: `camera=(), ${airiStageOrigin ? `microphone=(self "${airiStageOrigin}")` : 'microphone=()'}, geolocation=()`,
+      },
       {
         key: 'Content-Security-Policy',
         value: [
@@ -85,6 +101,7 @@ const nextConfig: NextConfig = {
           "img-src 'self' data: blob: https: http:",
           "connect-src 'self' ws: wss: https: http:",
           "worker-src 'self' blob:",
+          `frame-src 'self'${airiStageOrigin ? ` ${airiStageOrigin}` : ''}`,
           "font-src 'self'",
           "media-src 'self' blob:",
           "object-src 'none'",

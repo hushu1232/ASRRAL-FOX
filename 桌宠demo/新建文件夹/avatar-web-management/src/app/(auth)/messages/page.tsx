@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Card, Input, Button, Spin, Empty, List, Badge, App, Typography } from 'antd';
 import { SendOutlined, UserOutlined, MessageOutlined } from '@ant-design/icons';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useApiGet, useApiPaginated } from '@/lib/use-api';
+import { useApiPaginated } from '@/lib/use-api';
 import { apiPost, apiPut } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -50,13 +49,11 @@ const PAGE_SIZE = 50;
 
 export default function MessagesPage() {
   const t = useTranslations('messages');
-  const router = useRouter();
   const { message } = App.useApp();
 
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [msgInput, setMsgInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [ws, setWs] = useState<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Conversation list
@@ -73,9 +70,9 @@ export default function MessagesPage() {
     activeConvId ? `/api/conversations/${activeConvId}/messages` : null,
     { pageSize: String(PAGE_SIZE) },
   );
-  const messages = msgRes?.success
+  const messages = useMemo(() => msgRes?.success
     ? (msgRes.data as unknown as { items: MessageItem[] })?.items || []
-    : [];
+    : [], [msgRes]);
 
   // Auto-scroll to bottom
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -106,7 +103,6 @@ export default function MessagesPage() {
         }
       } catch { /* ignore parse errors */ }
     };
-    setWs(socket);
     return () => { socket.close(); };
   }, [activeConvId, convMutate, msgMutate]);
 

@@ -1,10 +1,9 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import { success, error } from '@/lib/api-response';
 import { withAuth } from '@/lib/auth/middleware';
 import { avatarUpdateSchema } from '@/lib/validators';
-import { ValidationError, NotFoundError } from '@/lib/errors';
+import { ValidationError } from '@/lib/errors';
 import { tryCacheHit, cacheResponse, buildCacheKey, invalidateCache, CACHE_TTL } from '@/lib/cache';
 import { logAudit } from '@/lib/audit';
 import { avatarService } from '@/lib/services/avatar.service';

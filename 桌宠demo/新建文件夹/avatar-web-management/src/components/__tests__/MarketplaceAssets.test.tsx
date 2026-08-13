@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { App } from 'antd';
 import MarketplacePage from '@/app/(auth)/marketplace/page';
 import AssetLibraryPage from '@/app/(auth)/assets/page';
@@ -10,24 +10,23 @@ import NotificationsPage from '@/app/(auth)/notifications/page';
 
 // ──── mutable refs for per-test configuration ────
 const mockApiGet = jest.fn();
+const mockApiPut = jest.fn();
+const mockApiPostFormData = jest.fn();
+const mockUseApiPaginated = jest.fn();
+const mockPaginatedMutate = jest.fn();
 let mockPaginatedData: unknown = undefined;
 let mockPaginatedLoading = false;
 
 jest.mock('@/lib/api-client', () => ({
   apiGet: (...args: unknown[]) => mockApiGet(...args),
-  apiPut: jest.fn(),
+  apiPut: (...args: unknown[]) => mockApiPut(...args),
+  apiPostFormData: (...args: unknown[]) => mockApiPostFormData(...args),
   apiPost: jest.fn(),
   apiDelete: jest.fn(),
 }));
 
 jest.mock('@/lib/use-api', () => ({
-  useApiPaginated: () => ({
-    data: mockPaginatedData,
-    isLoading: mockPaginatedLoading,
-    error: undefined,
-    isValidating: false,
-    mutate: jest.fn(),
-  }),
+  useApiPaginated: (...args: unknown[]) => mockUseApiPaginated(...args),
   useApiGet: () => ({
     data: undefined,
     isLoading: false,
@@ -35,6 +34,14 @@ jest.mock('@/lib/use-api', () => ({
     isValidating: false,
     mutate: jest.fn(),
   }),
+}));
+
+mockUseApiPaginated.mockImplementation(() => ({
+    data: mockPaginatedData,
+    isLoading: mockPaginatedLoading,
+    error: undefined,
+    isValidating: false,
+    mutate: mockPaginatedMutate,
 }));
 
 const mockUser = { id: '1', email: 'test@example.com', username: 'testuser', role: 'user' };
@@ -77,6 +84,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockPaginatedData = undefined;
   mockPaginatedLoading = false;
+  mockUseApiPaginated.mockImplementation(() => ({
+    data: mockPaginatedData,
+    isLoading: mockPaginatedLoading,
+    error: undefined,
+    isValidating: false,
+    mutate: mockPaginatedMutate,
+  }));
 });
 
 // ──── Marketplace ────
@@ -289,20 +303,66 @@ describe('NotificationsPage', () => {
     });
     expect(screen.queryByText('Desktop sync ready')).toBeNull();
   });
+
+  it('updates the paginated cache after marking one notification as read', async () => {
+    mockPaginatedData = {
+      success: true,
+      data: {
+        items: [
+          {
+            id: 'n1',
+            type: 'system',
+            title: 'Desktop sync ready',
+            body: null,
+            resource_type: null,
+            resource_id: null,
+            is_read: 0,
+            created_at: new Date().toISOString(),
+          },
+          {
+            id: 'n2',
+            type: 'review',
+            title: 'Review finished',
+            body: null,
+            resource_type: null,
+            resource_id: null,
+            is_read: 0,
+            created_at: new Date().toISOString(),
+          },
+        ],
+        total: 2,
+      },
+    };
+    mockApiPut.mockResolvedValue({ success: true, data: null });
+
+    render(<NotificationsPage />, { wrapper: Wrapper });
+    fireEvent.click(screen.getByText('Desktop sync ready'));
+
+    await waitFor(() => {
+      expect(mockApiPut).toHaveBeenCalledWith('/api/notifications/n1/read');
+      expect(mockPaginatedMutate).toHaveBeenCalledWith(expect.any(Function), { revalidate: true });
+    });
+
+    const updateCache = mockPaginatedMutate.mock.calls[0][0] as (current: unknown) => {
+      data: { items: Array<{ id: string; is_read: number }> };
+    };
+    const updated = updateCache(mockPaginatedData);
+    expect(updated.data.items.map(item => item.is_read)).toEqual([1, 0]);
+  });
 });
 
 // ──── Assets ────
 
 describe('AssetLibraryPage', () => {
   function mockEmptyAssets() {
-    mockApiGet.mockResolvedValue({
+    mockPaginatedData = {
       success: true,
       data: { items: [], total: 0 },
-    });
+    };
   }
 
   function mockAssetsWithData() {
-    mockApiGet.mockResolvedValue({
+    mockPaginatedData = {
       success: true,
       data: {
         items: [
@@ -329,15 +389,11 @@ describe('AssetLibraryPage', () => {
         ],
         total: 2,
       },
-    });
+    };
   }
 
-  async function renderAssetLibraryPage() {
-    const result = render(<AssetLibraryPage />, { wrapper: Wrapper });
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    });
-    return result;
+  function renderAssetLibraryPage() {
+    return render(<AssetLibraryPage />, { wrapper: Wrapper });
   }
 
   it('renders heading', async () => {
@@ -375,8 +431,7 @@ describe('AssetLibraryPage', () => {
   it('fetches assets on mount', async () => {
     mockEmptyAssets();
     await renderAssetLibraryPage();
-    expect(mockApiGet).toHaveBeenCalledTimes(1);
-    expect(mockApiGet).toHaveBeenCalledWith('/api/assets', { page: '1', pageSize: '24' });
+    expect(mockUseApiPaginated).toHaveBeenCalledWith('/api/assets', { page: '1', pageSize: '24' });
   });
 
   it('shows empty state after loading', async () => {
@@ -397,7 +452,7 @@ describe('AssetLibraryPage', () => {
   });
 
   it('renders pagination when total > pageSize', async () => {
-    mockApiGet.mockResolvedValue({
+    mockPaginatedData = {
       success: true,
       data: {
         items: Array.from({ length: 24 }, (_, i) => ({
@@ -412,7 +467,7 @@ describe('AssetLibraryPage', () => {
         })),
         total: 50,
       },
-    });
+    };
     await renderAssetLibraryPage();
     await waitFor(() => {
       expect(screen.getByText('upload.paginationTotal')).toBeDefined();

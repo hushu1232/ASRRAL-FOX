@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Card, Table, Tag, Button, Space, message } from 'antd';
+import { useState } from 'react';
+import { App, Card, Table, Tag, Button, Space } from 'antd';
 import { CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { apiGet, apiPut } from '@/lib/api-client';
+import { apiPut } from '@/lib/api-client';
+import { useApiGet } from '@/lib/use-api';
 
 interface ReviewItem {
   id: string;
@@ -17,25 +18,19 @@ interface ReviewItem {
 
 export default function ReviewsTab() {
   const t = useTranslations('admin.reviews');
-  const [reviews, setReviews] = useState<ReviewItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const { message } = App.useApp();
   const [page, setPage] = useState(1);
-
-  const fetchReviews = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams({ page: String(page), pageSize: '20', status: 'pending_review' });
-    const res = await apiGet<{ items: ReviewItem[]; total: number }>(`/api/admin/reviews?${params}`);
-    if (res.success) { setReviews(res.data.items); setTotal(res.data.total); }
-    setLoading(false);
-  }, [page]);
-
-  useEffect(() => { fetchReviews(); }, [fetchReviews]);
+  const { data, isLoading, mutate } = useApiGet<{ items: ReviewItem[]; total: number }>(
+    '/api/admin/reviews',
+    { page: String(page), pageSize: '20', status: 'pending_review' },
+  );
+  const reviews = data?.success ? (data.data?.items ?? []) : [];
+  const total = data?.success ? (data.data?.total ?? 0) : 0;
 
   const handleReview = async (versionId: string, action: 'approved' | 'rejected') => {
     const res = await apiPut(`/api/admin/reviews/${versionId}`, { action });
     if (res.success) {
-      setReviews(prev => prev.filter(r => r.version_id !== versionId));
+      void mutate();
       message.success(action === 'approved' ? t('approvedAction') : t('rejectedAction'));
     } else { message.error(res.error || t('operationFailed')); }
   };
@@ -43,7 +38,7 @@ export default function ReviewsTab() {
   return (
     <Card className="!border-purple-500/10">
       <Table
-        dataSource={reviews} rowKey="version_id" loading={loading}
+        dataSource={reviews} rowKey="version_id" loading={isLoading}
         columns={[
           { title: t('avatarName'), dataIndex: 'avatar_name', key: 'name' },
           { title: t('creator'), dataIndex: 'creator', key: 'cr' },

@@ -39,9 +39,8 @@ export const options = {
   },
 };
 
-export default function () {
+export default function loadScenario() {
   let boardId = '';
-  let postId = '';
 
   group('list boards', () => {
     const start = Date.now();
@@ -74,10 +73,6 @@ export default function () {
       });
       errorRate.add(!ok);
 
-      try {
-        const items = JSON.parse(res.body).data?.items;
-        if (items?.length) postId = items[0].id;
-      } catch { /* noop */ }
     });
 
     // Create a post (sparse — 5% of iterations to avoid flooding)

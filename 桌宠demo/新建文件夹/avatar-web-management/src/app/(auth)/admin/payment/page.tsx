@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Card, Table, Button, Modal, Form, Input, Select, Switch, Tag, message, Space, Tabs } from 'antd';
 import { PlusOutlined, EditOutlined, CheckCircleOutlined, ExperimentOutlined } from '@ant-design/icons';
-import { apiGet, apiPost } from '@/lib/api-client';
+import { apiPost } from '@/lib/api-client';
+import { useApiGet } from '@/lib/use-api';
 
 interface GatewayConfig {
   id: string;
@@ -50,21 +51,12 @@ const PROVIDERS = [
 ];
 
 export default function AdminPaymentPage() {
-  const [configs, setConfigs] = useState<GatewayConfig[]>([]);
-  const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<GatewayConfig | null>(null);
   const [form] = Form.useForm();
   const [selectedProvider, setSelectedProvider] = useState('wechat');
-
-  const fetchConfigs = useCallback(async () => {
-    setLoading(true);
-    const res = await apiGet('/api/admin/payment');
-    if (res.success) setConfigs(res.data as GatewayConfig[]);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchConfigs(); }, [fetchConfigs]);
+  const { data, isLoading, mutate } = useApiGet<GatewayConfig[]>('/api/admin/payment');
+  const configs = data?.success ? (data.data ?? []) : [];
 
   const handleSave = async () => {
     const values = await form.validateFields();
@@ -85,7 +77,7 @@ export default function AdminPaymentPage() {
     if (res.success) {
       message.success('配置已保存');
       setModalOpen(false);
-      fetchConfigs();
+      void mutate();
     } else {
       message.error(res.error || '保存失败');
     }
@@ -162,7 +154,7 @@ export default function AdminPaymentPage() {
                 dataSource={configs.filter(c => c.provider === p.key)}
                 columns={columns}
                 rowKey="id"
-                loading={loading}
+                loading={isLoading}
                 style={{ marginTop: 16 }}
                 locale={{ emptyText: `暂无${p.label}配置 — 点击"添加配置"绑定商户号` }}
               />

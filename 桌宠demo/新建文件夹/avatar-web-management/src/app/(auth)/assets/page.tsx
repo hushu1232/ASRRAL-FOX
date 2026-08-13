@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Card, Button, Input, Select, Table, Tag, Tree, App, Pagination, Tooltip } from 'antd';
 import { UploadOutlined, AppstoreOutlined, UnorderedListOutlined, FolderOutlined, FileOutlined, SearchOutlined, ShopOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
@@ -10,9 +10,8 @@ import PageHeader from '@/components/layout/PageHeader';
 import OperationPanel from '@/components/ui/OperationPanel';
 import EmptyState from '@/components/ui/EmptyState';
 import LoadingState from '@/components/ui/LoadingState';
-import { apiGet } from '@/lib/api-client';
-import { useAuthStore } from '@/stores/authStore';
-import type { PaginatedResponse } from '@/lib/api-client';
+import { apiPostFormData } from '@/lib/api-client';
+import { useApiPaginated } from '@/lib/use-api';
 
 interface AssetItem {
   id: string;
@@ -38,12 +37,8 @@ export default function AssetLibraryPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [assets, setAssets] = useState<AssetItem[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const pageSize = 24;
 
   const assetTypeLabels: Record<string, string> = {
@@ -54,30 +49,12 @@ export default function AssetLibraryPage() {
     hdri: t('types.hdri'),
   };
 
-  const fetchAssets = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params: Record<string, string> = { page: String(page), pageSize: String(pageSize) };
-      if (search) params.search = search;
-      if (typeFilter) params.type = typeFilter;
-
-      const res = await apiGet<PaginatedResponse<AssetItem>>('/api/assets', params);
-      if (res.success && res.data) {
-        setAssets(res.data.items);
-        setTotal(res.data.total);
-      } else {
-        message.error(res.error || t('upload.loadFailed'));
-      }
-    } catch {
-      message.error(t('upload.networkError'));
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search, typeFilter, message, t]);
-
-  useEffect(() => {
-    fetchAssets();
-  }, [fetchAssets]);
+  const params: Record<string, string> = { page: String(page), pageSize: String(pageSize) };
+  if (search) params.search = search;
+  if (typeFilter) params.type = typeFilter;
+  const { data, isLoading: loading, mutate } = useApiPaginated<AssetItem>('/api/assets', params);
+  const assets = data?.success ? (data.data?.items ?? []) : [];
+  const total = data?.success ? (data.data?.total ?? 0) : 0;
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -101,31 +78,22 @@ export default function AssetLibraryPage() {
     }
 
     setUploading(true);
-    setUploadProgress(0);
 
     const formData = new FormData();
     formData.append('file', file);
 
-    const token = useAuthStore.getState().accessToken;
     try {
-      const res = await fetch('/api/assets/upload', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (data.success) {
+      const res = await apiPostFormData('/api/assets/upload', formData);
+      if (res.success) {
         message.success(t('upload.uploadSuccess', { name: file.name }));
-        fetchAssets();
+        void mutate();
       } else {
-        message.error(data.error || t('upload.uploadFailed'));
+        message.error(res.error || t('upload.uploadFailed'));
       }
     } catch {
       message.error(t('upload.uploadRequestFailed'));
     } finally {
       setUploading(false);
-      setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };

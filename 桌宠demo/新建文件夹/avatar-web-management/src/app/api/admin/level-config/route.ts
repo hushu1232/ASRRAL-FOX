@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth/middleware';
 import { LEVEL_EXP_TABLE, EXP_ACTIONS, MAX_LEVEL, LEVEL_BENEFITS } from '@/lib/constants';
 import { getRedis, isRedisAvailable } from '@/lib/redis/client';

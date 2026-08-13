@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { withAuth } from '@/lib/auth/middleware';
 import { generateTotpSecret, generateTotpUri, verifyTotp } from '@/lib/auth/totp';

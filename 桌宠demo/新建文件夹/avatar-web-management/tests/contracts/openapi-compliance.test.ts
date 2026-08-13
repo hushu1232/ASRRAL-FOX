@@ -56,13 +56,12 @@ describe('OpenAPI spec ↔ Contract endpoint coverage', () => {
 
   it('covers all contract endpoints in OpenAPI paths', () => {
     const contractEndpoints = Object.keys(API_CONTRACTS).map((key) => {
-      const parts = key.split(' ');
-      return { method: parts[0].toLowerCase(), path: normalizePath(key) };
+      return normalizePath(key);
     });
 
     const openApiPaths = Object.keys(spec.paths);
 
-    for (const { method, path } of contractEndpoints) {
+    for (const path of contractEndpoints) {
       // Convert Next.js :id params to OpenAPI {id} format
       const oapiPath = path.replace(/:id/g, '{id}').replace(/:versionId/g, '{versionId}').replace(/:num/g, '{num}');
       const found = openApiPaths.find(
@@ -75,7 +74,7 @@ describe('OpenAPI spec ↔ Contract endpoint coverage', () => {
 
 describe('OpenAPI responses', () => {
   it('all paths have at least one operation with responses', () => {
-    for (const [pathKey, pathItem] of Object.entries(spec.paths)) {
+    for (const [, pathItem] of Object.entries(spec.paths)) {
       const operations = pathItem as Record<string, unknown>;
       for (const [method, operation] of Object.entries(operations)) {
         if (['get', 'post', 'put', 'delete', 'patch'].includes(method)) {

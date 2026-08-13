@@ -57,7 +57,7 @@ export async function addExp(
     select: { id: true, exp: true, level: true },
   });
 
-  let newExp = user.exp + gained;
+  const newExp = user.exp + gained;
   let newLevel = user.level;
   let levelUp = false;
 
@@ -75,7 +75,7 @@ export async function addExp(
   const nextLevelExp = newLevel < MAX_LEVEL ? LEVEL_EXP_TABLE[newLevel + 1].total : newExp;
 
   if (levelUp) {
-    log.info({ userId, from: user.level, to: newLevel, exp: newExp }, 'User leveled up');
+    log.info({ userId, from: user.level, to: newLevel, exp: newExp, metadataKeys: metadata ? Object.keys(metadata) : [] }, 'User leveled up');
   }
 
   return {

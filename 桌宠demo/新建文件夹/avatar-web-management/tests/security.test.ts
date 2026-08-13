@@ -129,8 +129,6 @@ describe('Security Tests', () => {
 
   describe('5. File Upload Security', () => {
     const blockedExts = ['.php', '.exe', '.html'];
-    const blockedMimes = ['text/html', 'application/x-httpd-php', 'application/x-msdownload'];
-
     it('restricted file extensions are rejected', async () => {
       for (const ext of blockedExts) {
         const formData = new FormData();

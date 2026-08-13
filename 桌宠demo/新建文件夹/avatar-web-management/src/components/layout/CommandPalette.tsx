@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { Input, Spin } from 'antd';
 import {
   SearchOutlined,
@@ -11,8 +11,6 @@ import {
   SettingOutlined,
   RobotOutlined,
   TeamOutlined,
-  MessageOutlined,
-  ThunderboltOutlined,
   QuestionCircleOutlined,
   FileOutlined,
 } from '@ant-design/icons';
@@ -38,19 +36,18 @@ interface QuickAction {
 
 // ─── Constants ─────────────────────────────────────────────────
 
-const ASSET_TYPE_COLORS: Record<string, string> = {
-  model: 'blue', texture: 'green', animation: 'orange', vfx: 'red', hdri: 'purple',
-};
+const EMPTY_RESULTS: SearchResult = { avatars: [], assets: [], templates: [] };
 
 // ─── Component ─────────────────────────────────────────────────
 
-export default function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function CommandPalette({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const t = useTranslations('search');
-  const inputRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const requestIdRef = useRef(0);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchResult>({ avatars: [], assets: [], templates: [] });
+  const [results, setResults] = useState<SearchResult>(EMPTY_RESULTS);
   const [loading, setLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -76,41 +73,19 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const activeItems = query.length >= 1 ? searchHits : quickActions;
   const safeIndex = Math.min(selectedIndex, Math.max(0, activeItems.length - 1));
 
-  // Focus input on open
-  useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-      setQuery('');
-      setResults({ avatars: [], assets: [], templates: [] });
-      setSelectedIndex(0);
-    }
-  }, [open]);
-
-  // Debounced search
-  useEffect(() => {
-    if (query.length < 1) {
-      setResults({ avatars: [], assets: [], templates: [] });
-      setSelectedIndex(0);
-      return;
-    }
-    setLoading(true);
-    const timer = setTimeout(async () => {
-      const res = await apiGet<SearchResult>('/api/search', { q: query });
-      if (res.success) setResults(res.data);
-      setLoading(false);
-      setSelectedIndex(0);
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [query]);
+  useEffect(() => () => {
+    requestIdRef.current += 1;
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+  }, []);
 
   // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    if (open) window.addEventListener('keydown', handler);
+    window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+  }, [onClose]);
 
   // Click outside to close
   useEffect(() => {
@@ -119,9 +94,33 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
         onClose();
       }
     };
-    if (open) document.addEventListener('mousedown', handler);
+    document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [open, onClose]);
+  }, [onClose]);
+
+  const handleQueryChange = (value: string) => {
+    const requestId = ++requestIdRef.current;
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    setQuery(value);
+    setSelectedIndex(0);
+    if (value.length < 1) {
+      setResults(EMPTY_RESULTS);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await apiGet<SearchResult>('/api/search', { q: value });
+        if (requestId === requestIdRef.current && res.success) setResults(res.data);
+      } catch {
+        if (requestId === requestIdRef.current) setResults(EMPTY_RESULTS);
+      } finally {
+        if (requestId === requestIdRef.current) setLoading(false);
+      }
+    }, 150);
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -135,8 +134,6 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
       activeItems[safeIndex].action();
     }
   };
-
-  if (!open) return null;
 
   const totalResults = results.avatars.length + results.assets.length + results.templates.length;
   const showSearchResults = query.length >= 1;
@@ -159,13 +156,13 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
       >
         {/* Search input */}
         <Input
-          ref={inputRef}
           size="large"
           prefix={<SearchOutlined style={{ color: 'var(--text-muted)' }} />}
           placeholder={t('placeholder')}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => handleQueryChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          autoFocus
           variant="borderless"
           className="px-4 py-3 text-base"
           style={{ color: 'var(--text-primary)', background: 'transparent' }}

@@ -1,7 +1,7 @@
 // TODO: BEM-migrate
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 
 interface VoiceInputProps {
   onResult: (text: string, isFinal: boolean) => void;
@@ -74,6 +74,11 @@ declare global {
   }
 }
 
+const noSpeechSupportSubscription = () => () => {};
+const getSpeechSupport = () =>
+  typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+const getServerSpeechSupport = () => false;
+
 export function useVoiceInput({
   onResult,
   onError,
@@ -86,7 +91,6 @@ export function useVoiceInput({
   silenceTimeout = 2000,
 }: VoiceInputProps) {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const supportedRef = useRef(false);
   const vadRef = useRef<{
     audioCtx: AudioContext;
     analyser: AnalyserNode;
@@ -96,23 +100,11 @@ export function useVoiceInput({
     silenceStart: number | null;
   } | null>(null);
 
-  const msg = messages || {
-    notSupported: 'Your browser does not support speech recognition. Please use Chrome or Edge.',
-    micDenied: 'Microphone access denied.',
-    startFailed: 'Failed to start speech recognition',
-  };
-
-  useEffect(() => {
-    const SpeechRecognitionAPI =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    supportedRef.current = !!SpeechRecognitionAPI;
-  }, []);
-
-  const stop = useCallback(() => {
-    recognitionRef.current?.stop();
-    cleanupVad();
-    onStateChange(false);
-  }, [onStateChange]);
+  const supported = useSyncExternalStore(
+    noSpeechSupportSubscription,
+    getSpeechSupport,
+    getServerSpeechSupport,
+  );
 
   const cleanupVad = useCallback(() => {
     const vad = vadRef.current;
@@ -124,6 +116,12 @@ export function useVoiceInput({
     vad.stream.getTracks().forEach((t) => t.stop());
     vadRef.current = null;
   }, []);
+
+  const stop = useCallback(() => {
+    recognitionRef.current?.stop();
+    cleanupVad();
+    onStateChange(false);
+  }, [cleanupVad, onStateChange]);
 
   const startVad = useCallback(async () => {
     try {
@@ -174,6 +172,11 @@ export function useVoiceInput({
   }, [silenceThreshold, silenceTimeout, cleanupVad]);
 
   const start = useCallback(() => {
+    const msg = messages || {
+      notSupported: 'Your browser does not support speech recognition. Please use Chrome or Edge.',
+      micDenied: 'Microphone access denied.',
+      startFailed: 'Failed to start speech recognition',
+    };
     const SpeechRecognitionAPI =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -234,25 +237,25 @@ export function useVoiceInput({
       onError(msg.startFailed);
       onStateChange(false);
     }
-  }, [lang, onResult, onError, onStateChange, msg, vadEnabled, startVad]);
+  }, [lang, messages, onResult, onError, onStateChange, vadEnabled, startVad, cleanupVad]);
 
   useEffect(() => {
     if (!active) {
       recognitionRef.current?.stop();
       cleanupVad();
     }
-  }, [active]);
+  }, [active, cleanupVad]);
 
   useEffect(() => {
     return () => {
       recognitionRef.current?.stop();
       cleanupVad();
     };
-  }, []);
+  }, [cleanupVad]);
 
   return {
     start,
     stop,
-    supported: supportedRef.current,
+    supported,
   };
 }

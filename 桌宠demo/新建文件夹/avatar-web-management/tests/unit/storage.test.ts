@@ -27,7 +27,7 @@ jest.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
 }));
 
-import { getStorageAdapter, LocalStorageAdapter, MinioStorageAdapter } from '@/lib/storage';
+import { LocalStorageAdapter } from '@/lib/storage';
 
 describe('getStorageAdapter', () => {
   beforeEach(() => {
@@ -205,6 +205,18 @@ describe('LocalStorageAdapter', () => {
       const filePath = mockWriteFileSync.mock.calls[0][0] as string;
       expect(filePath.replace(/\\/g, '/')).toContain('test-storage');
       expect(filePath.replace(/\\/g, '/')).toContain('models/test.glb');
+    });
+
+    it.each([
+      '../outside.glb',
+      'models/../../outside.glb',
+      '/etc/passwd',
+      'C:\\Windows\\system.ini',
+    ])('rejects unsafe key %s across storage operations', async (key) => {
+      await expect(adapter.upload(key, Buffer.from('data'))).rejects.toThrow('Invalid storage key');
+      await expect(adapter.getFileUrl(key)).rejects.toThrow('Invalid storage key');
+      await expect(adapter.delete(key)).rejects.toThrow('Invalid storage key');
+      await expect(adapter.exists(key)).rejects.toThrow('Invalid storage key');
     });
   });
 });

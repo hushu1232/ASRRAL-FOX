@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Card, Table, InputNumber, Button, message, Descriptions, Tag, Spin, Tabs } from 'antd';
 import { useTranslations } from 'next-intl';
-import { apiGet, apiPut } from '@/lib/api-client';
-import { MAX_LEVEL, LEVEL_BENEFITS } from '@/lib/constants';
+import { apiPut } from '@/lib/api-client';
+import { useApiGet } from '@/lib/use-api';
+import { LEVEL_BENEFITS } from '@/lib/constants';
 
 interface LevelExpEntry {
   level: number;
@@ -27,41 +28,42 @@ interface LevelConfigData {
 }
 
 export default function LevelConfigTab() {
-  const t = useTranslations('admin.levelConfig');
-  const [config, setConfig] = useState<LevelConfigData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [levelData, setLevelData] = useState<LevelExpEntry[]>([]);
-  const [expActionData, setExpActionData] = useState<ExpActionEntry[]>([]);
+  const { data, isLoading } = useApiGet<LevelConfigData>('/api/admin/level-config');
 
-  useEffect(() => {
-    loadConfig();
-  }, []);
+  if (isLoading || !data?.success || !data.data) return <Spin />;
+  return <LevelConfigEditor initialConfig={data.data} />;
+}
 
-  async function loadConfig() {
-    setLoading(true);
-    const res = await apiGet<LevelConfigData>('/api/admin/level-config');
-    if (res.success) {
-      setConfig(res.data);
-      const levels: LevelExpEntry[] = [];
-      let runningTotal = 0;
-      for (let lv = 1; lv <= res.data.maxLevel; lv++) {
-        const expEntry = res.data.levelExp[lv] || { exp: 0 };
-        if (lv === 1) { runningTotal = 0; } else { runningTotal += lv > 2 ? (res.data.levelExp[lv - 1]?.exp || 0) : (res.data.levelExp[2]?.exp || 200); }
-        levels.push({ level: lv, exp: expEntry.exp, total: lv === 1 ? 0 : runningTotal });
-      }
-      setLevelData(levels);
-      setExpActionData(
-        Object.entries(res.data.expActions).map(([action, v]) => ({
-          action,
-          exp: v.exp,
-          dailyLimit: v.dailyLimit,
-          description: (v as Record<string, unknown>).description as string || '',
-        }))
-      );
+function buildLevelData(config: LevelConfigData): LevelExpEntry[] {
+  const levels: LevelExpEntry[] = [];
+  let runningTotal = 0;
+  for (let lv = 1; lv <= config.maxLevel; lv++) {
+    const expEntry = config.levelExp[lv] || { exp: 0 };
+    if (lv === 1) {
+      runningTotal = 0;
+    } else {
+      runningTotal += lv > 2 ? (config.levelExp[lv - 1]?.exp || 0) : (config.levelExp[2]?.exp || 200);
     }
-    setLoading(false);
+    levels.push({ level: lv, exp: expEntry.exp, total: lv === 1 ? 0 : runningTotal });
   }
+  return levels;
+}
+
+function buildExpActionData(config: LevelConfigData): ExpActionEntry[] {
+  return Object.entries(config.expActions).map(([action, value]) => ({
+    action,
+    exp: value.exp,
+    dailyLimit: value.dailyLimit,
+    description: (value as Record<string, unknown>).description as string || '',
+  }));
+}
+
+function LevelConfigEditor({ initialConfig }: { initialConfig: LevelConfigData }) {
+  const t = useTranslations('admin.levelConfig');
+  const [config, setConfig] = useState(initialConfig);
+  const [saving, setSaving] = useState(false);
+  const [levelData, setLevelData] = useState(() => buildLevelData(initialConfig));
+  const [expActionData, setExpActionData] = useState(() => buildExpActionData(initialConfig));
 
   async function handleSave() {
     setSaving(true);
@@ -142,8 +144,6 @@ export default function LevelConfigTab() {
     { title: t('description'), dataIndex: 'description', key: 'description',
       render: (v: string) => <span className="text-gray-400 text-xs">{v}</span> },
   ];
-
-  if (loading || !config) return <Spin />;
 
   return (
     <div className="space-y-6 max-w-4xl">

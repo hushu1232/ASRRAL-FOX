@@ -27,11 +27,11 @@ if (typeof window !== 'undefined') {
       class MessagePort {
         onmessage: ((e: MessageEvent) => void) | null = null;
         close() {}
-        postMessage(_data: unknown) {}
+        postMessage() {}
         start() {}
-        addEventListener(_type: string, _listener: EventListener) {}
-        removeEventListener(_type: string, _listener: EventListener) {}
-        dispatchEvent(_event: Event) { return true; }
+        addEventListener() {}
+        removeEventListener() {}
+        dispatchEvent() { return true; }
       }
       window.MessageChannel = class MessageChannel {
         port1 = new MessagePort();

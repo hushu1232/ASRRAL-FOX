@@ -1,7 +1,7 @@
 // GET /api/tts/train/[taskId]/status — 查询训练进度（代理到 GPT-SoVITS）
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { ttsService } from '@/lib/services/ttsService';
 import { success, error } from '@/lib/api-response';

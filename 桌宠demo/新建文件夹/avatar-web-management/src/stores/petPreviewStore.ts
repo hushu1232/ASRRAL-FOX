@@ -3,7 +3,7 @@
 
 import { create } from 'zustand';
 import type { ChatMessage, EmotionTag, VoiceState, PetPreviewConfig } from '@/types/pet-preview';
-import { sendChatMessage, sendChatMessageStream, synthesizeSpeech, fetchPetPreviewConfig } from '@/lib/api/pet-chat';
+import { sendChatMessageStream, fetchPetPreviewConfig } from '@/lib/api/pet-chat';
 import { getAudioStreamPlayer } from '@/lib/audio/stream-player';
 
 interface PetPreviewState {
@@ -82,7 +82,6 @@ export const usePetPreviewStore = create<PetPreviewState>((set, get) => ({
   streamAbortController: null,
 
   sendMessage: async (text: string) => {
-    const { messages, config } = get();
     if (!text.trim() || get().isProcessing) return;
 
     const userMsg: ChatMessage = {
@@ -119,6 +118,16 @@ export const usePetPreviewStore = create<PetPreviewState>((set, get) => ({
       let streamedText = '';
       let streamedEmotion = 'neutral' as EmotionTag;
       let streamedAction: string | undefined;
+      let finishStream: () => void = () => undefined;
+      let streamFinished = false;
+      const streamComplete = new Promise<void>((resolve) => {
+        finishStream = resolve;
+      });
+      const markStreamFinished = () => {
+        if (streamFinished) return;
+        streamFinished = true;
+        finishStream();
+      };
 
       const audioPlayer = getAudioStreamPlayer();
       audioPlayer.reset();
@@ -158,7 +167,9 @@ export const usePetPreviewStore = create<PetPreviewState>((set, get) => ({
             ),
             currentEmotion: data.emotion,
             currentAction: data.action || undefined,
+            isProcessing: false,
           }));
+          markStreamFinished();
         },
         onError: (error) => {
           console.error('[PetPreview] Stream error:', error);
@@ -168,29 +179,31 @@ export const usePetPreviewStore = create<PetPreviewState>((set, get) => ({
                 ? { ...m, content: '喵... 星尘的 AI 大脑暂时短路了，稍等一下再试试吧～' }
                 : m,
             ),
+            isProcessing: false,
+            voiceState: 'idle',
           }));
+          markStreamFinished();
         },
       });
 
       set({ streamAbortController: abortController });
 
-      // Wait for stream to complete (polling approach)
-      await new Promise<void>((resolve) => {
-        const check = () => {
-          const msg = get().messages.find((m) => m.id === assistantId);
-          // Stream is done when we have content that doesn't change, or after timeout
-          if (!get().isProcessing) {
-            resolve();
-          } else {
-            setTimeout(check, 100);
-          }
-        };
-        // Also resolve on stream complete via a max wait
-        setTimeout(() => {
-          set({ isProcessing: false, voiceState: 'idle' });
-          resolve();
-        }, STREAM_TIMEOUT_MS);
-      });
+      const timeoutId = setTimeout(() => {
+        abortController.abort();
+        set((s) => ({
+          messages: s.messages.map((m) =>
+            m.id === assistantId && !m.content
+              ? { ...m, content: '喵... 这次对话响应超时了，请稍后再试～' }
+              : m,
+          ),
+          isProcessing: false,
+          voiceState: 'idle',
+        }));
+        markStreamFinished();
+      }, STREAM_TIMEOUT_MS);
+
+      await streamComplete;
+      clearTimeout(timeoutId);
 
       // After stream completes, if no server-side TTS audio was queued, use browser TTS fallback
       const player = getAudioStreamPlayer();

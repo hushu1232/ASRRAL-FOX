@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Card, Form, Input, Button, List, Divider, Spin, Tag, Space, App } from 'antd';
 import { HistoryOutlined, KeyOutlined, CheckOutlined, StopOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { apiGet, apiPut, apiPost, apiDelete } from '@/lib/api-client';
+import { apiGet, apiPut, apiPost } from '@/lib/api-client';
 
 interface LoginHistoryItem {
   ip: string;
@@ -19,11 +19,10 @@ export default function SecurityTab() {
   const [passwordForm] = Form.useForm();
   const [changing, setChanging] = useState(false);
   const [loginHistory, setLoginHistory] = useState<LoginHistoryItem[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [twoFAEnabled, setTwoFAEnabled] = useState(false);
   const [twoFALoading, setTwoFALoading] = useState(true);
   const [twoFASecret, setTwoFASecret] = useState('');
-  const [twoFAUri, setTwoFAUri] = useState('');
   const [twoFASetup, setTwoFASetup] = useState(false);
   const [verifyCode, setVerifyCode] = useState('');
   const [verifying, setVerifying] = useState(false);
@@ -32,13 +31,11 @@ export default function SecurityTab() {
 
   useEffect(() => {
     // Fetch login history
-    setHistoryLoading(true);
     apiGet<LoginHistoryItem[]>('/api/settings/login-history').then(res => {
       if (res.success) setLoginHistory(res.data);
     }).finally(() => setHistoryLoading(false));
 
     // Check 2FA status
-    setTwoFALoading(true);
     apiGet<{ enabled: boolean }>('/api/settings/2fa').then(res => {
       if (res.success) setTwoFAEnabled(res.data.enabled);
     }).finally(() => setTwoFALoading(false));
@@ -66,7 +63,6 @@ export default function SecurityTab() {
     const res = await apiPost<{ secret: string; uri: string }>('/api/settings/2fa');
     if (res.success) {
       setTwoFASecret(res.data.secret);
-      setTwoFAUri(res.data.uri);
       setTwoFASetup(true);
     } else {
       message.error(res.error || t('generateFailed'));
@@ -83,7 +79,6 @@ export default function SecurityTab() {
       setTwoFAEnabled(true);
       setTwoFASetup(false);
       setTwoFASecret('');
-      setTwoFAUri('');
       setVerifyCode('');
     } else {
       message.error(res.error || t('verificationFailed'));

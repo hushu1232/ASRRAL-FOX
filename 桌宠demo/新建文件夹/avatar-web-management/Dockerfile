@@ -7,6 +7,12 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 
+# 数据库迁移阶段 — 只携带 Prisma 运行所需文件，不触发 Next.js 构建
+FROM deps AS migrator
+WORKDIR /app
+COPY prisma ./prisma
+COPY prisma.config.ts ./
+
 # 构建阶段
 FROM node:20-slim AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -33,7 +39,6 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=builder /app/keys ./keys 2>/dev/null || true
 
 USER nextjs
 EXPOSE 3000

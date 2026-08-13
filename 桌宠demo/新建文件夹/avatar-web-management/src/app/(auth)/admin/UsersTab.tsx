@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Card, Table, Tag, Button, Input, Select, Space, Popconfirm, message } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { apiGet, apiPut, apiDelete } from '@/lib/api-client';
-import { useAuthStore } from '@/stores/authStore';
+import { apiPut, apiPatch, apiDelete } from '@/lib/api-client';
+import { useApiGet } from '@/lib/use-api';
 
 interface UserItem {
   id: string;
@@ -19,13 +19,9 @@ interface UserItem {
 
 export default function UsersTab() {
   const t = useTranslations('admin.users');
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('');
-  const [status, setStatus] = useState('');
 
   const roleLabels: Record<string, string> = {
     super_admin: t('roles.super_admin'),
@@ -33,64 +29,38 @@ export default function UsersTab() {
     user: t('roles.user'),
   };
 
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams({ page: String(page), pageSize: '20' });
-    if (search) params.set('search', search);
-    if (role) params.set('role', role);
-    if (status) params.set('status', status);
-    const res = await apiGet<{ items: UserItem[]; total: number }>(`/api/admin/users?${params}`);
-    if (res.success) { setUsers(res.data.items); setTotal(res.data.total); }
-    setLoading(false);
-  }, [page, search, role, status]);
-
-  // Fetch on mount and when params change
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
-
-  // Re-fetch on tab visibility change (route switch back)
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        fetchUsers();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [fetchUsers]);
+  const params: Record<string, string> = { page: String(page), pageSize: '20' };
+  if (search) params.search = search;
+  if (role) params.role = role;
+  const { data, isLoading, mutate } = useApiGet<{ items: UserItem[]; total: number }>(
+    '/api/admin/users',
+    params,
+  );
+  const users = data?.success ? (data.data?.items ?? []) : [];
+  const total = data?.success ? (data.data?.total ?? 0) : 0;
 
   const handleRoleChange = async (userId: string, newRole: string) => {
     const res = await apiPut(`/api/admin/users/${userId}`, { role: newRole });
     if (res.success) {
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      void mutate();
       message.success(t('roleChanged'));
     } else { message.error(res.error || t('updateFailed')); }
   };
 
   const handleBan = async (userId: string, action: 'ban' | 'unban') => {
-    const token = useAuthStore.getState().accessToken;
-    const raw = await fetch(`/api/admin/users/${userId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'X-CSRF-Token': document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]*)/)?.[1] || '',
-      },
-      body: JSON.stringify({ action }),
-    });
-    const data = await raw.json();
-    if (data.success) {
-      const newStatus = action === 'ban' ? 'suspended' : 'active';
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: newStatus } : u));
+    const res = await apiPatch(`/api/admin/users/${userId}`, { action });
+    if (res.success) {
+      void mutate();
       message.success(action === 'ban' ? t('userBanned') : t('userUnbanned'));
     } else {
-      message.error(data.error || t('updateFailed'));
+      message.error(res.error || t('updateFailed'));
     }
   };
 
   const handleDelete = async (userId: string) => {
     const res = await apiDelete(`/api/admin/users/${userId}`);
     if (res.success) {
-      setUsers(prev => prev.filter(u => u.id !== userId));
+      void mutate();
       message.success(t('userDeleted'));
     } else { message.error(res.error || t('updateFailed')); }
   };
@@ -105,7 +75,7 @@ export default function UsersTab() {
           options={Object.entries(roleLabels).map(([k, v]) => ({ value: k, label: v }))} />
       </div>
       <Table
-        dataSource={users} rowKey="id" loading={loading}
+        dataSource={users} rowKey="id" loading={isLoading}
         columns={[
           { title: t('username'), dataIndex: 'username', key: 'un' },
           { title: t('email'), dataIndex: 'email', key: 'em' },

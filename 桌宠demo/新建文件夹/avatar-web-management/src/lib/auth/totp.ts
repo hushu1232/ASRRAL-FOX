@@ -15,16 +15,6 @@ function base32ToBuffer(secret: string): Buffer {
   return Buffer.from(bytes);
 }
 
-function generateSecret(): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let secret = '';
-  const bytes = crypto.randomBytes(20);
-  for (let i = 0; i < 20; i++) {
-    secret += alphabet[bytes[i] % 32];
-  }
-  return secret;
-}
-
 function generateLongSecret(): string {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
   let secret = '';

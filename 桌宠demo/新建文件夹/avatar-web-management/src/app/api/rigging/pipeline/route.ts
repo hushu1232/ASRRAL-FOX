@@ -1,7 +1,7 @@
 // Rigging 管线触发 — 接收参数 → 异步编排 → 立即返回
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { runPipeline } from '@/lib/rigging/client';
 import { orchestratePipeline } from '@/lib/rigging/pipeline';
 import { requireRole } from '@/lib/auth/middleware';

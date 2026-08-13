@@ -33,10 +33,8 @@ jest.mock('uuid', () => ({ v4: () => 'mock-uuid-123' }));
 const testUser = { sub: 'user-1', email: 'test@example.com', role: 'user', workspaceId: 'ws-1' };
 
 // withAuth pass-through mock — calls handler directly with test user
-let capturedHandler: Function | null = null;
 jest.mock('@/lib/auth/middleware', () => ({
   withAuth: jest.fn((handler: Function) => {
-    capturedHandler = handler;
     return async (req: Request, ctx?: unknown) => {
       // If no auth header, return 401
       if (!req.headers.get('authorization')) {
@@ -49,7 +47,6 @@ jest.mock('@/lib/auth/middleware', () => ({
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mockRequest(method: string, url: string, body?: unknown, auth = true): any {
   const headers = new Headers();
   headers.set('content-type', 'application/json');

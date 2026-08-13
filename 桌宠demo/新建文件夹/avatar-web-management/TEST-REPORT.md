@@ -1,161 +1,62 @@
-# 虚拟形象管理平台 — 测试总结报告
+# 虚拟形象管理平台测试与发布基线
 
-> 生成时间: 2026-05-24
-> 测试范围: 安全 / 性能 / 前端组件 / 跨浏览器
+> 更新日期：2026-08-08
+> 适用版本：当前工作区验收改进轮次
+> 结论：开发验收通过；生产验收暂不通过
 
----
+详细问题、改进清单和生产放行条件见 [`docs/avatar-web-management-acceptance-2026-08-06.md`](../../../docs/avatar-web-management-acceptance-2026-08-06.md)。本文件只记录可复核的命令结果，不作为“已生产就绪”的替代证明。
 
-## 概览
+## 当前验证结果
 
-| 维度 | 类型 | 用例数 | 通过 | 通过率 |
-|------|------|--------|------|--------|
-| 1. 安全 | Jest | 24 | 24 | 100% |
-| 2. 性能 | Node.js 负载 | 5 端点 | 5 | 100% |
-| 3. 前端组件 | Jest | 80 | 80 | 100% |
-| 4. 跨浏览器 (API) | Node.js | 28 | 28 | 100% |
-| 4. 跨浏览器 (E2E) | Playwright | 14 | 14 | 100% |
-| **合计** | | **151** | **151** | **100%** |
+| 检查 | 结果 | 说明 |
+| --- | --- | --- |
+| `npm test` | 通过 | 117 suites、1086 tests |
+| `npm run test:contracts` | 通过 | 9 suites、69 tests |
+| `npm run typecheck` | 通过 | `tsc --noEmit` |
+| `npm run lint` / `npm run lint:ci` | 通过但有警告 | 普通 lint 退出码 0；CI lint 以 25 条为上限，当前 21 warnings、0 errors（均为 React effect） |
+| `npm run test:ci:unit` | 通过 | 117 suites、1086 tests；Statements 66.72%、Branches 57.21%、Functions 60.19%、Lines 68.66% |
+| `docker compose config --quiet` | 通过 | 注入占位密码后配置可解析；缺少必填密码时会按设计拒绝启动 |
+| `npm run build` | 通过 | 完成编译、类型检查和静态页面生成 |
+| `npx playwright test --list` | 通过 | 发现 532 个 E2E 测试；仅验证发现，不代表已执行 |
+| `git diff --check` | 通过 | 无空白错误；存在既有换行格式提示 |
+| `npm audit --production --audit-level=critical --offline` | 通过 | 本地缓存返回 0 个漏洞；线上 CI 仍需使用官方源复核 |
 
----
+## 已覆盖的关键回归
 
-## 维度 1：安全测试
+- 存储 key 的绝对路径、`..` 和分块上传路径穿越。
+- 资产代理只能读取存储根目录内的本地文件。
+- 未信任代理头时，伪造 IP 不能绕过限流或 CSRF。
+- Refresh token 只保存 SHA-256 摘要。
+- 认证异常对客户端返回通用错误；未知角色拒绝访问。
+- 缺少 revalidate 密钥时接口拒绝执行。
+- 头像列表、头像详情和头像编辑页面的保存闭环。
+- 桌宠 SSE `done`/`error` 流结束、超时取消和及时恢复状态。
+- PetConfig 读取、更新和绑定均校验 workspace 边界。
+- Web Vitals、token storage、Cookie Consent 的最小行为回归。
 
-**文件**: `tests/security.test.ts` (24 用例)
+## 未完成的发布门禁
 
-| 测试组 | 用例 | 结果 |
-|--------|------|------|
-| 未认证访问 | 7 | 全部通过 |
-| RBAC 权限控制 | 5 | 全部通过 |
-| 水平越权 (IDOR) | 2 | 全部通过 |
-| XSS 注入 | 3 | 全部通过 |
-| 文件上传安全 | 4 | 全部通过 |
-| SQL 注入 | 2 | 全部通过 |
-| 速率限制 | 1 | 全部通过 |
+以下项目仍阻止生产放行：
 
-**发现并修复的安全问题**:
-1. `profileUpdateSchema` 缺少用户名正则校验 — 已添加 `/^[a-zA-Z0-9_一-龥]+$/` 规则
-2. `/api/settings/profile` 路由未使用 Zod schema 校验 — 已添加 `profileUpdateSchema.safeParse()`
-3. TOTP 密钥熵值不足 (100 bits → 160 bits) — 已切换到 `generateLongSecret()`
+1. CI 已配置 API + 头像编辑核心 E2E，但尚未在远端 CI 执行确认。
+2. lint 已从历史 245 条降至 23 条；CI 已设置 25 条上限，剩余 React effect 和图片性能提示按收益处理。
+3. 依赖审计已在本地离线缓存通过，仍需线上 CI 用官方源复核。
+4. 生产数据迁移、备份、回滚和真实对象存储策略仍需在目标环境演练。
 
----
+已知测试噪音：ChatPanel 中 antd 自动高度 TextArea 在 jsdom 下会输出一次 `NaN` 样式警告，不影响浏览器运行或测试结果。
 
-## 维度 2：性能测试
+## 复核方式
 
-**文件**: `performance/load-test.mjs`, `performance/results.md`
+在项目目录执行：
 
-| 端点 | RPS | P50 | P95 | P99 | P99.9 | 错误率 |
-|------|-----|-----|-----|-----|-------|--------|
-| GET /api/health | 298 | 62ms | 162ms | 244ms | 281ms | 0% |
-| GET /api/avatars | 212 | 113ms | 352ms | 497ms | 523ms | 0% |
-| GET /api/assets | 204 | 118ms | 378ms | 508ms | 534ms | 0% |
-| GET /api/dashboard/stats | 253 | 85ms | 209ms | 289ms | 320ms | 0% |
-| POST /api/auth/login | 199 | 127ms | 409ms | 543ms | 571ms | 0% |
-
-**结论**: 全部端点 P95 < 500ms，错误率 0%，满足生产性能基准。SQLite WAL 模式下并发读性能良好。
-
----
-
-## 维度 3：前端组件单元测试
-
-**文件列表** (7 个测试文件, 80 用例):
-
-| 文件 | 用例数 | 结果 |
-|------|--------|------|
-| `tests/smoke.test.ts` | 39 | 全部通过 |
-| `tests/security.test.ts` | 24 | 全部通过 |
-| `tests/auth.test.ts` | 6 | 全部通过 |
-| `tests/avatars.test.ts` | 5 | 全部通过 |
-| `src/components/__tests__/validators.test.ts` | 20 | 全部通过 |
-| `src/components/__tests__/totp.test.ts` | 5 | 全部通过 |
-| `src/components/__tests__/authStore.test.ts` | 4 | 全部通过 |
-
-**测试覆盖**:
-- 所有 Zod 验证 schema (注册、登录、个人资料、头像创建、资产、SSO 配置)
-- TOTP 密钥生成、URI 格式、token 验证
-- Zustand auth store 状态管理
-- 全 API 端点冒烟测试 (auth, health, dashboard, avatars, assets, templates, search, notifications, settings, 2FA, forgot/reset password, admin)
-- 认证流程 (注册→登录→刷新→登出)
-
----
-
-## 维度 4：跨浏览器 & 响应式测试
-
-### 4a. API 级别跨浏览器兼容性
-
-**文件**: `performance/browser-compat.mjs`
-
-使用 4 种真实浏览器 User-Agent (Chromium 125, Firefox 126, Safari 17.5, iPhone Safari) 测试 7 个端点。
-
-| 浏览器 | 通过/总数 | 结果 |
-|--------|-----------|------|
-| Chromium 125 | 7/7 | 全部通过 |
-| Firefox 126 | 7/7 | 全部通过 |
-| Safari 17.5 | 7/7 | 全部通过 |
-| iPhone Safari 17.5 | 7/7 | 全部通过 |
-
-**结论**: API 层面与 User-Agent 无关，全部端点在所有浏览器 UA 下返回一致结果。
-
-### 4b. Playwright E2E 浏览器测试
-
-**文件**: `e2e/cross-browser.spec.ts`, `playwright.config.ts`
-
-14 个 E2E 测试用例 (Chromium 桌面 + iPhone 12 移动端):
-
-- 公开页面: 登录/注册/忘记密码/重置密码 — 全部渲染正确
-- 登录流程: 正确/错误凭证 — 全部通过
-- 已认证页面: 仪表盘/形象/资产库/模板市场/设置/管理后台 — 全部可导航
-- 响应式: 移动视口无横向溢出
-
-**已知限制**:
-- Playwright 使用系统 Chrome (channel: 'chrome')，因 Playwright 新版 headless-shell 二进制在 Windows 上安装失败
-- Firefox/WebKit 项目配置已就绪，但未安装对应浏览器，CI 环境需 `npx playwright install`
-- Dev 模式下 Fast Refresh 可能导致 Zustand 状态丢失 (仅开发环境，不影响生产)
-
----
-
-## 测试文件清单
-
-### 新增测试文件 (11 个)
-
-```
-tests/
-  jest.setup.ts                          # Jest 全局配置
-  helpers.ts                             # 测试辅助函数
-  smoke.test.ts                          # 全 API 冒烟测试 (39 tests)
-  security.test.ts                       # 安全测试 (24 tests)
-  auth.test.ts                           # 认证流程测试 (6 tests)
-  avatars.test.ts                        # 形象管理测试 (5 tests)
-src/components/__tests__/
-  authStore.test.ts                      # Auth Store 测试 (4 tests)
-  validators.test.ts                     # Zod 校验器测试 (20 tests)
-  totp.test.ts                           # TOTP 测试 (5 tests)
-e2e/
-  cross-browser.spec.ts                  # Playwright E2E 测试 (14 tests)
-performance/
-  load-test.mjs                          # 负载测试脚本
-  browser-compat.mjs                     # 跨浏览器 API 测试脚本
+```bash
+npm ci
+npm test
+npm run test:contracts
+npm run typecheck
+npm run lint:ci
+npm run build
+docker compose config --quiet
 ```
 
----
-
-## 遗留问题
-
-| 编号 | 严重性 | 描述 | 建议 |
-|------|--------|------|------|
-| 1 | 低 | Dev 模式下页面导航后 Zustand auth token 丢失 (Fast Refresh 导致 401) | 仅影响本地开发体验，生产构建无此问题；可考虑将 token 同步到 sessionStorage |
-| 2 | 低 | Playwright 浏览器二进制安装受 Windows 锁文件影响 | CI 中预装浏览器或使用 Docker 镜像 |
-| 3 | 低 | Firefox/WebKit E2E 测试未执行 (浏览器未安装) | CI 环境配置后即可运行 |
-
----
-
-## 生产就绪建议
-
-**状态: 可部署** 
-
-全部 151 个测试用例通过，安全漏洞已修复，API 性能满足基准 (P95 < 500ms)，跨浏览器兼容性已验证。建议在部署前完成以下准备工作：
-
-1. 生产环境切换到 PostgreSQL/MySQL (当前为 SQLite，适合原型和小规模部署)
-2. 配置 `JWT_SECRET` 和 `JWT_REFRESH_SECRET` 环境变量为强随机值
-3. 启用 HTTPS 并配置 secure/httpOnly Cookie
-4. 配置实际的 OIDC Provider (如需 SSO)
-5. 在 CI 管道中集成 Playwright E2E 测试
+只有当验收文档中的完成定义全部满足，才可将结论改为“生产验收通过”。

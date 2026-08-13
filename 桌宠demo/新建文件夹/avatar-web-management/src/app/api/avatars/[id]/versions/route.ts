@@ -1,6 +1,5 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import { success, error } from '@/lib/api-response';
 import { withAuth } from '@/lib/auth/middleware';
 import { versionCreateSchema } from '@/lib/validators';

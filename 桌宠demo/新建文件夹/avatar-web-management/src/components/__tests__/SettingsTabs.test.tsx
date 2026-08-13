@@ -12,12 +12,18 @@ const mockApiGet = jest.fn();
 const mockApiPut = jest.fn();
 const mockApiPost = jest.fn();
 const mockApiDelete = jest.fn();
+const mockUseApiGet = jest.fn();
+const mockMutate = jest.fn();
 
 jest.mock('@/lib/api-client', () => ({
   apiGet: (...args: unknown[]) => mockApiGet(...args),
   apiPut: (...args: unknown[]) => mockApiPut(...args),
   apiPost: (...args: unknown[]) => mockApiPost(...args),
   apiDelete: (...args: unknown[]) => mockApiDelete(...args),
+}));
+
+jest.mock('@/lib/use-api', () => ({
+  useApiGet: (...args: unknown[]) => mockUseApiGet(...args),
 }));
 
 const mockUser = { id: '1', email: 'test@example.com', username: 'testuser', role: 'user' };
@@ -51,6 +57,11 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockUseApiGet.mockReturnValue({
+    data: { success: true, data: [] },
+    isLoading: false,
+    mutate: mockMutate,
+  });
 });
 
 describe('ProfileTab', () => {
@@ -60,15 +71,19 @@ describe('ProfileTab', () => {
     await waitFor(() => {
       expect(mockApiGet).toHaveBeenCalledWith('/api/settings/profile');
     });
+    await act(async () => { await Promise.resolve(); });
   });
 
-  it('calls save API on form submit', () => {
+  it('calls save API on form submit', async () => {
     mockApiGet.mockResolvedValue({ success: true, data: { username: 'testuser', email: 'test@example.com', bio: '' } });
     mockApiPut.mockResolvedValue({ success: true });
     render(<ProfileTab />, { wrapper: Wrapper });
     // ProfileTab returns null until profile loads; verify the component is mounted
     // by checking that the fetchProfile API call was made
-    expect(mockApiGet).toHaveBeenCalledWith('/api/settings/profile');
+    await waitFor(() => {
+      expect(mockApiGet).toHaveBeenCalledWith('/api/settings/profile');
+    });
+    await act(async () => { await Promise.resolve(); });
   });
 });
 
@@ -88,13 +103,15 @@ describe('SecurityTab', () => {
       expect(mockApiGet).toHaveBeenCalledWith('/api/settings/login-history');
       expect(mockApiGet).toHaveBeenCalledWith('/api/settings/2fa');
     });
+    await act(async () => { await Promise.resolve(); });
   });
 
-  it('renders change password form', () => {
+  it('renders change password form', async () => {
     mock2FADisabled();
     render(<SecurityTab />, { wrapper: Wrapper });
     expect(screen.getByText('changePassword')).toBeDefined();
     expect(screen.getByText('updatePassword')).toBeDefined();
+    await act(async () => { await Promise.resolve(); });
   });
 
   it('renders enable 2FA button when 2FA is disabled', async () => {
@@ -156,18 +173,12 @@ describe('SecurityTab', () => {
 
 describe('ApiKeysTab', () => {
   it('fetches API keys on mount', async () => {
-    mockApiGet.mockResolvedValue({ success: true, data: [] });
     render(<ApiKeysTab />, { wrapper: Wrapper });
-    await waitFor(() => {
-      expect(mockApiGet).toHaveBeenCalledWith('/api/settings/api-keys');
-    });
+    expect(mockUseApiGet).toHaveBeenCalledWith('/api/settings/api-keys');
   });
 
   it('renders generate new key button', async () => {
-    mockApiGet.mockResolvedValue({ success: true, data: [] });
     render(<ApiKeysTab />, { wrapper: Wrapper });
-    await waitFor(() => {
-      expect(screen.getByText('generateNew')).toBeDefined();
-    });
+    expect(screen.getByText('generateNew')).toBeDefined();
   });
 });

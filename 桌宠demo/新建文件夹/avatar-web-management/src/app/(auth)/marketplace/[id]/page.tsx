@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Card, Button, Tag, Rate, Input, Spin, App, Divider, Empty, List, Tabs } from 'antd';
+import { Card, Button, Tag, Rate, Input, Spin, App, Divider, Empty, List } from 'antd';
 import {
   DownloadOutlined, ShoppingCartOutlined, UserOutlined, SendOutlined,
   MessageOutlined, LikeOutlined, EyeOutlined, PlusOutlined,

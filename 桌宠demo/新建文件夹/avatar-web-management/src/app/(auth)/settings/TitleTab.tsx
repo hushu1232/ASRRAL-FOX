@@ -5,7 +5,7 @@ import { Card, Tag, Button, message, Spin, Empty } from 'antd';
 import { CrownOutlined, LockOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { apiGet, apiPut } from '@/lib/api-client';
-import { TITLE_DEFINITIONS, TitleDef } from '@/lib/constants';
+import { TitleDef } from '@/lib/constants';
 
 interface TitleStatus {
   definition: TitleDef;

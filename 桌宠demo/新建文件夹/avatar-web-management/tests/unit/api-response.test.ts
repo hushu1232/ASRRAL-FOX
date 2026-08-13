@@ -1,5 +1,5 @@
 import { success, error, paginated } from '@/lib/api-response';
-import { AppError, NotFoundError, ValidationError } from '@/lib/errors';
+import { NotFoundError, ValidationError } from '@/lib/errors';
 
 // Mock the logger to avoid side effects
 jest.mock('@/lib/logger', () => ({

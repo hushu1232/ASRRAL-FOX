@@ -1,12 +1,12 @@
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { getStorageAdapter } from '@/lib/storage';
 import { getSessionStatus, deleteSession } from '@/lib/storage/chunked-upload';
 
 // GET /api/assets/upload/[uploadId] — 查询上传进度和断点续传信息
-export const GET = withAuth(async (req, _user) => {
+export const GET = withAuth(async (req) => {
   const uploadId = req.nextUrl.pathname.split('/').filter(Boolean).at(-1) || '';
 
   if (!uploadId || uploadId === 'upload') {
@@ -47,7 +47,7 @@ export const GET = withAuth(async (req, _user) => {
 });
 
 // DELETE /api/assets/upload/[uploadId] — 取消/中止上传
-export const DELETE = withAuth(async (req, _user) => {
+export const DELETE = withAuth(async (req) => {
   const uploadId = req.nextUrl.pathname.split('/').filter(Boolean).at(-1) || '';
 
   if (!uploadId || uploadId === 'upload') {

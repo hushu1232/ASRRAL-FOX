@@ -1,4 +1,4 @@
-import { BodyParams, EquippedPartData, MaterialOverride } from './avatar';
+import type { BodyParams, MaterialOverride } from './avatar';
 
 export type LightingPreset = 'studio' | 'outdoor' | 'night' | 'custom';
 export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'error';

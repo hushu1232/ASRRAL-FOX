@@ -33,6 +33,14 @@ describe('env validation', () => {
     expect(() => validateEnv()).toThrow(/RIGGING_SERVICE_URL/);
   });
 
+  it('rejects malformed AIRI stage URLs', async () => {
+    process.env.AIRI_STAGE_URL = 'not-a-url';
+
+    const { validateEnv } = await import('@/env');
+
+    expect(() => validateEnv()).toThrow(/AIRI_STAGE_URL/);
+  });
+
   it('preserves optional Alife local health adapter settings', async () => {
     process.env.FOXD_ALIFE_LOCAL_HEALTH_ENABLED = 'true';
     process.env.FOXD_ALIFE_LOCAL_HEALTH_BASE_URL = 'http://127.0.0.1:8787';

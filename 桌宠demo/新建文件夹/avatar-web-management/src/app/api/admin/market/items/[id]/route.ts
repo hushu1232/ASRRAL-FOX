@@ -1,6 +1,5 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { success, error } from '@/lib/api-response';
 import { requireRole } from '@/lib/auth/middleware';

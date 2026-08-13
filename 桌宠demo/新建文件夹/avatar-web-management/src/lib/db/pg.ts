@@ -1,8 +1,5 @@
 import { PoolClient } from 'pg';
-import { getSharedPool, closeSharedPool } from './pool';
-import { createLogger } from '@/lib/logger';
-
-const log = createLogger('db:pg');
+import { getSharedPool } from './pool';
 
 export { getSharedPool as getPgPool, closeSharedPool as closePgPool, getPoolStats } from './pool';
 

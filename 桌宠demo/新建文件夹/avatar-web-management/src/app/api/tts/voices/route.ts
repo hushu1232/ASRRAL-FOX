@@ -2,7 +2,6 @@
 // DELETE /api/tts/voices?voiceId=xxx — 删除自定义音色
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { ttsService } from '@/lib/services/ttsService';
 import { success, error } from '@/lib/api-response';
@@ -12,7 +11,7 @@ const log = createLogger('api:tts:voices');
 
 const GPT_SOVITS_URL = process.env.GPT_SOVITS_URL || 'http://localhost:8002';
 
-export const GET = withAuth(async (_req: NextRequest, _user) => {
+export const GET = withAuth(async () => {
   try {
     const result = await ttsService.listVoices(GPT_SOVITS_URL);
     return success(result);
@@ -22,7 +21,7 @@ export const GET = withAuth(async (_req: NextRequest, _user) => {
   }
 });
 
-export const DELETE = withAuth(async (req: NextRequest, _user) => {
+export const DELETE = withAuth(async (req: NextRequest) => {
   try {
     const url = new URL(req.url);
     const voiceId = url.searchParams.get('voiceId');
@@ -36,3 +35,4 @@ export const DELETE = withAuth(async (req: NextRequest, _user) => {
     return error(err);
   }
 });
+import { NextRequest } from 'next/server';

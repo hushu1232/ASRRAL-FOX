@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { Typography, Result, Button } from 'antd';
+import { useState, useCallback, useEffect } from 'react';
+import { Typography, Result, Button, Spin } from 'antd';
 import { ThunderboltOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import RiggingUpload from '@/components/rigging/RiggingUpload';
@@ -34,13 +34,22 @@ export default function RiggingPage() {
   const [error, setError] = useState<string | null>(null);
   const [serviceAvailable, setServiceAvailable] = useState<boolean | null>(null);
 
-  // Check rigging service health on mount
-  useState(() => {
+  useEffect(() => {
+    let cancelled = false;
+
     fetch('/api/rigging/health')
       .then((r) => r.json())
-      .then((d) => setServiceAvailable(d.data?.rigging === 'ok'))
-      .catch(() => setServiceAvailable(false));
-  });
+      .then((d) => {
+        if (!cancelled) setServiceAvailable(d.data?.rigging === 'ok');
+      })
+      .catch(() => {
+        if (!cancelled) setServiceAvailable(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handlePipelineStart = useCallback((config: PipelineConfig) => {
     setConfig(config);
@@ -102,7 +111,12 @@ export default function RiggingPage() {
   }
 
   if (serviceAvailable === null) {
-    return null; // still checking
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-20" role="status" aria-live="polite">
+        <Spin size="large" />
+        <Typography.Text type="secondary">{t('checkingService')}</Typography.Text>
+      </div>
+    );
   }
 
   return (

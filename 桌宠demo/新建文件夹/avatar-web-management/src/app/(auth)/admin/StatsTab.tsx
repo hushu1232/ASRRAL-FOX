@@ -38,10 +38,9 @@ function formatMoney(cents: number) {
 export default function StatsTab() {
   const t = useTranslations('admin.stats');
   const [stats, setStats] = useState<AdminStats | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
     apiGet<AdminStats>('/api/admin/stats').then(res => {
       if (res.success) setStats(res.data);
     }).finally(() => setLoading(false));

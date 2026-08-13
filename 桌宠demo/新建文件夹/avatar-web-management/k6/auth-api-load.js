@@ -34,7 +34,7 @@ export const options = {
   },
 };
 
-export default function () {
+export default function loadScenario() {
   let token = '';
 
   group('login', () => {

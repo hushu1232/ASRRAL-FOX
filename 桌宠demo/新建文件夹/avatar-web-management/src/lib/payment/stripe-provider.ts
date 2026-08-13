@@ -99,7 +99,7 @@ export class StripeProvider implements IPaymentProvider {
     }
   }
 
-  async refundPayment(providerTxId: string, _amount?: number): Promise<PaymentResult> {
+  async refundPayment(providerTxId: string): Promise<PaymentResult> {
     if (!this.ready) return { success: true, transactionId: providerTxId, status: 'refunded' };
 
     try {

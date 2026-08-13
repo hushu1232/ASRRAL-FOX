@@ -172,7 +172,7 @@ jest.mock('@/components/pet/sync/PetDesktopStatusChip', () => ({
 }));
 
 jest.mock('@/components/pet/preview/VoiceInput', () => ({
-  useVoiceInput: ({ active, onResult, onError, onStateChange }: any) => ({
+  useVoiceInput: () => ({
     start: mockStartVoice,
     stop: mockStopVoice,
     supported: true,
@@ -182,6 +182,7 @@ jest.mock('@/components/pet/preview/VoiceInput', () => ({
 jest.mock('@ant-design/icons', () => ({
   SettingOutlined: () => <span data-testid="icon-setting" />,
   ReloadOutlined: () => <span data-testid="icon-reload" />,
+  MessageOutlined: () => <span data-testid="icon-message" />,
   ExpandOutlined: () => <span data-testid="icon-expand" />,
   CompressOutlined: () => <span data-testid="icon-compress" />,
   SunOutlined: () => <span data-testid="icon-sun" />,

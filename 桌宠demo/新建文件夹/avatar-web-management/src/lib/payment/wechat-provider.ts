@@ -108,8 +108,6 @@ export class WeChatPayProvider implements IPaymentProvider {
       if (amount) body.amount = { total: amount, currency: 'CNY' };
 
       const resp = await this.request('POST', '/refund/domestic/refunds', body);
-      const data = await resp.json() as Record<string, unknown>;
-
       return {
         success: resp.ok,
         transactionId: outRefundNo,

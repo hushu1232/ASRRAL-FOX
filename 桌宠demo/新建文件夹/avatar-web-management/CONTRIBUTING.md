@@ -39,7 +39,7 @@ chore(deps): bump prisma to 7.8.1
 ## Before Submitting a PR
 
 - [ ] `npm run typecheck` passes
-- [ ] `npm run lint` passes
+- [ ] `npm run lint:ci` passes (no warning increase beyond the committed baseline)
 - [ ] `npm test -- --no-coverage` — all tests green
 - [ ] New features include tests (unit or contract)
 - [ ] API changes update `src/lib/openapi.json`

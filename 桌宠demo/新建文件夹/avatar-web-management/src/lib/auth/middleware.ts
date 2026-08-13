@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAccessToken, TokenPayload } from './jwt';
 import { runWithRequestContext } from '@/lib/request-context';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('auth:middleware');
 
 export interface AuthRequest extends NextRequest {
   user?: TokenPayload;
@@ -46,8 +49,8 @@ export function withAuth(handler: HandlerWithUser): AuthenticatedRouteHandler {
       const requestId = req.headers.get('x-request-id') || 'unknown';
       return await runWithRequestContext(requestId, () => handler(req, authCtx, ctx));
     } catch (err: unknown) {
-      const e = err as Error;
-      return NextResponse.json({ success: false, error: e.message || 'Internal server error', name: e.name }, { status: 500 });
+      log.error({ err }, 'Authenticated route failed');
+      return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
     }
   };
 
@@ -58,9 +61,9 @@ export function requireRole(requiredRole: string) {
   return (handler: HandlerWithUser) => {
     return withAuth(async (req, user, ctx) => {
       const { ROLE_HIERARCHY } = await import('@/lib/constants');
-      const userLevel = ROLE_HIERARCHY[user.role] || 0;
-      const requiredLevel = ROLE_HIERARCHY[requiredRole] || 0;
-      if (userLevel < requiredLevel) {
+      const userLevel = ROLE_HIERARCHY[user.role];
+      const requiredLevel = ROLE_HIERARCHY[requiredRole];
+      if (userLevel === undefined || requiredLevel === undefined || userLevel < requiredLevel) {
         return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
       }
       return handler(req, user, ctx);

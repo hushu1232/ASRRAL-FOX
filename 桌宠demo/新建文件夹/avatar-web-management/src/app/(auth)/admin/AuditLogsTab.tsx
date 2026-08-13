@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Card, Table, Button } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { apiGet } from '@/lib/api-client';
+import { useApiGet } from '@/lib/use-api';
 
 interface AuditLogItem {
   id: string;
@@ -18,25 +18,18 @@ interface AuditLogItem {
 
 export default function AuditLogsTab() {
   const t = useTranslations('admin.auditLogs');
-  const [logs, setLogs] = useState<AuditLogItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-
-  const fetchLogs = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams({ page: String(page), pageSize: '20' });
-    const res = await apiGet<{ items: AuditLogItem[]; total: number }>(`/api/admin/audit-logs?${params}`);
-    if (res.success) { setLogs(res.data.items); setTotal(res.data.total); }
-    setLoading(false);
-  }, [page]);
-
-  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+  const { data, isLoading } = useApiGet<{ items: AuditLogItem[]; total: number }>(
+    '/api/admin/audit-logs',
+    { page: String(page), pageSize: '20' },
+  );
+  const logs = data?.success ? (data.data?.items ?? []) : [];
+  const total = data?.success ? (data.data?.total ?? 0) : 0;
 
   return (
     <Card className="!border-purple-500/10">
       <Table
-        dataSource={logs} rowKey="id" loading={loading}
+        dataSource={logs} rowKey="id" loading={isLoading}
         columns={[
           { title: t('user'), dataIndex: 'user_name', key: 'u' },
           { title: t('action'), dataIndex: 'action', key: 'a' },

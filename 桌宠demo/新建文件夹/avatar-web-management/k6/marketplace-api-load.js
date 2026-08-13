@@ -39,7 +39,7 @@ export const options = {
   },
 };
 
-export default function () {
+export default function loadScenario() {
   let itemId = '';
 
   group('list items', () => {

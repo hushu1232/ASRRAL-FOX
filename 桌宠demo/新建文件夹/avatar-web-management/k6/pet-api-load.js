@@ -65,7 +65,7 @@ function checkSuccess(res, route) {
 
 // ── Main ───────────────────────────────────────────────────
 
-export default function () {
+export default function loadScenario() {
   // ═══ Config CRUD (60%) ═══════════════════════════════════
   group('pet config', () => {
     // GET config

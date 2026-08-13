@@ -114,7 +114,7 @@ export const petService = {
   async getConfig(userId: string, workspaceId: string) {
     const prisma = getPrisma();
     const raw = await prisma.petConfig.findUnique({ where: { userId } });
-    if (!raw) return null;
+    if (!raw || raw.workspaceId !== workspaceId) return null;
     const config = toSnakeCase(raw as unknown as Record<string, unknown>);
     return decryptConfigFields(config);
   },
@@ -135,7 +135,7 @@ export const petService = {
   async updateConfig(userId: string, workspaceId: string, data: Partial<PetConfigData>) {
     const prisma = getPrisma();
     const existing = await prisma.petConfig.findUnique({ where: { userId } });
-    if (!existing) throw new NotFoundError('PetConfig', userId);
+    if (!existing || existing.workspaceId !== workspaceId) throw new NotFoundError('PetConfig', userId);
 
     const updateData = prepareConfigForDb(data);
     if (Object.keys(updateData).length === 0) {
@@ -155,7 +155,10 @@ export const petService = {
     if (!avatar) throw new NotFoundError('Avatar', avatarId);
 
     // Get or create pet config
-    let config = await prisma.petConfig.findUnique({ where: { userId } });
+    const config = await prisma.petConfig.findUnique({ where: { userId } });
+    if (config && config.workspaceId !== workspaceId) {
+      throw new NotFoundError('PetConfig', userId);
+    }
     if (!config) {
       const id = uuidv4();
       await prisma.petConfig.create({
@@ -169,7 +172,7 @@ export const petService = {
       });
     } else {
       await prisma.petConfig.update({
-        where: { userId },
+        where: { id: config.id },
         data: { avatarId, petName: avatar.name, updatedAt: new Date() },
       });
     }

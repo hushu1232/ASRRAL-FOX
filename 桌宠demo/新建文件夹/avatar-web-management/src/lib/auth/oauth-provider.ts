@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { getPrisma } from '@/lib/db';
-import { getPrivateKey, getPublicKey, getJwtAlgorithm, getKeyId } from './keys';
+import { getPrivateKey, getJwtAlgorithm, getKeyId } from './keys';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('oauth:provider');
@@ -137,18 +137,6 @@ export async function revokeOAuthClient(id: string): Promise<boolean> {
     id,
   );
   return result > 0;
-}
-
-function validateRedirectUri(client: OAuthClient, redirectUri: string): boolean {
-  return client.redirectUris.some((uri) => {
-    if (uri === redirectUri) return true;
-    // Allow exact match and wildcard path matching
-    if (uri.endsWith('/*')) {
-      const base = uri.slice(0, -2);
-      return redirectUri.startsWith(base);
-    }
-    return false;
-  });
 }
 
 export function validateClient(

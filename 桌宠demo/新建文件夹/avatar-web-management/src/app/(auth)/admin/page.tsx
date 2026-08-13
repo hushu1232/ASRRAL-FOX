@@ -20,7 +20,6 @@ export default function AdminPage() {
     market: <MarketReviewTab />,
     audit: <AuditLogsTab />,
     oauth: <OAuthClientsTab />,
-    config: null, // handled inline
     levelConfig: <LevelConfigTab />,
     stats: <StatsTab />,
   };
@@ -35,7 +34,6 @@ export default function AdminPage() {
           { key: 'market', label: t('tabs.market') },
           { key: 'audit', label: t('tabs.audit') },
           { key: 'oauth', label: t('tabs.oauth') },
-          { key: 'config', label: t('tabs.config') },
           { key: 'levelConfig', label: t('tabs.levelConfig') },
           { key: 'stats', label: t('tabs.stats') },
         ]}

@@ -36,7 +36,6 @@ export default function RiggingUpload({ onPipelineStart, disabled }: RiggingUplo
   const [meshDensity, setMeshDensity] = useState('medium');
   const [uploading, setUploading] = useState(false);
   const [imageId, setImageId] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const previewRef = useRef<string | null>(null);
 
   const handleUpload = useCallback(async () => {
@@ -59,7 +58,6 @@ export default function RiggingUpload({ onPipelineStart, disabled }: RiggingUplo
       }
 
       setImageId(json.data.imageId);
-      setPreviewUrl(json.data.previewUrl);
       previewRef.current = json.data.previewUrl;
       message.success(t('uploadSuccess'));
     } catch {
@@ -92,7 +90,6 @@ export default function RiggingUpload({ onPipelineStart, disabled }: RiggingUplo
     }
     setFile(f);
     setImageId(null);
-    setPreviewUrl(null);
     return false;
   }, [t]);
 

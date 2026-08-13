@@ -7,12 +7,20 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import { App } from 'antd';
 import NotificationDropdown from '@/components/layout/NotificationDropdown';
 
-const mockApiGet = jest.fn();
 const mockApiPut = jest.fn();
+const mockUseApiGet = jest.fn();
+const mockMutateUnread = jest.fn();
+const mockMutateList = jest.fn();
+let mockUnreadCount = 0;
+let mockNotificationItems: unknown[] = [];
+let mockListSuccess = true;
 
 jest.mock('@/lib/api-client', () => ({
-  apiGet: (...args: unknown[]) => mockApiGet(...args),
   apiPut: (...args: unknown[]) => mockApiPut(...args),
+}));
+
+jest.mock('@/lib/use-api', () => ({
+  useApiGet: (...args: unknown[]) => mockUseApiGet(...args),
 }));
 
 // Mock antd Dropdown to render inline — avoids Portal + AggregateError in jsdom
@@ -62,33 +70,33 @@ async function clickElement(el: Element) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockUnreadCount = 0;
+  mockNotificationItems = [];
+  mockListSuccess = true;
   mockApiPut.mockResolvedValue({ success: true });
-  mockApiGet.mockImplementation((url: string) => {
-    if (url === '/api/notifications/unread-count') {
-      return Promise.resolve({ success: true, data: { count: 0 } });
+  mockUseApiGet.mockImplementation((path: string | null) => {
+    if (path === '/api/notifications/unread-count') {
+      return {
+        data: { success: true, data: { count: mockUnreadCount } },
+        isLoading: false,
+        mutate: mockMutateUnread,
+      };
     }
-    if (url === '/api/notifications') {
-      return Promise.resolve({ success: true, data: { items: [] } });
-    }
-    return Promise.resolve({ success: false, error: 'Unhandled test URL' });
+    return {
+      data: path && mockListSuccess
+        ? { success: true, data: { items: mockNotificationItems } }
+        : path ? { success: false, error: 'Network error' } : undefined,
+      isLoading: false,
+      mutate: mockMutateList,
+    };
   });
 });
 
 describe('NotificationDropdown', () => {
   function mockNotificationApi(count: number, items: unknown[], listSuccess = true) {
-    mockApiGet.mockImplementation((url: string) => {
-      if (url === '/api/notifications/unread-count') {
-        return Promise.resolve({ success: true, data: { count } });
-      }
-      if (url === '/api/notifications') {
-        return Promise.resolve(
-          listSuccess
-            ? { success: true, data: { items } }
-            : { success: false, error: 'Network error' },
-        );
-      }
-      return Promise.resolve({ success: false, error: 'Unhandled test URL' });
-    });
+    mockUnreadCount = count;
+    mockNotificationItems = items;
+    mockListSuccess = listSuccess;
   }
 
   describe('rendering', () => {
@@ -97,22 +105,18 @@ describe('NotificationDropdown', () => {
       expect(screen.getByTestId('icon-bell')).toBeDefined();
     });
 
-    it('fetches unread count on mount', async () => {
+    it('subscribes to unread count on mount', () => {
       mockNotificationApi(3, []);
       render(<NotificationDropdown />, { wrapper: Wrapper });
-      await waitFor(() => {
-        expect(mockApiGet).toHaveBeenCalledWith('/api/notifications/unread-count');
-      });
+      expect(mockUseApiGet).toHaveBeenCalledWith('/api/notifications/unread-count');
     });
   });
 
   describe('dropdown', () => {
-    it('opens dropdown and fetches notifications on click', async () => {
+    it('opens dropdown and enables the notification data source on click', async () => {
       render(<NotificationDropdown />, { wrapper: Wrapper });
       await clickElement(screen.getByTestId('dropdown-trigger'));
-      await waitFor(() => {
-        expect(mockApiGet).toHaveBeenCalledWith('/api/notifications', { pageSize: '10' });
-      });
+      expect(mockUseApiGet).toHaveBeenCalledWith('/api/notifications', { pageSize: '10' });
     });
 
     it('shows empty state when no notifications', async () => {
@@ -160,6 +164,22 @@ describe('NotificationDropdown', () => {
       });
       await clickElement(screen.getByText('Test notification'));
       expect(mockApiPut).toHaveBeenCalledWith('/api/notifications/n1/read');
+      expect(mockMutateList).toHaveBeenCalledWith(expect.any(Function), { revalidate: true });
+      expect(mockMutateUnread).toHaveBeenCalled();
+    });
+
+    it('does not update caches when marking one notification fails', async () => {
+      mockNotificationApi(1, [
+        { id: 'n1', type: 'system', title: 'Still unread', body: null, resource_type: null, resource_id: null, is_read: 0, created_at: '2026-01-01' },
+      ]);
+      mockApiPut.mockResolvedValue({ success: false, error: 'Request failed' });
+      render(<NotificationDropdown />, { wrapper: Wrapper });
+      await clickElement(screen.getByTestId('dropdown-trigger'));
+      await clickElement(screen.getByText('Still unread'));
+
+      await waitFor(() => expect(mockApiPut).toHaveBeenCalled());
+      expect(mockMutateList).not.toHaveBeenCalled();
+      expect(mockMutateUnread).not.toHaveBeenCalled();
     });
 
     it('marks all as read', async () => {
@@ -177,16 +197,19 @@ describe('NotificationDropdown', () => {
       });
       await clickElement(screen.getByText('markAllRead'));
       expect(mockApiPut).toHaveBeenCalledWith('/api/notifications/read-all');
+      expect(mockMutateList).toHaveBeenCalledWith(expect.any(Function), { revalidate: true });
+      expect(mockMutateUnread).toHaveBeenCalledWith(
+        { success: true, data: { count: 0 } },
+        { revalidate: true },
+      );
     });
   });
 
   describe('badge count', () => {
-    it('fetches unread count and renders Badge wrapper', async () => {
+    it('reads the unread count and renders Badge wrapper', () => {
       mockNotificationApi(5, []);
       render(<NotificationDropdown />, { wrapper: Wrapper });
-      await waitFor(() => {
-        expect(mockApiGet).toHaveBeenCalledWith('/api/notifications/unread-count');
-      });
+      expect(mockUseApiGet).toHaveBeenCalledWith('/api/notifications/unread-count');
       const badge = document.querySelector('.ant-badge');
       expect(badge).toBeDefined();
     });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrisma } from '@/lib/db';
 import { withAuth } from '@/lib/auth/middleware';
-import { success, error as apiError } from '@/lib/api-response';
+import { success } from '@/lib/api-response';
 
 /** List seller's payment methods. */
 export const GET = withAuth(async (_req: NextRequest, user) => {

@@ -1,11 +1,12 @@
 // TODO: BEM-migrate
 'use client';
 
-import { useEffect, useRef, useState, useCallback, Suspense } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { Spin } from 'antd';
 import { useTranslations } from 'next-intl';
 import type { EmotionTag } from '@/types/pet-preview';
+import type { VRM } from '@pixiv/three-vrm';
 
 const Live2DViewer = dynamic(
   () => import('@/components/live2d/Live2DViewer'),
@@ -42,7 +43,6 @@ export default function ModelViewer({
     surprised: tm('surprised'),
   };
 
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const lipSyncRef = useRef<{
@@ -125,14 +125,13 @@ export default function ModelViewer({
             interactive={true}
             onError={(err) => {
               setError(err.message);
-              setLoading(false);
             }}
           />
         ) : (
           <VRMViewer
             modelPath={modelPath}
-            onLoad={() => setLoading(false)}
-            onError={(msg) => { setError(msg); setLoading(false); }}
+            onLoad={() => undefined}
+            onError={(msg) => { setError(msg); }}
             labels={{ vrmMissing: tv('vrmMissing'), vrmLoadFailed: tv('vrmLoadFailed') }}
           />
         )}
@@ -191,7 +190,7 @@ function VRMViewer({
     }
     function onPointerUp() { isDragging = false; }
 
-    let vrmInstance: any = null;
+    let vrmInstance: VRM | null = null;
     let isDragging = false;
     let prevX = 0;
 
@@ -200,17 +199,12 @@ function VRMViewer({
         const threeP = import('three').catch(() => null);
         const gltfP = import('three/examples/jsm/loaders/GLTFLoader.js').catch(() => null);
         const [THREE, gltfModule] = await Promise.all([threeP, gltfP]);
-        const GLTFLoader: any = (gltfModule as Record<string, unknown> | null)?.GLTFLoader;
 
-        if (!THREE || disposed) return;
+        if (!THREE || !gltfModule || disposed) return;
+        const { GLTFLoader } = gltfModule;
 
-        let VRMLoaderPlugin: any;
-        let VRMUtils: any;
-        try {
-          const vrm = await import('@pixiv/three-vrm');
-          VRMLoaderPlugin = vrm.VRMLoaderPlugin;
-          VRMUtils = vrm.VRMUtils;
-        } catch {
+        const vrmModule = await import('@pixiv/three-vrm').catch(() => null);
+        if (!vrmModule) {
           if (!disposed) {
             onError(labels.vrmMissing);
             setVrmLoading(false);
@@ -218,6 +212,7 @@ function VRMViewer({
           }
           return;
         }
+        const { VRMLoaderPlugin, VRMUtils } = vrmModule;
 
         const container = containerRef.current;
         if (!container || disposed) return;
@@ -236,7 +231,7 @@ function VRMViewer({
         scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 
         const loader = new GLTFLoader();
-        loader.register((parser: any) => new VRMLoaderPlugin(parser));
+        loader.register((parser) => new VRMLoaderPlugin(parser));
         const gltf = await loader.loadAsync(modelPath);
         vrmInstance = gltf.userData.vrm;
 

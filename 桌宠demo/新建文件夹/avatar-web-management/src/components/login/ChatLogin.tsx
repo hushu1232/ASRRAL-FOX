@@ -42,7 +42,7 @@ export default function ChatLogin() {
   const searchParams = useSearchParams();
   const t = useTranslations('chatLogin');
   const returnUrl = searchParams.get('callbackUrl') || searchParams.get('returnUrl') || '/dashboard';
-  const { login, isLoading: loginLoading, error: loginError, clearError } = useLogin();
+  const { login, error: loginError, clearError } = useLogin();
   const DIALOGUE = useDialogue();
 
   const [state, setState] = useState<ChatState>('greeting');
@@ -50,7 +50,6 @@ export default function ChatLogin() {
   const [email, setEmail] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -90,7 +89,6 @@ export default function ChatLogin() {
     }
     return () => {
       if (slowTimerRef.current) clearTimeout(slowTimerRef.current);
-      if (stateTimerRef.current) clearTimeout(stateTimerRef.current);
     };
   }, [state, returnUrl, router]);
 

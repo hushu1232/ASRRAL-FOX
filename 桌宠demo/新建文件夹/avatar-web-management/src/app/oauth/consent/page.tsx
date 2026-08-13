@@ -61,7 +61,7 @@ function ConsentContent() {
 
       const data = await res.json();
       if (data.redirect_url) {
-        window.location.href = data.redirect_url;
+        window.location.assign(data.redirect_url);
       } else {
         message.error(data.error || t('authFailed'));
       }
@@ -78,7 +78,7 @@ function ConsentContent() {
       url.searchParams.set('error', 'access_denied');
       url.searchParams.set('error_description', 'User denied the request');
       if (state) url.searchParams.set('state', state);
-      window.location.href = url.toString();
+      window.location.assign(url.toString());
     }
   };
 

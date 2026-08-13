@@ -160,7 +160,7 @@ export class AlipayProvider implements IPaymentProvider {
     }
   }
 
-  async verifyWebhook(payload: string, _signature: string): Promise<WebhookEvent | null> {
+  async verifyWebhook(payload: string): Promise<WebhookEvent | null> {
     try {
       const params = new URLSearchParams(payload);
       const sign = params.get('sign');

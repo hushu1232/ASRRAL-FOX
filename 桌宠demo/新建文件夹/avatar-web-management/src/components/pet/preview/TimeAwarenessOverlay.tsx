@@ -31,15 +31,26 @@ export default function TimeAwarenessOverlay() {
   const [animateIn, setAnimateIn] = useState(false);
 
   useEffect(() => {
+    let frameId: number | null = null;
+    let entranceFrameId: number | null = null;
+    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
     if (bubbleMessage) {
-      setVisible(true);
-      // Trigger entrance animation after a frame
-      requestAnimationFrame(() => setAnimateIn(true));
+      frameId = requestAnimationFrame(() => {
+        setVisible(true);
+        // Trigger entrance animation after the overlay is mounted.
+        entranceFrameId = requestAnimationFrame(() => setAnimateIn(true));
+      });
     } else {
-      setAnimateIn(false);
-      const timer = setTimeout(() => setVisible(false), 300); // match exit animation
-      return () => clearTimeout(timer);
+      frameId = requestAnimationFrame(() => setAnimateIn(false));
+      hideTimer = setTimeout(() => setVisible(false), 300); // match exit animation
     }
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      if (entranceFrameId !== null) cancelAnimationFrame(entranceFrameId);
+      if (hideTimer) clearTimeout(hideTimer);
+    };
   }, [bubbleMessage]);
 
   if (!visible) return null;

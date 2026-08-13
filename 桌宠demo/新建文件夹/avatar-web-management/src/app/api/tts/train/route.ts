@@ -12,7 +12,7 @@ const log = createLogger('api:tts:train');
 
 const GPT_SOVITS_URL = process.env.GPT_SOVITS_URL || 'http://localhost:8002';
 
-export const POST = withAuth(async (req: NextRequest, _user) => {
+export const POST = withAuth(async (req: NextRequest) => {
   try {
     const formData = await req.formData();
     const audio = formData.get('audio');

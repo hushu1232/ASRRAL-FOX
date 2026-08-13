@@ -2,7 +2,7 @@ export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
-import { getStorageAdapter } from '@/lib/storage';
+import { getStorageAdapter, LocalStorageAdapter } from '@/lib/storage';
 import fs from 'fs';
 import path from 'path';
 
@@ -24,7 +24,10 @@ export const GET = withAuth(async (req: NextRequest) => {
     }
 
     // Local filesystem — stream the file for download
-    const filePath = path.resolve(fileUrl);
+    if (!(storage instanceof LocalStorageAdapter)) {
+      return NextResponse.json({ success: false, error: 'File not found' }, { status: 404 });
+    }
+    const filePath = storage.getFilePath(key);
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({ success: false, error: 'File not found' }, { status: 404 });
     }

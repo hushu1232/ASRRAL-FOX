@@ -6,7 +6,7 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('admin:payment');
 
 /** List all payment gateway configs. */
-export const GET = withAuth(async (_req: NextRequest, user) => {
+export const GET = withAuth(async () => {
   const prisma = getPrisma();
   const configs = await prisma.paymentGatewayConfig.findMany({
     orderBy: [{ provider: 'asc' }, { mode: 'asc' }],

@@ -2,8 +2,8 @@
 
 export const dynamic = 'force-static';
 
-import { Card, Table, Tag, Tabs, Input, Button, Space, Select } from 'antd';
-import { CopyOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { Card, Table, Tag, Tabs, Input, Button, Select } from 'antd';
+import { PlayCircleOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 
 const apiEndpoints = [

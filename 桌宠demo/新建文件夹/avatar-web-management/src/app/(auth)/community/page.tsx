@@ -7,7 +7,7 @@ import {
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useApiGet, useApiPaginated } from '@/lib/use-api';
+import { useApiPaginated } from '@/lib/use-api';
 import type { PaginatedResponse } from '@/lib/use-api';
 
 const { Title, Text, Paragraph } = Typography;

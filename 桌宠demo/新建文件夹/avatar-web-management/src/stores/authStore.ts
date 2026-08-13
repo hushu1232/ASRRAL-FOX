@@ -44,7 +44,7 @@ const DEFAULT_STATE = {
   isLoading: true,
 };
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   ...DEFAULT_STATE,
 
   setAuth: (user, accessToken) => {

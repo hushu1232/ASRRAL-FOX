@@ -110,6 +110,7 @@
       },
       "dashboard": "Dashboard",
       "pet": "Desktop Pet",
+      "airi": "AIRI Stage",
       "avatars": "Avatars",
       "assets": "Assets",
       "marketplace": "Marketplace",
@@ -1449,6 +1450,7 @@
     "title": "AI Rigging",
     "serviceUnavailableTitle": "AI Rigging Service Unavailable",
     "serviceUnavailableDesc": "The rigging microservice is not connected. Please ensure astralfox-rigging is running.",
+    "checkingService": "Checking the Rigging service…",
     "retryConnection": "Retry Connection",
     "generationFailed": "Generation Failed",
     "retry": "Retry",
@@ -1718,6 +1720,35 @@
     "empty": {
       "noPosts": "No posts yet. Be the first!",
       "noBoards": "No boards available"
+    }
+  },
+  "airi": {
+    "title": "AIRI Stage",
+    "subtitle": "Independent character runtime · Bridge v1",
+    "exit": "Back to Pet Console",
+    "retry": "Reload",
+    "stageLabel": "AIRI character stage content",
+    "iframeTitle": "AIRI Web character stage",
+    "notConfigured": {
+      "title": "AIRI Stage is not configured",
+      "description": "Set AIRI_STAGE_URL to load a pinned, self-hosted Stage build."
+    },
+    "authRequired": {
+      "title": "Sign in required",
+      "description": "Sign in to open your AIRI character stage.",
+      "action": "Go to sign in"
+    },
+    "status": {
+      "loading": "Connecting to AIRI Stage",
+      "ready": "AIRI Stage is ready",
+      "error": "AIRI Stage connection failed",
+      "unconfigured": "AIRI Stage is not configured",
+      "connected": "Bridge v1 connected",
+      "characterLoaded": "Character configuration loaded",
+      "stageError": "Stage reported an error",
+      "timeout": "Stage handshake timed out",
+      "loadError": "Stage page failed to load",
+      "sameOriginRejected": "Stage must use an isolated origin"
     }
   },
   "messages": {

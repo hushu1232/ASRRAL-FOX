@@ -28,7 +28,7 @@ describe('API Contract definitions', () => {
   });
 
   it('defines valid status codes for every endpoint', () => {
-    for (const [path, contract] of Object.entries(API_CONTRACTS)) {
+    for (const [, contract] of Object.entries(API_CONTRACTS)) {
       expect(contract.status).toBeDefined();
       expect(contract.status.length).toBeGreaterThanOrEqual(1);
       for (const code of contract.status) {

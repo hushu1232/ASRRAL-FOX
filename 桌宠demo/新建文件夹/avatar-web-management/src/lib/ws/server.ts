@@ -10,6 +10,7 @@ const log = createLogger('ws');
 
 const rooms = new Map<string, RoomInfo>();
 const clientRooms = new Map<WebSocket, string>();
+const roomCleanupTimers = new Map<string, NodeJS.Timeout>();
 
 // IM: userId → Set<WebSocket>
 const userClients = new Map<string, Set<WebSocket>>();
@@ -108,6 +109,11 @@ function handleMessage(ws: WebSocket, raw: string) {
 
   switch (msg.type) {
     case 'join_room': {
+      const pendingCleanup = roomCleanupTimers.get(msg.avatarId);
+      if (pendingCleanup) {
+        clearTimeout(pendingCleanup);
+        roomCleanupTimers.delete(msg.avatarId);
+      }
       const r = getOrCreateRoom(msg.avatarId);
       r.clients.add(getClientId(ws));
       clientRooms.set(ws, msg.avatarId);
@@ -132,10 +138,13 @@ function handleMessage(ws: WebSocket, raw: string) {
         broadcast(room, { type: 'leave_room', avatarId: msg.avatarId, payload: { clientId: getClientId(ws), clientCount: room.clients.size } });
         if (room.clients.size === 0) {
           // Keep room alive for 30 min to preserve lastState
-          setTimeout(() => {
+          const cleanupTimer = setTimeout(() => {
             const r = rooms.get(msg.avatarId);
             if (r && r.clients.size === 0) rooms.delete(msg.avatarId);
+            roomCleanupTimers.delete(msg.avatarId);
           }, 30 * 60 * 1000);
+          cleanupTimer.unref?.();
+          roomCleanupTimers.set(msg.avatarId, cleanupTimer);
         }
       }
       break;
@@ -294,6 +303,8 @@ export function stopWsServer(): Promise<void> {
       wss = null;
       rooms.clear();
       clientRooms.clear();
+      for (const timer of roomCleanupTimers.values()) clearTimeout(timer);
+      roomCleanupTimers.clear();
       resolve();
     });
   });

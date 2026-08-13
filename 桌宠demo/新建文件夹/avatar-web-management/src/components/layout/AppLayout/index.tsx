@@ -10,7 +10,7 @@ import { useUIStore } from '@/stores/uiStore';
 import './style.scss';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading, hydrateFromStorage } = useAuthStore();
+  const { isLoading, hydrateFromStorage } = useAuthStore();
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const setIsMobile = useUIStore((s) => s.setIsMobile);
 

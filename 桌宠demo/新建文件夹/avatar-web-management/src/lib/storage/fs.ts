@@ -23,47 +23,87 @@ export class LocalStorageAdapter implements StorageAdapter {
   }
 
   private normalizeKey(key: string): string {
-    let normalizedKey = key;
-    if (normalizedKey.startsWith(BASE_URL + '/')) {
-      normalizedKey = normalizedKey.slice(BASE_URL.length + 1);
-    } else if (normalizedKey.startsWith('/uploads/') && BASE_URL !== '/uploads') {
-      normalizedKey = normalizedKey.slice('/uploads/'.length);
+    if (typeof key !== 'string' || key.length === 0 || key.includes('\0')) {
+      throw new Error('Invalid storage key');
+    }
+
+    let normalizedKey = key.startsWith(BASE_URL + '/')
+      ? key.slice(BASE_URL.length + 1)
+      : key;
+    normalizedKey = normalizedKey.replace(/\\/g, '/');
+
+    if (normalizedKey.startsWith('/') || /^[A-Za-z]:\//.test(normalizedKey)) {
+      throw new Error('Invalid storage key');
+    }
+
+    const segments = normalizedKey.split('/');
+    if (segments.some((segment) => segment === '..')) {
+      throw new Error('Invalid storage key');
+    }
+
+    normalizedKey = path.posix.normalize(normalizedKey);
+    if (normalizedKey === '.' || normalizedKey.startsWith('../') || normalizedKey.includes('/../')) {
+      throw new Error('Invalid storage key');
     }
     return normalizedKey;
   }
 
-  async upload(key: string, buffer: Buffer, _contentType?: string): Promise<string> {
+  private resolveKey(key: string): { normalizedKey: string; filePath: string } {
     const normalizedKey = this.normalizeKey(key);
-    const filePath = path.join(this.baseDir, normalizedKey);
+    const basePath = path.resolve(this.baseDir);
+    const filePath = path.resolve(basePath, normalizedKey);
+    if (filePath !== basePath && !filePath.startsWith(`${basePath}${path.sep}`)) {
+      throw new Error('Invalid storage key');
+    }
+    return { normalizedKey, filePath };
+  }
+
+  private resolveChunkDir(uploadId: string): string {
+    if (typeof uploadId !== 'string' || uploadId.length === 0 || uploadId.includes('\0') || /[\\/]/.test(uploadId)) {
+      throw new Error('Invalid upload id');
+    }
+    const chunksRoot = path.resolve(this.chunksDir);
+    const chunkDir = path.resolve(chunksRoot, uploadId);
+    if (!chunkDir.startsWith(`${chunksRoot}${path.sep}`)) {
+      throw new Error('Invalid upload id');
+    }
+    return chunkDir;
+  }
+
+  async upload(key: string, buffer: Buffer, contentType?: string): Promise<string> {
+    void contentType;
+    const { normalizedKey, filePath } = this.resolveKey(key);
     ensureDir(path.dirname(filePath));
     fs.writeFileSync(filePath, buffer);
     return `${BASE_URL}/${normalizedKey}`;
   }
 
   async getFileUrl(key: string): Promise<string> {
-    if (key.startsWith('/uploads/') || key.startsWith(BASE_URL + '/')) {
-      return key;
-    }
-    return `${BASE_URL}/${key}`;
+    const { normalizedKey } = this.resolveKey(key);
+    return `${BASE_URL}/${normalizedKey}`;
+  }
+
+  getFilePath(key: string): string {
+    return this.resolveKey(key).filePath;
   }
 
   async delete(key: string): Promise<void> {
-    const filePath = path.join(this.baseDir, key);
+    const { filePath } = this.resolveKey(key);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
   }
 
   async exists(key: string): Promise<boolean> {
-    return fs.existsSync(path.join(this.baseDir, key));
+    return fs.existsSync(this.resolveKey(key).filePath);
   }
 
   // ---- 分块上传 ----
 
   async initChunkedUpload(finalKey: string, _contentType?: string): Promise<string> {
-    const normalizedKey = this.normalizeKey(finalKey);
+    const { normalizedKey } = this.resolveKey(finalKey);
     const uploadId = `upload_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    const chunkDir = path.join(this.chunksDir, uploadId);
+    const chunkDir = this.resolveChunkDir(uploadId);
     ensureDir(chunkDir);
 
     const meta = {
@@ -77,15 +117,15 @@ export class LocalStorageAdapter implements StorageAdapter {
   }
 
   async uploadChunk(uploadId: string, chunkIndex: number, buffer: Buffer): Promise<void> {
-    const chunkDir = path.join(this.chunksDir, uploadId);
+    const chunkDir = this.resolveChunkDir(uploadId);
     ensureDir(chunkDir);
     fs.writeFileSync(path.join(chunkDir, `chunk_${chunkIndex.toString().padStart(6, '0')}`), buffer);
   }
 
-  async assembleChunks(uploadId: string, chunks: number, finalKey: string, _contentType?: string): Promise<string> {
-    const chunkDir = path.join(this.chunksDir, uploadId);
-    const normalizedKey = this.normalizeKey(finalKey);
-    const finalPath = path.join(this.baseDir, normalizedKey);
+  async assembleChunks(uploadId: string, chunks: number, finalKey: string, contentType?: string): Promise<string> {
+    void contentType;
+    const chunkDir = this.resolveChunkDir(uploadId);
+    const { normalizedKey, filePath: finalPath } = this.resolveKey(finalKey);
 
     // Verify all chunks exist before assembling
     for (let i = 0; i < chunks; i++) {
@@ -112,14 +152,14 @@ export class LocalStorageAdapter implements StorageAdapter {
   }
 
   async abortChunkedUpload(uploadId: string): Promise<void> {
-    const chunkDir = path.join(this.chunksDir, uploadId);
+    const chunkDir = this.resolveChunkDir(uploadId);
     if (fs.existsSync(chunkDir)) {
       fs.rmSync(chunkDir, { recursive: true, force: true });
     }
   }
 
   async getUploadedChunks(uploadId: string): Promise<number[]> {
-    const chunkDir = path.join(this.chunksDir, uploadId);
+    const chunkDir = this.resolveChunkDir(uploadId);
     if (!fs.existsSync(chunkDir)) return [];
     const files = fs.readdirSync(chunkDir);
     return files

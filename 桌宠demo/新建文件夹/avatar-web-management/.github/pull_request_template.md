@@ -24,7 +24,7 @@
 <!-- 描述如何验证这个 PR -->
 - [ ] 单元测试通过 (`npm test`)
 - [ ] 类型检查通过 (`npm run typecheck`)
-- [ ] Lint 通过 (`npm run lint`)
+- [ ] Lint 通过 (`npm run lint:ci`，warning 不得超过当前基线)
 - [ ] E2E 测试通过 (`npm run test:e2e:api`)
 
 ## Screenshots (if UI change)

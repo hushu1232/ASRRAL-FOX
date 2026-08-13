@@ -9,7 +9,6 @@ import { useTranslations } from 'next-intl';
 import { AVATAR_STYLES, AVATAR_STATUS_MAP } from '@/lib/constants';
 import { apiPost, apiDelete } from '@/lib/api-client';
 import { useApiPaginated } from '@/lib/use-api';
-import type { PaginatedResponse } from '@/lib/use-api';
 
 interface AvatarListItem {
   id: string;
@@ -70,7 +69,16 @@ export default function AvatarManagerPage() {
         message.error(res.error || tc('operationFailed'));
       }
     } catch {
-      router.push('/avatars/new/edit');
+      message.error(tc('networkError'));
+    }
+  };
+
+  const handleCopyLink = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(new URL(`/avatars/${id}`, window.location.origin).toString());
+      message.success(tc('copied'));
+    } catch {
+      message.error(tc('operationFailed'));
     }
   };
 
@@ -157,7 +165,7 @@ export default function AvatarManagerPage() {
               }
               actions={[
                 <EditOutlined key="edit" onClick={() => router.push(`/avatars/${avatar.id}/edit`)} aria-label={tc('edit')} />,
-                <CopyOutlined key="copy" onClick={() => message.info(tc('copied'))} aria-label={tc('copy')} />,
+                <CopyOutlined key="copy" onClick={() => handleCopyLink(avatar.id)} aria-label={tc('copy')} />,
                 <DeleteOutlined key="delete" onClick={() => handleDelete(avatar.id)} aria-label={tc('delete')} />,
                 <ShopOutlined key="sell" onClick={() => router.push(`/marketplace/new?from=avatar&avatarId=${avatar.id}&title=${encodeURIComponent(avatar.name)}`)} aria-label={t('sellOnMarket')} />,
                 <RobotOutlined key="pet" onClick={async () => {

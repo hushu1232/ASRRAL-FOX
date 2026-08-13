@@ -42,7 +42,7 @@ let seeded = false;
 
 export function initDb(): void {
   if (isPostgres()) {
-    log.info('PostgreSQL mode — skipping SQLite migration. Run schema.pg.sql manually.');
+    log.info('PostgreSQL mode — skipping SQLite migration. Apply Prisma migrations before starting the app.');
     // PG 模式下跳过 SQLite 种子（PG 有自己的 seed）
     return;
   }

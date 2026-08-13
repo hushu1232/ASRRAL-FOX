@@ -18,8 +18,6 @@ fs.mkdirSync(partsDir, { recursive: true });
 // ============================================================
 
 function float32Bytes(arr) { return Buffer.from(Float32Array.from(arr).buffer); }
-function uint32Bytes(val) { const b = Buffer.alloc(4); b.writeUInt32LE(val, 0); return b; }
-function uint16Bytes(val) { const b = Buffer.alloc(2); b.writeUInt16LE(val, 0); return b; }
 function pad4(buf) { while (buf.length % 4 !== 0) buf = Buffer.concat([buf, Buffer.alloc(1)]); return buf; }
 
 function buildGLB({ positions, normals, indices, material, nodeName, meshName }) {
@@ -398,7 +396,7 @@ function computeMorphDeltas(baseModel) {
       displayName: '颧骨突出',
       category: '脸部',
       min: -1, max: 1, step: 0.01, defaultValue: 0,
-      deltas: makeMorph(['head'], (d, p, idx, i) => {
+      deltas: makeMorph(['head'], (d, p, idx) => {
         const y = p[idx + 1];
         if (y > 1.45 * scale && y < 1.56 * scale) {
           const dist = Math.sqrt(p[idx] * p[idx] + p[idx + 2] * p[idx + 2]);
@@ -510,9 +508,9 @@ function computeMorphDeltas(baseModel) {
 // 部件 GLB 生成
 // ============================================================
 
-function generatePartGLB({ name, category, slot, gender, buildFn }) {
+function generatePartGLB({ name, category, buildFn }) {
   const p = [], n = [], idx = [];
-  const _groups = buildFn(p, n, idx);
+  buildFn(p, n, idx);
 
   const colors = {
     hair: [0.2, 0.15, 0.3, 1],

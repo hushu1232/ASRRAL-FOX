@@ -11,7 +11,7 @@ const NO_STORE = 'no-store';
 
 type RouteContext = { params: Promise<unknown> };
 
-const getLocalHealth = withAuth(async (_req, _user) => {
+const getLocalHealth = withAuth(async () => {
   try {
     const localHealth = await getAlifeLocalHealth();
     return success(localHealth);

@@ -11,6 +11,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.string().optional(),
   NEXT_PUBLIC_CDN_URL: z.string().optional(),
   NEXT_PUBLIC_WS_PORT: z.coerce.number().int().positive().optional(),
+  AIRI_STAGE_URL: z.string().url().optional(),
 
   // 数据库（至少需要一个）
   DATABASE_PATH: z.string().optional(),

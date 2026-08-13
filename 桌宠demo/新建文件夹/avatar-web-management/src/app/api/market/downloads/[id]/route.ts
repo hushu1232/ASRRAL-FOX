@@ -1,9 +1,8 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import { success, error } from '@/lib/api-response';
 import { marketService } from '@/lib/services/market.service';
-import { NotFoundError, ForbiddenError } from '@/lib/errors';
+import { ForbiddenError } from '@/lib/errors';
 import { withAuth } from '@/lib/auth/middleware';
 
 export const GET = withAuth(async (req, user, ctx) => {

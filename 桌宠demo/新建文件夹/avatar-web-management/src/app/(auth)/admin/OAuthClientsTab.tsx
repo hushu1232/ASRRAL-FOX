@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Card, Table, Button, Modal, Form, Input, Select, Switch, Tag, App, Space, Popconfirm } from 'antd';
 import { PlusOutlined, CopyOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import { apiDelete, apiPost } from '@/lib/api-client';
+import { useApiGet } from '@/lib/use-api';
 
 interface OAuthClientRecord {
   id: string;
@@ -18,62 +20,36 @@ interface OAuthClientRecord {
 export default function OAuthClientsTab() {
   const t = useTranslations('admin.oauth');
   const { message } = App.useApp();
-  const [clients, setClients] = useState<OAuthClientRecord[]>([]);
-  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [secretMap, setSecretMap] = useState<Record<string, string>>({});
   const [form] = Form.useForm();
-
-  const fetchClients = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/admin/oauth-clients', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token') || ''}` },
-      });
-      const data = await res.json();
-      if (data.success) setClients(data.data);
-    } catch { /* ignore */ }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchClients(); }, [fetchClients]);
+  const { data, isLoading, mutate } = useApiGet<OAuthClientRecord[]>('/api/admin/oauth-clients');
+  const clients = data?.success ? (data.data ?? []) : [];
 
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
-      const res = await fetch('/api/admin/oauth-clients', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,
-        },
-        body: JSON.stringify(values),
-      });
-      const data = await res.json();
-      if (data.success) {
+      const res = await apiPost<OAuthClientRecord & { clientSecret: string }>('/api/admin/oauth-clients', values);
+      if (res.success) {
         message.success(t('createSuccess'));
-        setSecretMap((prev) => ({ ...prev, [data.data.id]: data.data.clientSecret }));
+        setSecretMap((prev) => ({ ...prev, [res.data.id]: res.data.clientSecret }));
         setModalOpen(false);
         form.resetFields();
-        fetchClients();
+        void mutate();
       } else {
-        message.error(data.error || t('createFailed'));
+        message.error(res.error || t('createFailed'));
       }
     } catch { /* form validation error */ }
   };
 
   const handleRevoke = async (id: string) => {
     try {
-      const res = await fetch(`/api/admin/oauth-clients/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token') || ''}` },
-      });
-      const data = await res.json();
-      if (data.success) {
+      const res = await apiDelete(`/api/admin/oauth-clients/${id}`);
+      if (res.success) {
         message.success(t('revokeSuccess'));
-        fetchClients();
+        void mutate();
       } else {
-        message.error(data.error || t('revokeFailed'));
+        message.error(res.error || t('revokeFailed'));
       }
     } catch {
       message.error(t('requestFailed'));
@@ -136,7 +112,7 @@ export default function OAuthClientsTab() {
           dataSource={clients}
           columns={columns}
           rowKey="id"
-          loading={loading}
+          loading={isLoading}
           pagination={false}
           locale={{ emptyText: t('noClients') }}
         />

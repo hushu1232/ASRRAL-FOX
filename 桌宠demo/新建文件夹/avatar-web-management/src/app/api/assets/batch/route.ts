@@ -1,15 +1,11 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { success, error } from '@/lib/api-response';
 import { withAuth } from '@/lib/auth/middleware';
 import { ValidationError } from '@/lib/errors';
-import { createLogger } from '@/lib/logger';
 import { logAudit } from '@/lib/audit';
 import { assetService } from '@/lib/services/asset.service';
-
-const log = createLogger('api:assets-batch');
 
 const batchSchema = z.object({
   action: z.enum(['delete', 'archive']),

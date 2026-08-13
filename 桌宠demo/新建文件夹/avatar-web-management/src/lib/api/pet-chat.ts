@@ -1,6 +1,6 @@
 // 桌宠 Web 预览 — API 客户端函数
 import { apiGet, apiPost } from '@/lib/api-client';
-import type { ChatResponse, PetPreviewConfig, StreamEvent, StreamDoneEvent } from '@/types/pet-preview';
+import type { ChatResponse, PetPreviewConfig, StreamDoneEvent } from '@/types/pet-preview';
 
 const logPrefix = '[pet-chat-api]';
 
@@ -142,11 +142,11 @@ export async function fetchPetPreviewConfig(): Promise<PetPreviewConfig> {
     petName: (cfg.pet_name as string) || '星尘',
     personality: (cfg.personality as string) || '',
     backstory: (cfg.backstory as string) || '',
-    characterExtra: '',
-    animationModel: (cfg.animation_model as 'live2d' | 'vrm') || 'live2d',
+    characterExtra: (cfg.character_extra as string) || '',
+    animationModel: cfg.animation_model === 'vrm' ? 'vrm' : 'live2d',
     modelPath: (cfg.model_path as string) || '/models/CatTail/cattail.model3.json',
     ttsEngine: (cfg.tts_engine as 'sherpa-onnx' | 'gpt-sovits') || 'sherpa-onnx',
-    customVoiceId: (cfg.custom_voice_id as string) || undefined,
+    customVoiceId: (cfg.custom_voice_id as string) || (cfg.sovits_reference_voice_id as string) || undefined,
     idleTimeout: (cfg.idle_timeout as number) || 300,
     wanderInterval: (cfg.wander_interval as number) || 15,
   };

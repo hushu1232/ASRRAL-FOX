@@ -20,21 +20,14 @@ import PetDesktopStatusChip from '@/components/pet/sync/PetDesktopStatusChip';
 export default function PetPreview() {
   const t = useTranslations('pet');
   const store = usePetPreviewStore();
+  const loadConfig = usePetPreviewStore((state) => state.loadConfig);
+  const setVoiceSupported = usePetPreviewStore((state) => state.setVoiceSupported);
   const [chatOpen, setChatOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
   const [desktopStatus, setDesktopStatus] = useState<DesktopSyncStatus | null>(null);
 
   useEffect(() => {
-    store.loadConfig();
-  }, []);
-
-  useEffect(() => {
-    const mql = window.matchMedia('(max-width: 767px)');
-    setIsMobile(mql.matches);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
-  }, []);
+    void loadConfig();
+  }, [loadConfig]);
 
   const voice = useVoiceInput({
     active: store.voiceActive,
@@ -64,8 +57,8 @@ export default function PetPreview() {
     const supported = !!(
       window.SpeechRecognition || window.webkitSpeechRecognition
     );
-    store.setVoiceSupported(supported);
-  }, []);
+    setVoiceSupported(supported);
+  }, [setVoiceSupported]);
 
   useEffect(() => {
     let ignore = false;
@@ -200,33 +193,30 @@ export default function PetPreview() {
         </div>
 
         {/* Mobile floating chat button */}
-        {isMobile && (
-          <div className="fixed bottom-4 right-4 z-50">
-            <Button
-              type="primary"
-              shape="circle"
-              size="large"
-              icon={<MessageOutlined />}
-              onClick={() => setChatOpen(true)}
-              className="shadow-lg"
-            />
-          </div>
-        )}
+        <div className="fixed bottom-4 right-4 z-50 md:hidden">
+          <Button
+            type="primary"
+            shape="circle"
+            size="large"
+            icon={<MessageOutlined />}
+            onClick={() => setChatOpen(true)}
+            className="shadow-lg"
+          />
+        </div>
       </div>
 
       {/* Mobile chat drawer */}
-      {isMobile && (
-        <Drawer
-          title={t('preview.chat')}
-          placement="bottom"
-          height="70vh"
-          open={chatOpen}
-          onClose={() => setChatOpen(false)}
-          styles={{ body: { padding: 0, height: '100%' } }}
-        >
-          {chatPanel}
-        </Drawer>
-      )}
+      <Drawer
+        title={t('preview.chat')}
+        placement="bottom"
+        size="70vh"
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        rootClassName="md:hidden"
+        styles={{ body: { padding: 0, height: '100%' } }}
+      >
+        {chatPanel}
+      </Drawer>
     </div>
   );
 }

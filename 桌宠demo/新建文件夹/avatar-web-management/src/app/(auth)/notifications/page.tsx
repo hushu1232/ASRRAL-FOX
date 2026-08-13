@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Tag, Pagination, Button, App } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
@@ -39,8 +39,8 @@ const resourceRoutes: Record<string, (id: string) => string> = {
   market_item: (id) => `/marketplace/${id}`,
   asset: (id) => `/assets?id=${id}`,
   avatar: (id) => `/avatars/${id}`,
-  order: (id) => `/purchases`,
-  pet: (id) => `/dashboard/pet`,
+  order: () => `/purchases`,
+  pet: () => `/dashboard/pet`,
 };
 
 const PAGE_SIZE = 20;
@@ -50,7 +50,6 @@ export default function NotificationsPage() {
   const t = useTranslations('notifications');
   const { message } = App.useApp();
   const [page, setPage] = useState(1);
-  const [items, setItems] = useState<NotificationItem[]>([]);
 
   const typeLabels: Record<string, string> = {
     system: t('types.system'),
@@ -70,26 +69,35 @@ export default function NotificationsPage() {
   });
 
   const total = data?.success ? (data.data?.total ?? 0) : 0;
+  const items = data?.success ? (data.data?.items ?? []) : [];
 
-  useEffect(() => {
-    if (data?.success) {
-      setItems(data.data?.items || []);
-    }
-  }, [data]);
+  const markCachedRead = (id?: string) => {
+    void mutate(current => {
+      if (!current?.success || !current.data?.items) return current;
+
+      return {
+        ...current,
+        data: {
+          ...current.data,
+          items: current.data.items.map(item =>
+            !id || item.id === id ? { ...item, is_read: 1 } : item
+          ),
+        },
+      };
+    }, { revalidate: true });
+  };
 
   const handleReadOne = async (id: string) => {
     const res = await apiPut(`/api/notifications/${id}/read`);
     if (res.success) {
-      setItems(prev => prev.map(n => n.id === id ? { ...n, is_read: 1 } : n));
-      mutate();
+      markCachedRead(id);
     }
   };
 
   const handleReadAll = async () => {
     const res = await apiPut('/api/notifications/read-all');
     if (res.success) {
-      setItems(prev => prev.map(n => ({ ...n, is_read: 1 })));
-      mutate();
+      markCachedRead();
       message.success(t('allRead'));
     }
   };

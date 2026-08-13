@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 const LABEL_MAP: Record<string, string> = {
   dashboard: 'layout.sidebar.dashboard',
   pet: 'layout.sidebar.pet',
+  airi: 'layout.sidebar.airi',
   avatars: 'layout.sidebar.avatars',
   assets: 'layout.sidebar.assets',
   marketplace: 'layout.sidebar.marketplace',

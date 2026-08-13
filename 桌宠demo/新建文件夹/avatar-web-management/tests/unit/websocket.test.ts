@@ -21,13 +21,23 @@ function startTestServer(port: number): Promise<import('ws').WebSocketServer> {
 function createClient(port: number): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://localhost:${port}`);
-    ws.on('open', () => resolve(ws));
-    ws.on('error', reject);
-    setTimeout(() => reject(new Error('Connection timeout')), 3000);
+    const timeout = setTimeout(() => {
+      ws.removeAllListeners();
+      ws.close();
+      reject(new Error('Connection timeout'));
+    }, 3000);
+    ws.on('open', () => {
+      clearTimeout(timeout);
+      resolve(ws);
+    });
+    ws.on('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 function sendAndWait(ws: WebSocket, msg: object, expectedType: string, timeout = 2000): Promise<Record<string, any>> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timeout waiting for ${expectedType}`)), timeout);
@@ -90,7 +100,7 @@ describe('WebSocket Server', () => {
     expect(join2.payload.clientCount).toBe(2);
 
     // ws1 sends scene update, ws2 should receive it
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const updatePromise = new Promise<Record<string, any>>((resolve) => {
       ws2.once('message', (data) => {
         const msg = JSON.parse(data.toString());
@@ -157,7 +167,7 @@ describe('WebSocket Server', () => {
     expect(join2.payload.clientCount).toBe(2);
 
     // ws1 leaves
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const leavePromise = new Promise<Record<string, any>>((resolve) => {
       ws2.once('message', (data) => {
         const msg = JSON.parse(data.toString());
@@ -178,7 +188,7 @@ describe('WebSocket Server', () => {
   it('rejects invalid JSON with error message', async () => {
     const ws = await createClient(TEST_PORT);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const errorPromise = new Promise<Record<string, any>>((resolve) => {
       ws.once('message', (data) => {
         const msg = JSON.parse(data.toString());
@@ -203,7 +213,7 @@ describe('WebSocket Server', () => {
     await sendAndWait(ws2, { type: 'join_room', avatarId: 'room-types', payload: {} }, 'join_room');
 
     // Camera update
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const camPromise = new Promise<Record<string, any>>((resolve) => {
       ws2.once('message', (data) => {
         const msg = JSON.parse(data.toString());
@@ -227,7 +237,7 @@ describe('WebSocket Server', () => {
   it('handles message to non-existent room gracefully', async () => {
     const ws = await createClient(TEST_PORT);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const errorPromise = new Promise<Record<string, any>>((resolve) => {
       ws.once('message', (data) => {
         const msg = JSON.parse(data.toString());
@@ -256,7 +266,7 @@ describe('WebSocket Server', () => {
     await sendAndWait(ws2, { type: 'join_room', avatarId: 'room-disconnect', payload: {} }, 'join_room');
 
     // ws1 disconnects abruptly
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const leavePromise = new Promise<Record<string, any>>((resolve) => {
       ws2.once('message', (data) => {
         const msg = JSON.parse(data.toString());

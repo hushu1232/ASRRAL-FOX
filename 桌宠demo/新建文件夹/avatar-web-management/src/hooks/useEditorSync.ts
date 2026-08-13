@@ -32,6 +32,7 @@ export function useEditorSync({
   const [clientCount, setClientCount] = useState(0);
   const [lastRemoteState, setLastRemoteState] = useState<SceneState | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const connectRef = useRef<() => void>(() => undefined);
 
   const connect = useCallback(() => {
     if (!enabled || !avatarId) return;
@@ -77,7 +78,7 @@ export function useEditorSync({
       setIsConnected(false);
       wsRef.current = null;
       // Auto-reconnect after 3s
-      reconnectTimer.current = setTimeout(connect, 3000);
+      reconnectTimer.current = setTimeout(() => connectRef.current(), 3000);
     };
 
     ws.onerror = () => {
@@ -86,8 +87,10 @@ export function useEditorSync({
   }, [avatarId, enabled, wsUrl]);
 
   useEffect(() => {
+    connectRef.current = connect;
     connect();
     return () => {
+      connectRef.current = () => undefined;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) {
         wsRef.current.onclose = null; // prevent reconnect on intentional close

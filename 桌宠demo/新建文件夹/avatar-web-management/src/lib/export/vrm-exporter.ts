@@ -240,8 +240,6 @@ export async function exportVRM(options: ExportOptions & { avatarName?: string }
       const name = (mat.name as string) || `material_${i}`;
       const pbr = mat.pbrMetallicRoughness as Record<string, unknown> | undefined;
       const baseColor = (pbr?.baseColorFactor as number[]) || [1, 1, 1, 1];
-      const baseColorHex = floatToHex(baseColor);
-
       mat.extensions = {
         ...(mat.extensions as Record<string, unknown> || {}),
         VRMC_materials_mtoon: {
@@ -294,11 +292,4 @@ export async function exportVRM(options: ExportOptions & { avatarName?: string }
   binData.copy(binChunk, 8);
 
   return Buffer.concat([header, jsonChunk, binChunk]);
-}
-
-function floatToHex(color: number[]): string {
-  const r = Math.round((color[0] || 1) * 255);
-  const g = Math.round((color[1] || 1) * 255);
-  const b = Math.round((color[2] || 1) * 255);
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }

@@ -1,10 +1,9 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { success, error } from '@/lib/api-response';
 import { withAuth } from '@/lib/auth/middleware';
-import { buildReplyTree, flattenReplies } from './tree';
+import { buildReplyTree } from './tree';
 
 export const GET = withAuth(async (_req, _user, ctx) => {
   try {

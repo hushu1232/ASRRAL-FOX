@@ -1,6 +1,5 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { avatarCreateSchema } from '@/lib/validators';
 import { ValidationError } from '@/lib/errors';

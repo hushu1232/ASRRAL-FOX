@@ -6,7 +6,7 @@
  * Usage:   TESTCONTAINERS=true npm test
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 let container: any = null;
 
 export default async function globalSetup(): Promise<void> {
@@ -16,7 +16,7 @@ export default async function globalSetup(): Promise<void> {
   }
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+
     const { PostgreSqlContainer } = require('@testcontainers/postgresql');
     console.log('[testcontainers] Starting PostgreSQL container...');
     container = await new PostgreSqlContainer('postgres:16-alpine')

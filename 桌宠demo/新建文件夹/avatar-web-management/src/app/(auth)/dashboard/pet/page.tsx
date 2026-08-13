@@ -5,6 +5,7 @@ import { Alert, Form, Button, message, Modal, Table, Tag, Spin } from 'antd';
 import { ExportOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { apiGet, apiPut, apiPost } from '@/lib/api-client';
+import { useApiGet } from '@/lib/use-api';
 import PageHeader from '@/components/layout/PageHeader';
 import PetRuntimeSummary from '@/components/pet/PetRuntimeSummary';
 import PetSetupReadiness from '@/components/pet/PetSetupReadiness';
@@ -14,7 +15,6 @@ import PetDiagnosticsSection from '@/components/pet/sync/PetDiagnosticsSection';
 import AlifeLocalHealthPanel from '@/components/pet/sync/AlifeLocalHealthPanel';
 import PetSyncDiagnosticsPanel from '@/components/pet/sync/PetSyncDiagnosticsPanel';
 import PetSyncStatusPanel from '@/components/pet/sync/PetSyncStatusPanel';
-import WebBridgeMockStatusPanel from '@/components/pet/sync/WebBridgeMockStatusPanel';
 import {
   APPLIED_SUCCESS_BANNER_MS,
   CONFIRM_WAIT_POLL_MS,
@@ -50,80 +50,60 @@ interface AssetEntry {
 export default function PetConfigPage() {
   const t = useTranslations('pet');
   const tSync = useTranslations('pet.syncStatus');
-  const [config, setConfig] = useState<PetConfig | null>(null);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [assetModalOpen, setAssetModalOpen] = useState(false);
   const [assets, setAssets] = useState<AssetEntry[]>([]);
   const [assetLoading, setAssetLoading] = useState(false);
   const [assetFilter, setAssetFilter] = useState<string>('');
-  const [showWizard, setShowWizard] = useState(false);
   const [wizardDismissed, setWizardDismissed] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<DesktopSyncStatus | null>(null);
-  const [syncStatusLoading, setSyncStatusLoading] = useState(false);
-  const [alifeLocalHealth, setAlifeLocalHealth] = useState<AlifeLocalHealthView | null>(null);
-  const [alifeLocalHealthLoading, setAlifeLocalHealthLoading] = useState(false);
   const [showAppliedSuccess, setShowAppliedSuccess] = useState(false);
   const [form] = Form.useForm();
-  const previousSyncStatusRef = useRef<DesktopSyncStatus | null>(null);
   const syncStatusRef = useRef<DesktopSyncStatus | null>(null);
-
-  const fetchConfig = async () => {
-    setLoading(true);
-    try {
-      const res = await apiGet<PetConfig>('/api/pet/config');
-      if (res.success && res.data) {
-        setConfig(res.data as PetConfig);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const applySyncStatus = useCallback((next: DesktopSyncStatus) => {
-    const previous = previousSyncStatusRef.current;
-    if (shouldShowAppliedSuccess(previous, next)) {
-      setShowAppliedSuccess(true);
-    }
-    previousSyncStatusRef.current = next;
-    syncStatusRef.current = next;
-    setSyncStatus(next);
-  }, []);
-
-  const fetchSyncStatus = useCallback(async () => {
-    setSyncStatusLoading(true);
-    try {
-      const res = await apiGet<DesktopSyncStatus>('/api/pet/sync/status');
-      if (res.success && res.data) {
-        applySyncStatus(res.data);
-      }
-    } finally {
-      setSyncStatusLoading(false);
-    }
-  }, [applySyncStatus]);
-
-  const fetchAlifeLocalHealth = useCallback(async () => {
-    setAlifeLocalHealthLoading(true);
-    try {
-      const res = await apiGet<AlifeLocalHealthView>('/api/pet/alife/local-health');
-      if (res.success && res.data) {
-        setAlifeLocalHealth(res.data);
-      } else {
-        setAlifeLocalHealth(createAlifeLocalHealthRequestFailure());
-      }
-    } catch {
-      setAlifeLocalHealth(createAlifeLocalHealthRequestFailure());
-    } finally {
-      setAlifeLocalHealthLoading(false);
-    }
-  }, []);
+  const {
+    data: configData,
+    isLoading: loading,
+    mutate: mutateConfig,
+  } = useApiGet<PetConfig>('/api/pet/config');
+  const config = configData?.success && configData.data ? configData.data : null;
+  const {
+    data: syncStatusData,
+    isLoading: syncStatusInitialLoading,
+    isValidating: syncStatusValidating,
+    mutate: mutateSyncStatus,
+  } = useApiGet<DesktopSyncStatus>(config ? '/api/pet/sync/status' : null);
+  const syncStatus = syncStatusData?.success && syncStatusData.data ? syncStatusData.data : null;
+  const {
+    data: alifeLocalHealthData,
+    error: alifeLocalHealthError,
+    isLoading: alifeLocalHealthInitialLoading,
+    isValidating: alifeLocalHealthValidating,
+    mutate: mutateAlifeLocalHealth,
+  } = useApiGet<AlifeLocalHealthView>(config ? '/api/pet/alife/local-health' : null);
+  const alifeLocalHealth = alifeLocalHealthData?.success && alifeLocalHealthData.data
+    ? alifeLocalHealthData.data
+    : (alifeLocalHealthData || alifeLocalHealthError) ? createAlifeLocalHealthRequestFailure() : null;
+  const syncStatusLoading = syncStatusInitialLoading || syncStatusValidating;
+  const alifeLocalHealthLoading = alifeLocalHealthInitialLoading || alifeLocalHealthValidating;
+  const showWizard = Boolean(config) && !wizardDismissed;
 
   useEffect(() => {
-    fetchConfig().then(() => {
-      fetchSyncStatus();
-      fetchAlifeLocalHealth();
-    });
-  }, [fetchAlifeLocalHealth, fetchSyncStatus]);
+    syncStatusRef.current = syncStatus;
+  }, [syncStatus]);
+
+  const fetchSyncStatus = useCallback(async () => {
+    const previous = syncStatusRef.current;
+    const next = await mutateSyncStatus();
+    if (next?.success && next.data) {
+      syncStatusRef.current = next.data;
+      if (shouldShowAppliedSuccess(previous, next.data)) {
+        setShowAppliedSuccess(true);
+      }
+    }
+  }, [mutateSyncStatus]);
+
+  const fetchAlifeLocalHealth = useCallback(async () => {
+    await mutateAlifeLocalHealth();
+  }, [mutateAlifeLocalHealth]);
 
   useEffect(() => {
     if (!config) {
@@ -141,12 +121,6 @@ export default function PetConfigPage() {
       wanderInterval: d.wander_interval,
     });
   }, [config, form]);
-
-  useEffect(() => {
-    if (config && !wizardDismissed) {
-      setShowWizard(true);
-    }
-  }, [config, wizardDismissed]);
 
   // Light polling while waiting for desktop confirmation; pause when tab hidden.
   useEffect(() => {
@@ -184,7 +158,7 @@ export default function PetConfigPage() {
         clearTimeout(timer);
       }
     };
-  }, [fetchAlifeLocalHealth, fetchSyncStatus, syncStatus?.primaryAction, syncStatus?.summaryKind]);
+  }, [fetchAlifeLocalHealth, fetchSyncStatus, syncStatus]);
 
   useEffect(() => {
     if (!showAppliedSuccess) {
@@ -215,7 +189,7 @@ export default function PetConfigPage() {
     const res = await apiPut<PetConfig>('/api/pet/config', data);
     if (res.success) {
       message.success(t('saveSuccess'));
-      await fetchConfig();
+      await mutateConfig();
       await fetchSyncStatus();
     } else {
       message.error(res.error || t('saveFailed'));
@@ -323,14 +297,12 @@ export default function PetConfigPage() {
 
         <PetDiagnosticsSection>
           <PetSyncDiagnosticsPanel status={syncStatus} loading={syncStatusLoading} />
-          <WebBridgeMockStatusPanel />
         </PetDiagnosticsSection>
 
         {showWizard && (
           <PetSetupReadiness
             current={wizardCurrent}
             onDismiss={() => {
-              setShowWizard(false);
               setWizardDismissed(true);
             }}
           />
@@ -346,8 +318,8 @@ export default function PetConfigPage() {
             config={config}
             onOpenAssetPicker={openAssetPicker}
             onUnbindAvatar={async () => {
-              await apiPut('/api/pet/config', { avatarId: null });
-              await fetchConfig();
+              const res = await apiPut('/api/pet/config', { avatarId: null });
+              if (res.success) await mutateConfig();
             }}
           />
         </div>
@@ -389,14 +361,16 @@ export default function PetConfigPage() {
                     size="small"
                     type="primary"
                     onClick={async () => {
-                      await apiPost('/api/pet/assets', {
+                      const res = await apiPost('/api/pet/assets', {
                         assetId: record.id,
                         assetType: record.assetType,
                         slotName: `${assetFilter}_${Date.now()}`,
                       });
-                      message.success(t('assetPicker.attachSuccess'));
-                      setAssetModalOpen(false);
-                      fetchConfig();
+                      if (res.success) {
+                        message.success(t('assetPicker.attachSuccess'));
+                        setAssetModalOpen(false);
+                        void mutateConfig();
+                      }
                     }}
                   >
                     {t('assetPicker.attach')}

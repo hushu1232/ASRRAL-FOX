@@ -29,6 +29,55 @@ jest.mock('@/lib/api-client', () => ({
   apiPost: (...args: unknown[]) => mockApiPost(...args),
 }));
 
+jest.mock('@/lib/use-api', () => {
+  const React = jest.requireActual('react') as typeof import('react');
+
+  return {
+    useApiGet: (path: string | null) => {
+      const [state, setState] = React.useState<{
+        data?: unknown;
+        error?: unknown;
+        isLoading: boolean;
+        isValidating: boolean;
+      }>({ isLoading: Boolean(path), isValidating: false });
+
+      React.useEffect(() => {
+        if (!path) {
+          setState({ isLoading: false, isValidating: false });
+          return;
+        }
+
+        let active = true;
+        setState(current => ({ ...current, isLoading: current.data === undefined }));
+        void mockApiGet(path).then(
+          (data: unknown) => {
+            if (active) setState({ data, isLoading: false, isValidating: false });
+          },
+          (error: unknown) => {
+            if (active) setState({ error, isLoading: false, isValidating: false });
+          },
+        );
+        return () => { active = false; };
+      }, [path]);
+
+      const mutate = React.useCallback(async () => {
+        if (!path) return undefined;
+        setState(current => ({ ...current, isValidating: true }));
+        try {
+          const data = await mockApiGet(path);
+          setState({ data, isLoading: false, isValidating: false });
+          return data;
+        } catch (error) {
+          setState({ error, isLoading: false, isValidating: false });
+          throw error;
+        }
+      }, [path]);
+
+      return { ...state, mutate };
+    },
+  };
+});
+
 jest.mock('next-intl', () => ({
   useTranslations: (namespace: string) => {
     const messages: Record<string, Record<string, string>> = {
@@ -283,15 +332,10 @@ describe('PetConfigPage desktop sync', () => {
       'true',
     );
     const diagnosticsPanel = screen.getByTestId('pet-sync-diagnostics-panel');
-    const simulation = screen.getByText('WebBridge package simulation');
     expect(diagnosticsPanel).toBeDefined();
     expect(screen.getByText('Live WebBridge diagnostics')).toBeDefined();
     expect(screen.getByTestId('diagnostics-status-props').textContent).toBe('pendingPull');
-    expect(
-      diagnosticsPanel.compareDocumentPosition(simulation) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(screen.getByText('Alife .NET 9')).toBeDefined();
-    expect(screen.getByText('No live Alife calls')).toBeDefined();
+    expect(screen.queryByText('WebBridge package simulation')).not.toBeInTheDocument();
     expect(mockApiGet).toHaveBeenCalledTimes(3);
   });
 

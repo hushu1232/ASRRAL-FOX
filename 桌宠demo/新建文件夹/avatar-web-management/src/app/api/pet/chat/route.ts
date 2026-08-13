@@ -82,7 +82,7 @@ function parseLLMResponse(raw: string): ParsedResponse {
   }
 
   // Strip tags for clean text
-  let cleanText = raw
+  const cleanText = raw
     .replace(RE_EMOTION, '')
     .replace(RE_ACTION, '')
     .replace(RE_MEMORY, '')

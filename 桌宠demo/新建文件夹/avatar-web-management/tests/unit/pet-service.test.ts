@@ -110,6 +110,11 @@ describe('petService', () => {
       expect(mockPrismaClient.petConfig.findUnique).toHaveBeenCalledWith({ where: { userId } });
     });
 
+    it('does not expose a config from another workspace', async () => {
+      mockPrismaClient.petConfig.findUnique.mockResolvedValue(makeRawConfig({ workspaceId: 'other-workspace' }));
+      await expect(petService.getConfig(userId, workspaceId)).resolves.toBeNull();
+    });
+
     it('returns config without API keys', async () => {
       mockPrismaClient.petConfig.findUnique.mockResolvedValue(makeRawConfig());
       const result = await petService.getConfig(userId, workspaceId);
@@ -151,7 +156,7 @@ describe('petService', () => {
       mockPrismaClient.petConfig.findUnique.mockResolvedValue(makeRawConfig());
       mockPrismaClient.petConfig.update.mockResolvedValue(makeRawConfig({ petName: '新星尘', personality: '活泼' }));
 
-      const result = await petService.updateConfig(userId, workspaceId, {
+      await petService.updateConfig(userId, workspaceId, {
         petName: '新星尘', personality: '活泼',
       });
 
@@ -167,6 +172,14 @@ describe('petService', () => {
       await expect(
         petService.updateConfig('nonexistent', workspaceId, { petName: 'test' })
       ).rejects.toThrow('PetConfig not found');
+    });
+
+    it('rejects updates when the config belongs to another workspace', async () => {
+      mockPrismaClient.petConfig.findUnique.mockResolvedValue(makeRawConfig({ workspaceId: 'other-workspace' }));
+      await expect(
+        petService.updateConfig(userId, workspaceId, { petName: 'test' })
+      ).rejects.toThrow('PetConfig not found');
+      expect(mockPrismaClient.petConfig.update).not.toHaveBeenCalled();
     });
 
     it('validates animationModel enum', async () => {
@@ -243,7 +256,7 @@ describe('petService', () => {
 
       expect(mockPrismaClient.petConfig.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId },
+          where: { id: configId },
           data: expect.objectContaining({ avatarId: 'avatar-1', petName: '测试形象' }),
         })
       );

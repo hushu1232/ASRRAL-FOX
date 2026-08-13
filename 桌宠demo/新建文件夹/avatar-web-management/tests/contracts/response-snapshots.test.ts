@@ -17,10 +17,6 @@ const paginatedResponseShape = z.object({
   }),
 });
 
-const successResponseShape = z.object({
-  success: z.literal(true),
-});
-
 const errorResponseShape = z.object({
   success: z.literal(false),
   error: z.string(),

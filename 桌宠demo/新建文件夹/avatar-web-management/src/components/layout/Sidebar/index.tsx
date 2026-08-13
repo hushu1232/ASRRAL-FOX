@@ -7,7 +7,7 @@ import {
   ShopOutlined, SettingOutlined, SafetyOutlined, ApiOutlined, DollarOutlined,
   QuestionCircleOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
   PlusOutlined, RobotOutlined, ShoppingCartOutlined, BellOutlined,
-  TeamOutlined, MessageOutlined, ThunderboltOutlined,
+  TeamOutlined, MessageOutlined, ThunderboltOutlined, PlayCircleOutlined,
 } from '@ant-design/icons';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
@@ -56,6 +56,7 @@ export default function Sidebar() {
     // ── Main ──
     { key: '/dashboard', icon: <DashboardOutlined />, label: t('dashboard') },
     { key: '/dashboard/pet', icon: <RobotOutlined />, label: t('pet') },
+    { key: '/companion/airi', icon: <PlayCircleOutlined />, label: t('airi') },
     { key: '/marketplace', icon: <ShopOutlined />, label: t('marketplace') },
     { key: '/community', icon: <TeamOutlined />, label: t('community') },
     // ── Creation ──
@@ -75,10 +76,10 @@ export default function Sidebar() {
   ];
 
   const menuGroupDefs: MenuGroup[] = [
-    { key: 'main', label: t('groups.main'), items: menuItemDefs.slice(0, 4) },
-    { key: 'creation', label: t('groups.creation'), items: menuItemDefs.slice(4, 7) },
-    { key: 'personal', label: t('groups.personal'), items: menuItemDefs.slice(7, 11) },
-    { key: 'system', label: t('groups.system'), items: menuItemDefs.slice(11) },
+    { key: 'main', label: t('groups.main'), items: menuItemDefs.slice(0, 5) },
+    { key: 'creation', label: t('groups.creation'), items: menuItemDefs.slice(5, 8) },
+    { key: 'personal', label: t('groups.personal'), items: menuItemDefs.slice(8, 12) },
+    { key: 'system', label: t('groups.system'), items: menuItemDefs.slice(12) },
   ];
 
   const GUEST_ALLOWED = ['/marketplace', '/community', '/avatars', '/help'];
@@ -103,7 +104,7 @@ export default function Sidebar() {
 
   const selectedKey = resolveSelectedSidebarKey(pathname, menuItemDefs.map((item) => item.key));
 
-  const sidebarItems = visibleGroups.flatMap((group, gi) => {
+  const sidebarItems = visibleGroups.flatMap((group) => {
     const children = group.visibleItems.map((item) => ({
       key: item.key,
       icon: item.icon,

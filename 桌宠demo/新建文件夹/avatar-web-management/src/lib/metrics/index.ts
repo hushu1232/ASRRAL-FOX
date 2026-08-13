@@ -116,15 +116,27 @@ export const httpRequestsInFlight = {
 };
 
 export const rateLimitHits = {
-  inc(labels?: Record<string, string>) { if (ensure()) labels ? _rateLimitHits!.inc(labels) : _rateLimitHits!.inc(); },
+  inc(labels?: Record<string, string>) {
+    if (!ensure()) return;
+    if (labels) _rateLimitHits!.inc(labels);
+    else _rateLimitHits!.inc();
+  },
 };
 
 export const cacheHitsTotal = {
-  inc(labels?: Record<string, string>) { if (ensure()) labels ? _cacheHitsTotal!.inc(labels) : _cacheHitsTotal!.inc(); },
+  inc(labels?: Record<string, string>) {
+    if (!ensure()) return;
+    if (labels) _cacheHitsTotal!.inc(labels);
+    else _cacheHitsTotal!.inc();
+  },
 };
 
 export const cacheMissesTotal = {
-  inc(labels?: Record<string, string>) { if (ensure()) labels ? _cacheMissesTotal!.inc(labels) : _cacheMissesTotal!.inc(); },
+  inc(labels?: Record<string, string>) {
+    if (!ensure()) return;
+    if (labels) _cacheMissesTotal!.inc(labels);
+    else _cacheMissesTotal!.inc();
+  },
 };
 
 // ---- Helpers ----

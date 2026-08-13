@@ -11,20 +11,30 @@
 cp .env.example .env
 ```
 
-编辑 `.env` 文件，修改以下必填项：
+编辑 `.env` 文件，至少修改以下必填项：
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `NODE_ENV` | 运行环境 | `development` |
-| `PORT` | 服务端口 | `3000` |
-| `JWT_SECRET` | JWT 签名密钥（生产环境必须修改） | `dev-secret-...` |
-| `DATABASE_PATH` | SQLite 数据库文件路径 | `database/data.db` |
+| 变量 | 说明 |
+|------|------|
+| `DATABASE_URL` | 本机开发使用指向 `localhost:5432` 的 PostgreSQL URL |
+| `POSTGRES_PASSWORD` | Compose PostgreSQL 密码，须与 `DATABASE_URL` 中密码一致 |
+| `JWT_SECRET` | 仅供开发 HS256 使用；生产应配置 RSA 密钥 |
 
-> **安全警告**：生产环境必须设置强随机的 `JWT_SECRET`，否则服务将拒绝启动。
+> 不要提交 `.env`、数据库文件或私钥。生产环境只有当前置代理会覆盖客户端转发头、并注入与 `TRUST_PROXY_SECRET` 匹配的 `x-foxd-proxy-token` 时，才设置 `TRUST_PROXY_HEADERS=true`；否则 API 会安全地返回 503。
 
 ### 2. 初始化数据库
 
-数据库会在首次访问 API 时自动迁移并写入种子数据，无需手动操作。
+本机开发先启动 PostgreSQL，再执行 Prisma migration：
+
+```bash
+docker compose up -d postgres
+npm run prisma:migrate:deploy
+```
+
+种子数据不会在生产环境自动写入。如需本地演示账号，显式执行：
+
+```bash
+npm run prisma:seed
+```
 
 ### 3. 启动开发服务器
 
@@ -34,7 +44,9 @@ npm run dev
 
 访问 [http://localhost:3000](http://localhost:3000)。
 
-### 4. 测试账号
+### 4. 本地演示账号
+
+仅在显式运行 `npm run prisma:seed` 后可用：
 
 | 角色 | 邮箱 | 密码 |
 |------|------|------|
@@ -51,9 +63,17 @@ npm run test:watch  # 监视模式
 
 ## 部署
 
+Compose 会等待 PostgreSQL 健康检查，运行 `prisma migrate deploy`，成功后再启动应用；Prisma migrations 是唯一的生产数据库结构来源。
+
+```bash
+cp .env.example .env
+# 修改 .env 中的所有占位值后（包括 PostgreSQL、Keycloak 与 MinIO 密码）：
+docker compose up -d --build
+```
+
+非 Compose 部署必须先运行 `npm run prisma:migrate:deploy`，再执行：
+
 ```bash
 npm run build
 npm start
 ```
-
-详细部署文档见 [Next.js 官方文档](https://nextjs.org/docs/app/building-your-application/deploying)。

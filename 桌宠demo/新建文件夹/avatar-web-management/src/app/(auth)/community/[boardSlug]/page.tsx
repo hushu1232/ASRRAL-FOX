@@ -47,7 +47,7 @@ export default function BoardPage() {
     `/api/community/boards/slug/${boardSlug}`,
   );
 
-  const { data: postsRes, isLoading: postsLoading, mutate } = useApiPaginated<PostItem>(
+  const { data: postsRes, isLoading: postsLoading } = useApiPaginated<PostItem>(
     boardRes?.success ? `/api/community/boards/${boardRes.data.id}/posts` : null,
     { sort, page: String(page), pageSize: '20' },
   );

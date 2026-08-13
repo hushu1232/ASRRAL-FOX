@@ -1,5 +1,4 @@
 import { useAuthStore } from '@/stores/authStore';
-import { getStoredAccessToken } from '@/lib/auth/tokenStorage';
 import type { ApiResponse, PaginatedResponse } from '@/types/api';
 
 let refreshPromise: Promise<boolean> | null = null;
@@ -59,7 +58,7 @@ async function redirectToLogin(): Promise<never> {
 // ─── Core request factory ──────────────────────────────────────
 
 interface RequestOptions {
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   path: string;
   body?: unknown;          // JSON body or FormData
   params?: Record<string, string>; // query params (GET only)
@@ -123,6 +122,10 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<ApiRespo
 
 export async function apiPut<T>(path: string, body?: unknown): Promise<ApiResponse<T>> {
   return request<T>({ method: 'PUT', path, body });
+}
+
+export async function apiPatch<T>(path: string, body?: unknown): Promise<ApiResponse<T>> {
+  return request<T>({ method: 'PATCH', path, body });
 }
 
 export async function apiDelete<T>(path: string): Promise<ApiResponse<T>> {

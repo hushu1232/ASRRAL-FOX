@@ -9,26 +9,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.join(__dirname, '..', 'public', 'models');
 fs.mkdirSync(outDir, { recursive: true });
 
-function float32ToBytes(value) {
-  const buf = Buffer.alloc(4);
-  buf.writeFloatLE(value, 0);
-  return buf;
-}
-
-function uint32ToBytes(value) {
-  const buf = Buffer.alloc(4);
-  buf.writeUInt32LE(value, 0);
-  return buf;
-}
-
-function uint16ToBytes(value) {
-  const buf = Buffer.alloc(2);
-  buf.writeUInt16LE(value, 0);
-  return buf;
-}
-
 // Build a simple humanoid mesh (8 vertices per primitive for a box approximation)
-function buildHumanoidGeometry(color) {
+function buildHumanoidGeometry() {
   // We build a simple GLTF JSON structure with:
   // 1 sphere (head) + 1 capsule-like body + 4 capsule limbs
   // Using indexed triangles
@@ -87,7 +69,7 @@ function buildHumanoidGeometry(color) {
 }
 
 function buildGLBFile(color) {
-  const { positions, normals, indices, count } = buildHumanoidGeometry(color);
+  const { positions, normals, indices, count } = buildHumanoidGeometry();
 
   const posMin = [Infinity, Infinity, Infinity];
   const posMax = [-Infinity, -Infinity, -Infinity];

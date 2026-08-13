@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Input, Dropdown, Avatar, Badge, Space, Button } from 'antd';
+import { Input, Dropdown, Avatar, Button } from 'antd';
 import { SearchOutlined, LogoutOutlined, UserOutlined, MenuOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -68,7 +68,7 @@ export default function Header() {
           aria-label={th('search')}
           role="searchbox"
         />
-        <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
+        {searchOpen && <CommandPalette onClose={() => setSearchOpen(false)} />}
       </div>
 
       <div className="header__right">

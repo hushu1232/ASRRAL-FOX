@@ -94,7 +94,7 @@ async function main() {
   }
 
   console.log('\nBrowser User-Agent Summary:');
-  for (const [browser, ua] of Object.entries(BROWSERS)) {
+  for (const [browser] of Object.entries(BROWSERS)) {
     const browserResults = failures.filter(f => f.browser === browser);
     const browserTotal = endpoints.length;
     console.log(`  ${browser.padEnd(10)}: ${browserTotal - browserResults.length}/${browserTotal} endpoints OK`);

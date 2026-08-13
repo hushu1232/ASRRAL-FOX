@@ -1,18 +1,8 @@
-import { test, expect, type APIRequestContext } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:3000';
 const TEST_EMAIL = 'demo@example.com';
 const TEST_PASSWORD = 'demo1234';
-
-async function getAuthToken(request: APIRequestContext) {
-  const res = await request.post(`${BASE_URL}/api/auth/login`, {
-    data: { email: TEST_EMAIL, password: TEST_PASSWORD },
-    headers: { 'Content-Type': 'application/json' },
-  });
-  const body = await res.json();
-  if (!body.success) throw new Error(`Login failed: ${body.error}`);
-  return body.data?.accessToken || '';
-}
 
 test.describe('Auth Flow E2E', () => {
 
@@ -112,7 +102,7 @@ test.describe('Auth Flow E2E', () => {
   test.describe('Token Refresh', () => {
     test('POST /api/auth/refresh with valid cookie returns new token', async ({ request }) => {
       // First login to get the cookie
-      const loginRes = await request.post(`${BASE_URL}/api/auth/login`, {
+      await request.post(`${BASE_URL}/api/auth/login`, {
         data: { email: TEST_EMAIL, password: TEST_PASSWORD },
         headers: { 'Content-Type': 'application/json' },
       });

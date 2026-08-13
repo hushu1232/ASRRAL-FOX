@@ -7,7 +7,6 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useApiGet, useApiPaginated } from '@/lib/use-api';
 import { apiDelete, apiPut } from '@/lib/api-client';
-import type { PaginatedResponse } from '@/lib/use-api';
 
 interface SellerDashboard {
   totalItems: number;
@@ -141,7 +140,7 @@ export default function SellerCenterPage() {
     { title: t('category'), dataIndex: 'category', key: 'category', render: (c: string) => CATEGORY_LABELS[c] || c },
     {
       title: t('price'), dataIndex: 'price', key: 'price',
-      render: (p: number, r: SellerItem) => p === 0 ? <span className="text-green-400">{t('free')}</span> : `¥${p}`,
+      render: (p: number) => p === 0 ? <span className="text-green-400">{t('free')}</span> : `¥${p}`,
     },
     {
       title: t('status'), dataIndex: 'status', key: 'status',

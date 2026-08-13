@@ -1,7 +1,7 @@
 'use client';
 
-import { Card, Tag, Rate, Empty, Spin, Pagination, Statistic } from 'antd';
-import { ShopOutlined, StarFilled, DownloadOutlined, ShoppingCartOutlined } from '@ant-design/icons';
+import { Card, Tag, Rate, Empty, Spin, Statistic } from 'antd';
+import { ShopOutlined, DownloadOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';

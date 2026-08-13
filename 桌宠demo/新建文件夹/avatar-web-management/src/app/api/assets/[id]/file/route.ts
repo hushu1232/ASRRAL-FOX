@@ -1,10 +1,10 @@
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { assetService } from '@/lib/services/asset.service';
 
-export const GET = withAuth(async (req, user, ctx) => {
+export const GET = withAuth(async (req, user) => {
   const pathSegments = req.nextUrl.pathname.split('/').filter(Boolean);
   const assetId = pathSegments[pathSegments.indexOf('assets') + 1] || '';
 

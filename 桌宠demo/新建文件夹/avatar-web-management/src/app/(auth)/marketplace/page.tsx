@@ -86,6 +86,7 @@ export default function MarketplacePage() {
   const { data, isLoading } = useApiPaginated<MarketItem>('/api/market/items', params);
   const items: MarketItem[] = data?.success ? (data.data as unknown as { items: MarketItem[] })?.items || [] : [];
   const total = data?.success ? (data.data as unknown as { total: number })?.total ?? 0 : 0;
+  const hasError = Boolean(data && !data.success);
 
   return (
     <div>
@@ -138,6 +139,10 @@ export default function MarketplacePage() {
 
       {isLoading ? (
         <LoadingState />
+      ) : hasError ? (
+        <OperationPanel data-testid="marketplace-error-panel" title={null}>
+          <EmptyState description={t('detail.networkError')} />
+        </OperationPanel>
       ) : items.length === 0 ? (
         <OperationPanel data-testid="marketplace-empty-panel" title={null}>
           <EmptyState description={t('noItems')} />
@@ -197,15 +202,16 @@ export default function MarketplacePage() {
                     </div>
                   }
                 >
-                  <div className="text-white font-medium text-sm mb-1 truncate">{item.title}</div>
+                  <div className="font-medium text-sm mb-1 truncate" style={{ color: 'var(--ds-colors-text-primary)' }}>{item.title}</div>
                   <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
-                    <span
+                    <button
+                      type="button"
                       className="hover:underline truncate max-w-[120px]"
                       style={{ color: 'var(--accent)' }}
                       onClick={(e) => { e.stopPropagation(); router.push(`/marketplace/seller/${item.seller_id}`); }}
                     >
                       {item.seller_username}
-                    </span>
+                    </button>
                     <span className="flex items-center gap-0.5">
                       <DownloadOutlined className="text-xs" />
                       {item.download_count}

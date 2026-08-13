@@ -1,7 +1,7 @@
 // GET/PUT /api/pet/behavior — 桌宠行为配置（时间感知 / 环境交互 / 情感记忆）
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { petService } from '@/lib/services/petService';
 import { success, error } from '@/lib/api-response';

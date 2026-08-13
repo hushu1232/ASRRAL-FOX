@@ -108,6 +108,7 @@
       },
       "dashboard": "ダッシュボード",
       "pet": "ペット",
+      "airi": "AIRI ステージ",
       "avatars": "アバター管理",
       "assets": "アセットライブラリ",
       "marketplace": "モデルマーケット",
@@ -1456,6 +1457,7 @@
     "title": "AI リギング",
     "serviceUnavailableTitle": "AI リギングサービスは現在利用できません",
     "serviceUnavailableDesc": "リギングマイクロサービスが接続されていません。astralfox-riggingが起動していることを確認してください。",
+    "checkingService": "Rigging サービスを確認中…",
     "retryConnection": "再接続",
     "generationFailed": "生成に失敗しました",
     "retry": "再試行",
@@ -1704,6 +1706,35 @@
     "empty": {
       "noPosts": "まだ投稿がありません。最初の投稿をしましょう！",
       "noBoards": "掲示板がありません"
+    }
+  },
+  "airi": {
+    "title": "AIRI ステージ",
+    "subtitle": "独立キャラクターランタイム · Bridge v1",
+    "exit": "ペットコンソールに戻る",
+    "retry": "再読み込み",
+    "stageLabel": "AIRI キャラクターステージ",
+    "iframeTitle": "AIRI Web キャラクターステージ",
+    "notConfigured": {
+      "title": "AIRI Stage が未設定です",
+      "description": "固定版のセルフホスト Stage を読み込むには AIRI_STAGE_URL を設定してください。"
+    },
+    "authRequired": {
+      "title": "ログインが必要です",
+      "description": "AIRI キャラクターステージを開くにはログインしてください。",
+      "action": "ログインへ"
+    },
+    "status": {
+      "loading": "AIRI Stage に接続中",
+      "ready": "AIRI Stage の準備ができました",
+      "error": "AIRI Stage に接続できませんでした",
+      "unconfigured": "AIRI Stage が未設定です",
+      "connected": "Bridge v1 接続済み",
+      "characterLoaded": "キャラクター設定を読み込みました",
+      "stageError": "Stage でエラーが発生しました",
+      "timeout": "Stage のハンドシェイクがタイムアウトしました",
+      "loadError": "Stage ページを読み込めませんでした",
+      "sameOriginRejected": "Stage は分離された origin を使用する必要があります"
     }
   },
   "messages": {

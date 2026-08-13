@@ -6,12 +6,6 @@ type AudioChunk = {
   blobUrl: string;
 };
 
-type QueueCallback = {
-  onStart?: () => void;
-  onEnd?: () => void;
-  onError?: (err: Error) => void;
-};
-
 export class AudioStreamPlayer {
   private queue: AudioChunk[] = [];
   private current: HTMLAudioElement | null = null;

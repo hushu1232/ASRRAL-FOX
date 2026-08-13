@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Card, Tabs, Form, Input, Button, Select, message, Alert, Table, Tag } from 'antd';
 import { AlipayOutlined, WechatOutlined, BankOutlined, WalletOutlined } from '@ant-design/icons';
-import { apiGet, apiPost } from '@/lib/api-client';
+import { apiPost } from '@/lib/api-client';
+import { useApiGet } from '@/lib/use-api';
 
 interface PaymentMethod {
   id: string;
@@ -24,33 +25,20 @@ interface PayoutRecord {
 }
 
 export default function SellerPaymentPage() {
-  const [methods, setMethods] = useState<PaymentMethod[]>([]);
-  const [payouts, setPayouts] = useState<PayoutRecord[]>([]);
-  const [balance, setBalance] = useState({ pending: 0, totalPaid: 0 });
-  const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form] = Form.useForm();
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    const [methodsRes, payoutsRes] = await Promise.all([
-      apiGet<PaymentMethod[]>('/api/seller/payment-methods'),
-      apiGet<{ payouts: PayoutRecord[]; pendingBalance: number; totalPaid: number }>('/api/seller/payouts'),
-    ]);
-    if (methodsRes?.success) {
-      setMethods(methodsRes.data ?? []);
-    }
-    if (payoutsRes?.success && payoutsRes.data) {
-      setPayouts(payoutsRes.data.payouts ?? []);
-      setBalance({
-        pending: payoutsRes.data.pendingBalance ?? 0,
-        totalPaid: payoutsRes.data.totalPaid ?? 0,
-      });
-    }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { data: methodsData, isLoading: methodsLoading, mutate: mutateMethods } =
+    useApiGet<PaymentMethod[]>('/api/seller/payment-methods');
+  const { data: payoutsData, isLoading: payoutsLoading, mutate: mutatePayouts } =
+    useApiGet<{ payouts: PayoutRecord[]; pendingBalance: number; totalPaid: number }>('/api/seller/payouts');
+  const methods = methodsData?.success ? (methodsData.data ?? []) : [];
+  const payoutSummary = payoutsData?.success ? payoutsData.data : null;
+  const payouts = payoutSummary?.payouts ?? [];
+  const balance = {
+    pending: payoutSummary?.pendingBalance ?? 0,
+    totalPaid: payoutSummary?.totalPaid ?? 0,
+  };
+  const loading = methodsLoading || payoutsLoading;
 
   const handleAddMethod = async () => {
     const values = await form.validateFields();
@@ -59,7 +47,7 @@ export default function SellerPaymentPage() {
       message.success('收款方式已添加');
       setEditing(false);
       form.resetFields();
-      fetchData();
+      void mutateMethods();
     } else {
       message.error(res?.error || '添加失败');
     }
@@ -69,7 +57,7 @@ export default function SellerPaymentPage() {
     const res = await apiPost(`/api/seller/payment-methods/${id}/default`);
     if (res?.success) {
       message.success('已设为默认收款方式');
-      fetchData();
+      void mutateMethods();
     }
   };
 
@@ -81,7 +69,7 @@ export default function SellerPaymentPage() {
     const res = await apiPost('/api/seller/payouts');
     if (res?.success) {
       message.success(`提现申请已提交：¥${(balance.pending / 100).toFixed(2)}`);
-      fetchData();
+      void mutatePayouts();
     } else {
       message.error(res?.error || '提现失败');
     }

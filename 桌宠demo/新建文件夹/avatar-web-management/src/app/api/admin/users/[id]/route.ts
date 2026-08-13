@@ -6,7 +6,6 @@ import { requireRole } from '@/lib/auth/middleware';
 import { logAudit } from '@/lib/audit';
 
 import { ROLE_HIERARCHY } from '@/lib/constants';
-import { hasRole } from '@/lib/auth/roles';
 
 export const PUT = requireRole('super_admin')(async (req: NextRequest, user, ctx) => {
   const { id } = await ctx!.params! as { id: string };

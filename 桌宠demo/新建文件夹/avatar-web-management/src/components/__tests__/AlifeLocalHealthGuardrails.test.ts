@@ -41,7 +41,8 @@ describe('Alife local health source guardrails', () => {
   it('wires the dashboard to the sanitized authenticated local-health API and panel', () => {
     const page = readSource('src/app/(auth)/dashboard/pet/page.tsx');
 
-    expect(page).toContain("apiGet<AlifeLocalHealthView>('/api/pet/alife/local-health')");
+    expect(page).toContain('useApiGet<AlifeLocalHealthView>');
+    expect(page).toContain("config ? '/api/pet/alife/local-health' : null");
     expect(page).toContain('<AlifeLocalHealthPanel');
   });
 

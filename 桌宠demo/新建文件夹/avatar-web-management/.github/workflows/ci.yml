@@ -40,13 +40,13 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint:ci
 
       - name: Type check
         run: npm run typecheck
 
       - name: Test (enforce coverage)
-        run: npm run test:ci:unit -- --coverage
+        run: npm run test:ci:unit
 
       - name: Audit dependencies (block on critical)
         run: npm audit --production --audit-level=critical
@@ -55,6 +55,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: lint-typecheck-test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: avatar_management
+          POSTGRES_USER: avatar
+          POSTGRES_PASSWORD: avatar
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U avatar -d avatar_management"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://avatar:avatar@localhost:5432/avatar_management
+      JWT_SECRET: ci-only-jwt-secret
+      JWT_REFRESH_SECRET: ci-only-refresh-secret
 
     steps:
       - name: Checkout
@@ -69,6 +87,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Apply database migrations
+        run: npm run prisma:migrate:deploy
+
+      - name: Seed test data
+        run: npm run prisma:seed
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
@@ -76,7 +100,7 @@ jobs:
         run: npm run build
 
       - name: Run E2E tests
-        run: npm run test:ci:e2e:api
+        run: npm run test:ci:e2e -- e2e/api.spec.ts e2e/editor-workflow.spec.ts --project=chromium
 
       - name: Upload Playwright report
         if: failure()
@@ -166,10 +190,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Set image reference
+        id: image
+        run: echo "IMAGE_REF=ghcr.io/${GITHUB_REPOSITORY}:sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - name: Trivy — container vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          image-ref: ${{ steps.image.outputs.IMAGE_REF }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -185,7 +213,7 @@ jobs:
       - name: Generate SBOM (syft)
         uses: anchore/sbom-action@v0
         with:
-          image: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          image: ${{ steps.image.outputs.IMAGE_REF }}
           format: spdx-json
           output-file: sbom.spdx.json
           artifact-name: sbom-${{ github.run_id }}.spdx.json
@@ -373,5 +401,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add helm/avatar-web/values-production.yaml
-          git commit -m "chore: bump image tag to ${{ steps.vars.outputs.IMAGE_TAG }}" || echo "No changes to commit"
+          git commit -m "chore: bump image tag to ${{ steps.vars.outputs.IMAGE_TAG }} [skip ci]" || echo "No changes to commit"
           git push origin main

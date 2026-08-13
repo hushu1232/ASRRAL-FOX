@@ -1,6 +1,5 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { error, paginated } from '@/lib/api-response';
 import { requireRole } from '@/lib/auth/middleware';

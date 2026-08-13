@@ -3,6 +3,7 @@ import { trace } from '@opentelemetry/api';
 import { getRequestId } from '@/lib/request-context';
 
 const isProduction = process.env.NODE_ENV === 'production';
+const isTest = process.env.NODE_ENV === 'test';
 
 function getTraceIds() {
   try {
@@ -18,7 +19,7 @@ function getTraceIds() {
 
 const baseLogger = pino({
   level: process.env.LOG_LEVEL ?? (isProduction ? 'info' : 'debug'),
-  ...(isProduction
+  ...(isProduction || isTest
     ? {}
     : {
         transport: {

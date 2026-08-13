@@ -1,17 +1,16 @@
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
-import { withAuth, requireRole } from '@/lib/auth/middleware';
+import { NextResponse } from 'next/server';
+import { requireRole } from '@/lib/auth/middleware';
 import {
   createOAuthClient,
   listOAuthClients,
-  revokeOAuthClient,
 } from '@/lib/auth/oauth-provider';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('admin:oauth-clients');
 
-export const GET = requireRole('super_admin')(async (_req, _auth) => {
+export const GET = requireRole('super_admin')(async () => {
   try {
     const clients = await listOAuthClients();
     const safe = clients.map((c) => ({

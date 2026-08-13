@@ -106,7 +106,6 @@ function mergeGLBs(mainGlb: GlbData, partGlbs: GlbData[], partTransforms?: Float
     const partViews = (partJson.bufferViews || []) as Record<string, unknown>[];
     const partAccessors = (partJson.accessors || []) as Record<string, unknown>[];
 
-    const nodeBaseIdx = nodes.length;
     const meshBaseIdx = meshes.length;
     const viewBaseIdx = bufferViews.length;
     const accBaseIdx = accessors.length;
@@ -182,12 +181,6 @@ function mergeGLBs(mainGlb: GlbData, partGlbs: GlbData[], partTransforms?: Float
   const scenes = (json.scenes || []) as Record<string, unknown>[];
   if (scenes[scene]) {
     const s = scenes[scene];
-    const rootNodes = (s.nodes || []) as number[];
-    // 添加所有部件根 node
-    let idx = nodes.length - partGlbs.reduce((sum, p) => sum + ((p.json as Record<string, unknown>).nodes as unknown[] || []).length, 0);
-    for (const _ of partGlbs) {
-      // ... 更简化的方式：把所有新增 node 加入根
-    }
     // 简化：把所有新 node 索引加入根场景
     const allNodeIdx = Array.from({ length: nodes.length }, (_, i) => i);
     s.nodes = allNodeIdx;
@@ -368,9 +361,8 @@ function applyMaterialOverrides(json: Record<string, unknown>, overrides: Record
 
   for (let i = 0; i < materials.length; i++) {
     const mat = materials[i];
-    const baseName = (mat.name as string) || '';
     // 查找匹配的材质覆盖
-    for (const [_partId, override] of Object.entries(overrides)) {
+    for (const override of Object.values(overrides)) {
       const pbr = mat.pbrMetallicRoughness as Record<string, unknown> | undefined;
       if (pbr == null) continue;
       if (override.albedo) {

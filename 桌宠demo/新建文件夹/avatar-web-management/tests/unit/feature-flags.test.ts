@@ -1,5 +1,3 @@
-import { isBuildFlagEnabled, getAllBuildFlags } from '@/lib/feature-flags';
-
 describe('feature-flags', () => {
   const envBackup = { ...process.env };
 
@@ -46,6 +44,22 @@ describe('feature-flags', () => {
       process.env.FF_EXPORT_VRM = 'false';
       const mod = await import('@/lib/feature-flags');
       expect(mod.isBuildFlagEnabled('exportVRM')).toBe(false);
+    });
+  });
+
+  describe('runtime experiment mapping', () => {
+    it('maps supported flags to experiment keys', async () => {
+      const mod = await import('@/lib/feature-flags');
+      expect(mod.getExperimentKeyForFlag('newEditorUI')).toBe('new_editor_ui');
+      expect(mod.getExperimentKeyForFlag('aiBlendShape')).toBe('ai_blendshape');
+      expect(mod.getExperimentKeyForFlag('exportVRM')).toBe('export_vrm');
+    });
+
+    it('reports runtime-toggle support and debug information', async () => {
+      const mod = await import('@/lib/feature-flags');
+      expect(mod.isRuntimeToggleable('newEditorUI')).toBe(true);
+      expect(mod.getFlagsDebugInfo()).toHaveLength(3);
+      expect(mod.getFlagsDebugInfo().every((item) => item.runtimeToggleable)).toBe(true);
     });
   });
 });

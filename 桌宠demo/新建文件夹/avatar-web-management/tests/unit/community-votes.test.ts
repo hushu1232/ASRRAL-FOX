@@ -32,7 +32,6 @@ function simulateVote(
   value: number,
 ): { votes: VoteState[]; result: VoteResult } {
   const votes = existingVotes.map((v) => ({ ...v }));
-  const key = `${userId}:${targetType}:${targetId}`;
   const existingIdx = votes.findIndex(
     (v) => v.userId === userId && v.targetType === targetType && v.targetId === targetId,
   );
@@ -135,11 +134,10 @@ describe('community vote logic', () => {
 
     it('votes on different targets do not conflict', () => {
       let votes: VoteState[] = [];
-      let result: VoteResult;
 
-      ({ votes, result } = simulateVote(votes, userId, 'post', 'post-1', 1));
-      ({ votes, result } = simulateVote(votes, userId, 'post', 'post-2', -1));
-      ({ votes, result } = simulateVote(votes, userId, 'reply', 'reply-1', 1));
+      ({ votes } = simulateVote(votes, userId, 'post', 'post-1', 1));
+      ({ votes } = simulateVote(votes, userId, 'post', 'post-2', -1));
+      ({ votes } = simulateVote(votes, userId, 'reply', 'reply-1', 1));
 
       expect(votes).toHaveLength(3);
     });

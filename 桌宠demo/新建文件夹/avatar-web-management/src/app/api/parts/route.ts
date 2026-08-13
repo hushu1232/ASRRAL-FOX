@@ -1,6 +1,5 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import { getPrisma, toSnakeCase } from '@/lib/db';
 import { success, error } from '@/lib/api-response';
 import { withAuth } from '@/lib/auth/middleware';
@@ -8,7 +7,7 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api:parts');
 
-export const GET = withAuth(async (_req: NextRequest) => {
+export const GET = withAuth(async () => {
   try {
     const prisma = getPrisma();
     const parts = await prisma.part.findMany({

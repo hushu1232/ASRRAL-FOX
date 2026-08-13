@@ -2,8 +2,8 @@
 
 export const dynamic = 'force-static';
 
-import { Card, Collapse, Table, Steps, Tag, Button } from 'antd';
-import { CaretRightOutlined, CopyOutlined } from '@ant-design/icons';
+import { Card, Collapse, Table, Steps, Tag } from 'antd';
+import { CaretRightOutlined } from '@ant-design/icons';
 import { useTranslations, useMessages } from 'next-intl';
 
 interface ShortcutItem { key: string; action: string; }

@@ -67,3 +67,4 @@ Thumbs.db
 # Misc
 *.log
 .worktrees/
+/.airi-stage-web/

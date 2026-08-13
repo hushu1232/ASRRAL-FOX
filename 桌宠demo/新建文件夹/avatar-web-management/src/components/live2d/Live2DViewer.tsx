@@ -32,46 +32,72 @@ export default function Live2DViewer({
   const t = useTranslations('live2d');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const delegateRef = useRef<Live2DAppDelegate | null>(null);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [errorMsg, setErrorMsg] = useState('');
+  const configKey = `${modelUrl}\u0000${width}\u0000${height}`;
+  const [result, setResult] = useState<{
+    key: string;
+    status: 'ready' | 'error';
+    errorMsg: string;
+  } | null>(null);
+  const status = result?.key === configKey ? result.status : 'loading';
+  const errorMsg = result?.key === configKey ? result.errorMsg : '';
 
-  const initViewer = useCallback(async () => {
+  const releaseDelegate = useCallback((delegate: Live2DAppDelegate | null) => {
+    if (!delegate) return;
     try {
-      await ensureCoreLoaded();
-
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const delegate = await createAppDelegate();
-      delegateRef.current = delegate;
-
-      attachCanvas(delegate, canvas);
-      delegate.initialize();
-      delegate.changeModel(modelUrl);
-      delegate.run();
-
-      setStatus('ready');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorMsg(msg);
-      setStatus('error');
-      onError?.(err instanceof Error ? err : new Error(msg));
-    }
-  }, [modelUrl, onError]);
+      delegate.stop();
+      delegate.release();
+    } catch { /* Silently ignore cleanup errors */ }
+  }, []);
 
   useEffect(() => {
-    initViewer();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let cancelled = false;
+    let delegate: Live2DAppDelegate | null = null;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+
+    void (async () => {
+      try {
+        await ensureCoreLoaded();
+        if (cancelled) return;
+
+        delegate = await createAppDelegate();
+        if (cancelled) {
+          releaseDelegate(delegate);
+          delegate = null;
+          return;
+        }
+        delegateRef.current = delegate;
+
+        attachCanvas(delegate, canvas);
+        delegate.initialize();
+        delegate.changeModel(modelUrl);
+        delegate.run();
+        setResult({ key: configKey, status: 'ready', errorMsg: '' });
+      } catch (err) {
+        if (cancelled) {
+          releaseDelegate(delegate);
+          delegate = null;
+          return;
+        }
+        if (delegateRef.current === delegate) delegateRef.current = null;
+        releaseDelegate(delegate);
+        delegate = null;
+        const msg = err instanceof Error ? err.message : String(err);
+        setResult({ key: configKey, status: 'error', errorMsg: msg });
+        onError?.(err instanceof Error ? err : new Error(msg));
+      }
+    })();
 
     return () => {
-      if (delegateRef.current) {
-        try {
-          delegateRef.current.stop();
-          delegateRef.current.release();
-        } catch { /* Silently ignore cleanup errors */ }
-        delegateRef.current = null;
-      }
+      cancelled = true;
+      if (delegateRef.current === delegate) delegateRef.current = null;
+      releaseDelegate(delegate);
+      delegate = null;
     };
-  }, [initViewer]);
+  }, [configKey, height, modelUrl, onError, releaseDelegate, width]);
 
   // ── Pointer event handlers ──────────────────────────────────
 
@@ -115,8 +141,6 @@ export default function Live2DViewer({
 
       <canvas
         ref={canvasRef}
-        width={width * (window.devicePixelRatio || 1)}
-        height={height * (window.devicePixelRatio || 1)}
         style={{ width, height, cursor: interactive ? 'grab' : 'default' }}
         className="rounded-lg"
         onPointerMove={handlePointerMove}

@@ -127,4 +127,9 @@ describe('LocalStorageAdapter — chunked upload', () => {
     const actual = fs.readFileSync(finalPath, 'utf-8');
     expect(actual).toBe(expectedParts.join(''));
   });
+
+  it('rejects traversal in chunk upload ids and final keys', async () => {
+    await expect(adapter.uploadChunk!('../outside', 0, Buffer.from('data'))).rejects.toThrow('Invalid upload id');
+    await expect(adapter.assembleChunks!('upload_safe', 1, '../outside.glb')).rejects.toThrow('Invalid storage key');
+  });
 });

@@ -110,6 +110,7 @@
       },
       "dashboard": "工作台",
       "pet": "桌宠",
+      "airi": "AIRI 角色舞台",
       "avatars": "形象管理",
       "assets": "资产库",
       "marketplace": "模型市场",
@@ -1449,6 +1450,7 @@
     "title": "AI 骨骼绑定",
     "serviceUnavailableTitle": "AI 骨骼绑定服务暂不可用",
     "serviceUnavailableDesc": "Rigging 微服务未连接，请确保 astralfox-rigging 服务已启动。",
+    "checkingService": "正在检查 Rigging 服务…",
     "retryConnection": "重试连接",
     "generationFailed": "生成失败",
     "retry": "重试",
@@ -1711,6 +1713,35 @@
     "empty": {
       "noPosts": "暂无帖子，来发第一帖吧",
       "noBoards": "暂无版块"
+    }
+  },
+  "airi": {
+    "title": "AIRI 角色舞台",
+    "subtitle": "独立角色运行空间 · Bridge v1",
+    "exit": "返回桌宠控制台",
+    "retry": "重新加载",
+    "stageLabel": "AIRI 角色舞台内容",
+    "iframeTitle": "AIRI Web 角色舞台",
+    "notConfigured": {
+      "title": "AIRI Stage 尚未配置",
+      "description": "设置 AIRI_STAGE_URL 后才能加载固定版本的自托管 Stage。"
+    },
+    "authRequired": {
+      "title": "需要登录",
+      "description": "登录后才能进入你的 AIRI 角色舞台。",
+      "action": "前往登录"
+    },
+    "status": {
+      "loading": "正在连接 AIRI Stage",
+      "ready": "AIRI Stage 已就绪",
+      "error": "AIRI Stage 连接失败",
+      "unconfigured": "AIRI Stage 尚未配置",
+      "connected": "Bridge v1 已连接",
+      "characterLoaded": "角色配置已加载",
+      "stageError": "Stage 返回错误",
+      "timeout": "Stage 握手超时",
+      "loadError": "Stage 页面加载失败",
+      "sameOriginRejected": "Stage 必须使用独立 origin"
     }
   },
   "messages": {

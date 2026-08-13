@@ -1,6 +1,5 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { paginated, error } from '@/lib/api-response';
 import { withAuth } from '@/lib/auth/middleware';
@@ -18,21 +17,16 @@ export const GET = withAuth(async (req) => {
       where.tags = { contains: tag };
     }
 
-    let orderBy: Record<string, string>;
-    switch (sort) {
-      case 'latest':
-        orderBy = { createdAt: 'desc' };
-        break;
-      case 'top':
-        orderBy = { replyCount: 'desc' };
-        break;
-      default:
-        orderBy = { voteScore: 'desc' };
-    }
+    const orderBy = sort === 'latest'
+      ? { createdAt: 'desc' as const }
+      : sort === 'top'
+        ? { replyCount: 'desc' as const }
+        : { voteScore: 'desc' as const };
 
     const [items, total] = await Promise.all([
       prisma.post.findMany({
         where,
+        orderBy,
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {

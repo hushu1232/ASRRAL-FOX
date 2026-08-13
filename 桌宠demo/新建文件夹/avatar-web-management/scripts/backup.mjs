@@ -13,12 +13,9 @@
 
 import { execSync } from 'child_process';
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, createWriteStream } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { createGzip } from 'zlib';
 import { pipeline } from 'stream/promises';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function parseArgs() {
   const args = process.argv.slice(2);

@@ -7,13 +7,14 @@ import {
   Typography, Space, Alert, Result, Descriptions, Tooltip, Empty,
 } from 'antd';
 import {
-  UploadOutlined, SoundOutlined, RobotOutlined, CheckCircleOutlined,
+  SoundOutlined, RobotOutlined, CheckCircleOutlined,
   PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined,
   ReloadOutlined, InboxOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { apiPost, apiGet, apiDelete, apiPostFormData } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/authStore';
+import { useApiGet } from '@/lib/use-api';
 
 const { Dragger } = Upload;
 const { Title, Text, Paragraph } = Typography;
@@ -64,27 +65,35 @@ export default function VoiceCloningWizard() {
   const [trainStatus, setTrainStatus] = useState<TrainStatus | null>(null);
   const [training, setTraining] = useState(false);
 
-  const [voices, setVoices] = useState<VoiceEntry[]>([]);
-  const [loadingVoices, setLoadingVoices] = useState(false);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
 
-  const [previewAudio, setPreviewAudio] = useState<HTMLAudioElement | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingGenerationRef = useRef(0);
+  const previewGenerationRef = useRef(0);
+  const { data: voicesData, isLoading: loadingVoices, mutate: mutateVoices } = useApiGet<{
+    voices: VoiceEntry[];
+    total: number;
+  }>('/api/tts/voices');
+  const voices = voicesData?.success ? (voicesData.data?.voices ?? []) : [];
 
-  useEffect(() => {
-    loadVoices();
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+  const releasePreviewAudio = useCallback(() => {
+    const audio = previewAudioRef.current;
+    if (!audio) return;
+    audio.pause();
+    URL.revokeObjectURL(audio.src);
+    previewAudioRef.current = null;
   }, []);
 
-  const loadVoices = async () => {
-    setLoadingVoices(true);
-    try {
-      const res = await apiGet<{ voices: VoiceEntry[]; total: number }>('/api/tts/voices');
-      setVoices(res.data?.voices || []);
-    } catch { /* ignore */ }
-    finally { setLoadingVoices(false); }
-  };
+  useEffect(() => {
+    return () => {
+      pollingGenerationRef.current += 1;
+      previewGenerationRef.current += 1;
+      if (pollingRef.current) clearTimeout(pollingRef.current);
+      releasePreviewAudio();
+    };
+  }, [releasePreviewAudio]);
 
   // ─── Step 1: Upload ────────────────────────────────────
 
@@ -134,28 +143,40 @@ export default function VoiceCloningWizard() {
   };
 
   const startPolling = (tid: string) => {
-    pollingRef.current = setInterval(async () => {
+    if (pollingRef.current) clearTimeout(pollingRef.current);
+    const generation = ++pollingGenerationRef.current;
+
+    const poll = async () => {
       try {
         const res = await apiGet<TrainStatus>(`/api/tts/train/${tid}/status`);
+        if (generation !== pollingGenerationRef.current) return;
         const status = res.data;
         if (!status) return;
         setTrainStatus(status);
 
         if (status.status === 'completed') {
-          clearInterval(pollingRef.current!);
           pollingRef.current = null;
+          pollingGenerationRef.current += 1;
           setTraining(false);
           setSelectedVoiceId(status.voice_id || null);
           message.success(t('stages.completed'));
-          loadVoices();
+          void mutateVoices();
         } else if (status.status === 'failed') {
-          clearInterval(pollingRef.current!);
           pollingRef.current = null;
+          pollingGenerationRef.current += 1;
           setTraining(false);
           message.error(status.error || t('step2.unknownError'));
+        } else {
+          pollingRef.current = setTimeout(poll, 2000);
         }
-      } catch { /* polling error — retry next interval */ }
-    }, 2000);
+      } catch {
+        if (generation === pollingGenerationRef.current) {
+          pollingRef.current = setTimeout(poll, 2000);
+        }
+      }
+    };
+
+    pollingRef.current = setTimeout(poll, 2000);
   };
 
   const goToStep3 = () => {
@@ -165,10 +186,8 @@ export default function VoiceCloningWizard() {
   // ─── Step 3: Preview ───────────────────────────────────
 
   const handlePreview = async (voiceId: string) => {
-    if (previewAudio) {
-      previewAudio.pause();
-      URL.revokeObjectURL(previewAudio.src);
-    }
+    const generation = ++previewGenerationRef.current;
+    releasePreviewAudio();
 
     try {
       const token = useAuthStore.getState().accessToken;
@@ -184,30 +203,38 @@ export default function VoiceCloningWizard() {
         }),
       });
 
+      if (generation !== previewGenerationRef.current) return;
       if (!res.ok) throw new Error(`Synthesis failed: ${res.status}`);
 
       const contentType = res.headers.get('Content-Type') || '';
       if (contentType.includes('audio/')) {
         const blob = await res.blob();
+        if (generation !== previewGenerationRef.current) return;
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
-        audio.onended = () => setPlaying(false);
-        setPreviewAudio(audio);
+        audio.onended = () => {
+          if (previewAudioRef.current !== audio) return;
+          releasePreviewAudio();
+          setPlaying(false);
+        };
+        previewAudioRef.current = audio;
         setPlaying(true);
         await audio.play();
       } else {
         message.warning(t('step3.serviceUnavailable'));
       }
     } catch {
-      message.error(t('step3.previewFailed'));
+      if (generation === previewGenerationRef.current) {
+        releasePreviewAudio();
+        setPlaying(false);
+        message.error(t('step3.previewFailed'));
+      }
     }
   };
 
   const stopPreview = () => {
-    if (previewAudio) {
-      previewAudio.pause();
-      previewAudio.currentTime = 0;
-    }
+    previewGenerationRef.current += 1;
+    releasePreviewAudio();
     setPlaying(false);
   };
 
@@ -226,10 +253,11 @@ export default function VoiceCloningWizard() {
 
   const handleDeleteVoice = async (voiceId: string) => {
     try {
-      await apiDelete(`/api/tts/voices?voiceId=${voiceId}`);
+      const result = await apiDelete(`/api/tts/voices?voiceId=${voiceId}`);
+      if (!result.success) throw new Error(result.error || t('step3.deleteFailed'));
       message.success(t('step3.deleteSuccess'));
       if (selectedVoiceId === voiceId) setSelectedVoiceId(null);
-      loadVoices();
+      void mutateVoices();
     } catch (err: unknown) {
       message.error(`${t('step3.deleteFailed')}: ${err instanceof Error ? err.message : String(err)}`);
     }

@@ -12,7 +12,6 @@ import {
   HOURLY_REMARKS,
   NIGHT_CARE_MESSAGES,
   RETURN_GREETINGS,
-  DEFAULT_TIME_AWARENESS_CONFIG,
 } from '@/types/pet-behavior';
 import type { EmotionTag } from '@/types/pet-preview';
 

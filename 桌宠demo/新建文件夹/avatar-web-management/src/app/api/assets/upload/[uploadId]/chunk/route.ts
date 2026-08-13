@@ -1,6 +1,6 @@
 export const runtime = 'nodejs';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { getStorageAdapter } from '@/lib/storage';
 import { getSession, recordChunk } from '@/lib/storage/chunked-upload';
@@ -8,7 +8,7 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('api:upload-chunk');
 
-export const POST = withAuth(async (req, _user) => {
+export const POST = withAuth(async (req) => {
   try {
     const uploadId = req.nextUrl.pathname.split('/').filter(Boolean).at(-2) || '';
 

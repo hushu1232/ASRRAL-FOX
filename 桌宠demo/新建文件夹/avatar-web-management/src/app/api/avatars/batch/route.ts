@@ -1,14 +1,10 @@
 export const runtime = 'nodejs';
 
-import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { success, error } from '@/lib/api-response';
 import { withAuth } from '@/lib/auth/middleware';
 import { ValidationError } from '@/lib/errors';
-import { createLogger } from '@/lib/logger';
 import { avatarService } from '@/lib/services/avatar.service';
-
-const log = createLogger('api:avatars-batch');
 
 const batchSchema = z.object({
   action: z.enum(['delete', 'publish', 'unpublish', 'archive']),

@@ -1,11 +1,13 @@
 // TODO: BEM-migrate
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
 import { Dropdown, Badge, Button, Spin, Empty, App } from 'antd';
 import { BellOutlined, CheckOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { apiGet, apiPut } from '@/lib/api-client';
+import { apiPut } from '@/lib/api-client';
+import { useApiGet } from '@/lib/use-api';
+import type { ApiResponse } from '@/lib/api-client';
 
 interface NotificationItem {
   id: string;
@@ -46,41 +48,40 @@ export default function NotificationDropdown() {
     market_sale: t('types.marketSale'),
     asset_takedown: t('types.assetTakedown'),
   };
-  const [notifs, setNotifs] = useState<NotificationItem[]>([]);
-  const [unread, setUnread] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
-
-  const fetchUnread = useCallback(async () => {
-    const res = await apiGet<{ count: number }>('/api/notifications/unread-count');
-    if (res.success) setUnread(res.data.count);
-  }, []);
-
-  const fetchList = useCallback(async () => {
-    setLoading(true);
-    const res = await apiGet<{ items: NotificationItem[] }>('/api/notifications', { pageSize: '10' });
-    if (res.success) setNotifs(res.data.items);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchUnread(); }, [fetchUnread]);
+  const { data: unreadData, mutate: mutateUnread } = useApiGet<{ count: number }>(
+    '/api/notifications/unread-count',
+  );
+  const { data: listData, isLoading: loading, mutate: mutateList } = useApiGet<{ items: NotificationItem[] }>(
+    open ? '/api/notifications' : null,
+    { pageSize: '10' },
+  );
+  const unread = unreadData?.success ? (unreadData.data?.count ?? 0) : 0;
+  const notifs = listData?.success ? (listData.data?.items ?? []) : [];
 
   const handleOpen = (v: boolean) => {
     setOpen(v);
-    if (v) fetchList();
   };
 
   const handleReadOne = async (id: string) => {
-    await apiPut(`/api/notifications/${id}/read`);
-    setNotifs(prev => prev.map(n => n.id === id ? { ...n, is_read: 1 } : n));
-    fetchUnread();
+    const res = await apiPut(`/api/notifications/${id}/read`);
+    if (!res.success) return;
+
+    await mutateList((current?: ApiResponse<{ items: NotificationItem[] }>) => current?.success
+      ? { ...current, data: { items: current.data.items.map(n => n.id === id ? { ...n, is_read: 1 } : n) } }
+      : current,
+    { revalidate: true });
+    void mutateUnread();
   };
 
   const handleReadAll = async () => {
     const res = await apiPut('/api/notifications/read-all');
     if (res.success) {
-      setNotifs(prev => prev.map(n => ({ ...n, is_read: 1 })));
-      setUnread(0);
+      await mutateList((current?: ApiResponse<{ items: NotificationItem[] }>) => current?.success
+        ? { ...current, data: { items: current.data.items.map(n => ({ ...n, is_read: 1 })) } }
+        : current,
+      { revalidate: true });
+      await mutateUnread({ success: true, data: { count: 0 } }, { revalidate: true });
       message.success(t('allRead'));
     }
   };
